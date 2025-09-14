@@ -1,0 +1,116 @@
+/* Drag and drop group card highlight */
+.droppable-group-card.drag-over {
+  border: 2px solid #1890ff !important;
+  box-shadow: 0 0 0 2px #bae7ff !important;
+  background: #e6f7ff !important;
+  transition: box-shadow 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.dark .droppable-group-card.drag-over {
+  border: 2px solid #38bdf8 !important;
+  box-shadow: 0 0 0 2px #0c4a6e !important;
+  background: #0c4a6e !important;
+}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    @apply bg-gray-50 text-gray-900 transition-colors duration-300;
+  }
+  
+  .dark body {
+    @apply bg-gray-900 text-gray-100;
+  }
+  
+  /* Ant Design dark mode support */
+  .dark .ant-layout {
+    background: #141414;
+  }
+  
+  .dark .ant-layout-header {
+    background: #1f1f1f;
+    border-bottom: 1px solid #424242;
+  }
+  
+  .dark .ant-layout-sider {
+    background: #1f1f1f;
+  }
+  
+  .dark .ant-menu {
+    background: transparent;
+  }
+  
+  .dark .ant-menu-item {
+    color: #ffffff;
+  }
+  
+  .dark .ant-menu-item:hover {
+    background-color: #262626;
+  }
+  
+  .dark .ant-menu-item-selected {
+    background-color: #1890ff;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+  }
+  
+  .dark .btn-primary {
+    @apply focus:ring-offset-gray-900;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
+  }
+  
+  .dark .btn-secondary {
+    @apply bg-gray-700 hover:bg-gray-600 text-gray-200 focus:ring-offset-gray-900;
+  }
+  
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white text-gray-900;
+  }
+  
+  .dark .input-field {
+    @apply bg-gray-800 border-gray-600 text-gray-100 focus:ring-offset-gray-900;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow-soft border border-gray-100 p-6 transition-colors duration-300;
+  }
+  
+  .dark .card {
+    @apply bg-gray-800 border-gray-700;
+  }
+  
+  .sidebar-item {
+    @apply flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors duration-200 cursor-pointer;
+  }
+  
+  .dark .sidebar-item {
+    @apply text-gray-300 hover:bg-gray-700 hover:text-gray-100;
+  }
+  
+  .sidebar-item.active {
+    @apply bg-gray-100 text-gray-900 font-medium;
+  }
+  
+  .dark .sidebar-item.active {
+    @apply bg-gray-700 text-gray-100;
+  }
+
+  /* Override Vue Router default active link styles */
+  .router-link-active {
+    color: inherit !important;
+  }
+  
+  .router-link-exact-active {
+    color: inherit !important;
+  }
+}
