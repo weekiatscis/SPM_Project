@@ -54,76 +54,18 @@
             ></textarea>
           </div>
 
-          <!-- Project and Assignee -->
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label for="project" class="block text-sm font-medium text-gray-700 mb-1">
-                Project *
-              </label>
-              <select
-                id="project"
-                v-model="form.project"
-                required
-                class="input-field"
-              >
-                <option value="">Select project</option>
-                <option value="Website Redesign">Website Redesign</option>
-                <option value="Mobile App">Mobile App</option>
-                <option value="Marketing Campaign">Marketing Campaign</option>
-                <option value="Product Launch">Product Launch</option>
-              </select>
-            </div>
-
-            <div>
-              <label for="assignee" class="block text-sm font-medium text-gray-700 mb-1">
-                Assignee *
-              </label>
-              <select
-                id="assignee"
-                v-model="form.assignee"
-                required
-                class="input-field"
-              >
-                <option value="">Select assignee</option>
-                <option value="John Doe">John Doe</option>
-                <option value="Jane Smith">Jane Smith</option>
-                <option value="Mike Johnson">Mike Johnson</option>
-                <option value="Sarah Wilson">Sarah Wilson</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Due Date and Priority -->
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label for="dueDate" class="block text-sm font-medium text-gray-700 mb-1">
-                Due Date *
-              </label>
-              <input
-                id="dueDate"
-                v-model="form.dueDate"
-                type="date"
-                required
-                class="input-field"
-              />
-            </div>
-
-            <div>
-              <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
-                Priority *
-              </label>
-              <select
-                id="priority"
-                v-model="form.priority"
-                required
-                class="input-field"
-              >
-                <option value="">Select priority</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
+          <!-- Due Date -->
+          <div>
+            <label for="dueDate" class="block text-sm font-medium text-gray-700 mb-1">
+              Due Date *
+            </label>
+            <input
+              id="dueDate"
+              v-model="form.dueDate"
+              type="date"
+              required
+              class="input-field"
+            />
           </div>
 
           <!-- Status -->
@@ -136,9 +78,10 @@
               v-model="form.status"
               class="input-field"
             >
-              <option value="pending">Pending</option>
-              <option value="in-progress">In Progress</option>
-              <option value="completed">Completed</option>
+              <option value="Unassigned">Unassigned</option>
+              <option value="Ongoing">Ongoing</option>
+              <option value="Under Review">Under Review</option>
+              <option value="Completed">Completed</option>
             </select>
           </div>
         </form>
@@ -154,9 +97,10 @@
           </button>
           <button
             @click="saveTask"
-            class="btn-primary"
+            :disabled="isLoading"
+            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {{ task?.id ? 'Update Task' : 'Create Task' }}
+            {{ isLoading ? 'Creating...' : (task?.id ? 'Update Task' : 'Create Task') }}
           </button>
         </div>
       </div>
@@ -184,12 +128,11 @@ export default {
     const form = ref({
       title: '',
       description: '',
-      project: '',
-      assignee: '',
       dueDate: '',
-      priority: '',
-      status: 'pending'
+      status: 'Unassigned'
     })
+
+    const isLoading = ref(false)
 
     // Watch for task changes to populate form
     watch(() => props.task, (newTask) => {
@@ -203,35 +146,77 @@ export default {
         form.value = {
           title: '',
           description: '',
-          project: '',
-          assignee: '',
           dueDate: '',
-          priority: '',
-          status: 'pending'
+          status: 'Unassigned'
         }
       }
     }, { immediate: true })
 
-    const saveTask = () => {
+    const saveTask = async () => {
       // Validate required fields
-      if (!form.value.title || !form.value.project || !form.value.assignee || !form.value.dueDate || !form.value.priority) {
-        alert('Please fill in all required fields')
+      if (!form.value.title || !form.value.dueDate) {
+        alert('Please fill in all required fields (Title and Due Date)')
         return
       }
 
-      const taskData = {
-        ...form.value,
-        id: props.task?.id || null,
-        dueDate: new Date(form.value.dueDate).toISOString(),
-        activities: props.task?.activities || [],
-        comments: props.task?.comments || []
-      }
+      isLoading.value = true
 
-      emit('save', taskData)
+      try {
+        // If editing existing task, emit to parent (update functionality to be implemented)
+        if (props.task?.id) {
+          const taskData = {
+            ...form.value,
+            id: props.task.id,
+            dueDate: new Date(form.value.dueDate).toISOString(),
+            activities: props.task?.activities || [],
+            comments: props.task?.comments || []
+          }
+          emit('save', taskData)
+          return
+        }
+
+        // For new task, call createTask microservice
+        const createTaskUrl = import.meta.env.VITE_CREATE_TASK_SERVICE_URL || 'http://localhost:8081'
+        const payload = {
+          title: form.value.title,
+          description: form.value.description,
+          due_date: form.value.dueDate,
+          status: form.value.status,
+          owner_id: import.meta.env.VITE_TASK_OWNER_ID
+        }
+
+        const response = await fetch(`${createTaskUrl}/tasks`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload)
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `HTTP ${response.status}`)
+        }
+
+        const result = await response.json()
+        
+        // Emit success with the created task data
+        emit('save', result.task)
+        
+        // Show success message
+        console.log('Task created successfully:', result.task)
+        
+      } catch (error) {
+        console.error('Failed to create task:', error)
+        alert(`Failed to create task: ${error.message}`)
+      } finally {
+        isLoading.value = false
+      }
     }
 
     return {
       form,
+      isLoading,
       saveTask
     }
   }

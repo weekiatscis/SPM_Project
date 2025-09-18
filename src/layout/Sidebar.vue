@@ -65,6 +65,7 @@
 
 <script>
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { HomeIcon, TaskIcon, DashboardIcon, ProjectIcon, SettingsIcon, UserIcon, LogoutIcon } from '../components/icons/index.js'
 
 export default {
@@ -85,6 +86,7 @@ export default {
     LogoutIcon
   },
   setup() {
+    const router = useRouter()
 
     const currentUser = computed(() => {
       const user = localStorage.getItem('user')
@@ -92,30 +94,13 @@ export default {
     })
 
     const navigationItems = computed(() => {
-      const user = currentUser.value
-      const items = [
+      return [
         { name: 'Home', path: '/home', icon: 'HomeIcon' }
       ]
-
-      if (user?.role === 'staff') {
-        items.push({ name: 'Tasks', path: '/tasks', icon: 'TaskIcon' })
-      }
-      
-      if (user?.role === 'manager') {
-        items.push({ name: 'Dashboard', path: '/dashboard', icon: 'DashboardIcon' })
-      }
-
-      items.push(
-        { name: 'Projects', path: '/projects', icon: 'ProjectIcon' },
-        { name: 'Settings', path: '/settings', icon: 'SettingsIcon' }
-      )
-
-      return items
     })
 
     const handleNavigation = (path) => {
-      // Navigation will be implemented when router is added
-      console.log('Navigate to:', path)
+      router.push(path)
     }
 
     const logout = () => {

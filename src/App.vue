@@ -30,16 +30,7 @@
           
           <!-- Page content -->
           <main class="flex-1 overflow-auto p-6">
-            <div class="flex items-center justify-center h-full">
-              <div class="text-center">
-                <h1 class="text-4xl font-bold text-gray-800 dark:text-white mb-4">
-                  SPM Project
-                </h1>
-                <p class="text-gray-600 dark:text-gray-300">
-                  This will be the content of the app
-                </p>
-              </div>
-            </div>
+            <router-view />
           </main>
         </div>
       </div>

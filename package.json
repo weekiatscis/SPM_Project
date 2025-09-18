@@ -12,6 +12,7 @@
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
     "@ant-design/icons-vue": "^7.0.1",
+    "@supabase/supabase-js": "^2.57.4",
     "ant-design-vue": "^4.2.6",
     "echarts": "^5.4.3",
     "vue": "^3.4.0",
@@ -33,6 +34,4 @@
   ],
   "author": "Smart Task Manager Team",
   "license": "MIT"
-  
 }
-

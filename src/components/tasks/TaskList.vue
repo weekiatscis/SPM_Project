@@ -45,10 +45,10 @@
               placeholder="Filter"
             >
               <a-select-option value="all">All Tasks</a-select-option>
-              <a-select-option value="pending">Pending</a-select-option>
-              <a-select-option value="in-progress">In Progress</a-select-option>
+              <a-select-option value="unassigned">Unassigned</a-select-option>
+              <a-select-option value="ongoing">Ongoing</a-select-option>
+              <a-select-option value="under-review">Under Review</a-select-option>
               <a-select-option value="completed">Completed</a-select-option>
-              <a-select-option value="overdue">Overdue</a-select-option>
             </a-select>
 
             <!-- Add task button -->
