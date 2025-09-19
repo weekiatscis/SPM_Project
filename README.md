@@ -5,6 +5,8 @@ A collaborative task management app designed to help teams stay organised and on
 Run the following command to start:
 
 npm install
-pip install -r requirements.txt 
-python src/microservices/tasks/createTask.py #Create task microservice
+
+docker-compose up --build (for first time)
+
+npm run dev (to host website locally)
 

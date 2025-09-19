@@ -1,0 +1,22 @@
+services:
+  get-task:
+    build:
+      context: .
+      dockerfile: ./src/microservices/tasks/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    command: ["python","getTask.py"]
+
+  create-task:
+    build:
+      context: .
+      dockerfile: ./src/microservices/tasks/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    command: ["python","createTask.py"]
