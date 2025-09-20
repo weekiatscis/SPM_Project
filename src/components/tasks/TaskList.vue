@@ -1,343 +1,378 @@
 <template>
-  <div style="max-width: 1600px; margin: 0 auto; padding: 24px;">
-    <!-- Header with filters and add button -->
-    <a-card :bordered="false" :style="headerStyle">
-      <a-row :gutter="24" align="middle">
-        <a-col :span="16">
-          <div style="display: flex; align-items: center; gap: 24px;">
-            <div style="position: relative;">
-              <img 
-                src="/illustrations/task_illustration.png" 
-                alt="Task Illustration" 
-                :style="illustrationStyle"
-              />
-              <!-- Decorative circle behind illustration -->
-              <div style="position: absolute; inset: 0; background: rgba(255,255,255,0.2); border-radius: 50%; transform: scale(1.1); z-index: -1;"></div>
-            </div>
-            <div style="flex: 1;">
-              <a-typography-title :level="2" :style="titleStyle">
-                Tasks
-              </a-typography-title>
-              <a-typography-paragraph :style="subtitleStyle">
-                Manage your tasks and projects
-              </a-typography-paragraph>
-              <!-- Additional integration elements -->
-              <a-space>
-                <a-space>
-                  <div :style="dotStyle"></div>
-                  <a-typography-text :style="workspaceTextStyle">
-                    Active workspace
-                  </a-typography-text>
-                </a-space>
-                <a-typography-text :style="dateTextStyle">
-                  {{ new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}
-                </a-typography-text>
-              </a-space>
-            </div>
-          </div>
-        </a-col>
-        <a-col :span="8" style="text-align: right;">
-          <a-space>
-            <!-- Filter dropdown -->
-            <a-select
-              v-model:value="selectedFilter"
-              style="width: 120px"
-              placeholder="Filter"
-            >
-              <a-select-option value="all">All Tasks</a-select-option>
-              <a-select-option value="unassigned">Unassigned</a-select-option>
-              <a-select-option value="ongoing">Ongoing</a-select-option>
-              <a-select-option value="under-review">Under Review</a-select-option>
-              <a-select-option value="completed">Completed</a-select-option>
-            </a-select>
+  <!-- Task Form Modal -->
+  <TaskFormModal 
+    :isOpen="showTaskModal" 
+    @close="showTaskModal = false" 
+    @save="handleTaskSaved"
+  />
 
-            <!-- Add task button -->
-            <a-button
-              type="primary"
-              @click="showAddTaskModal = true"
-              :icon="h(PlusOutlined)"
-              style="background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3); color: white;"
+  <!-- Task Detail Modal -->
+  <TaskDetailModal 
+    v-if="selectedTask"
+    :task="selectedTask"
+    :isOpen="showDetailModal"
+    @close="closeDetailModal"
+    @save="handleTaskUpdated"
+    @delete="handleTaskDeleted"
+  />
+
+  <div>
+    <!-- Tasks Section -->
+    <a-card 
+      style="height: 500px;"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>All Tasks</span>
+          <a-space size="small">
+            <a-button 
+              size="small" 
+              :type="sortBy.startsWith('dueDate') ? 'primary' : 'default'"
+              @click="toggleDueDateSort"
             >
-              Add Task
+              Due Date {{ sortBy === 'dueDate-asc' ? '↑' : sortBy === 'dueDate-desc' ? '↓' : '↑' }}
+            </a-button>
+            <a-button 
+              size="small" 
+              :type="sortBy.startsWith('priority') ? 'primary' : 'default'"
+              @click="togglePrioritySort"
+            >
+              Priority {{ sortBy === 'priority-asc' ? '↑' : sortBy === 'priority-desc' ? '↓' : '↑' }}
             </a-button>
           </a-space>
-        </a-col>
-      </a-row>
-    </a-card>
-
-    <!-- Project tabs -->
-    <a-tabs v-model:activeKey="selectedProject" @change="selectedProject = $event" style="margin-bottom: 24px;">
-      <a-tab-pane
-        v-for="project in projects"
-        :key="project"
-        :tab="`${project} (${getProjectTaskCount(project)})`"
-      />
-    </a-tabs>
-
-    <!-- Task grid -->
-    <div v-if="filteredTasks.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" style="margin-bottom: 24px;">
-      <TaskCard
-        v-for="task in filteredTasks"
-        :key="task.id"
-        :task="task"
-        @view-details="viewTaskDetails"
-        @edit-task="editTask"
-        @delete-task="deleteTask"
-        @toggle-complete="toggleTaskComplete"
-        class="group"
-      />
-    </div>
-
-    <!-- Empty state -->
-    <a-empty v-else description="No tasks found">
-      <a-button
-        type="primary"
-        @click="showAddTaskModal = true"
-        :icon="h(PlusOutlined)"
+        </div>
+      </template>
+      <template #extra>
+        <a-button type="primary" size="small" :icon="h(PlusOutlined)" @click="showTaskModal = true">
+          Create Task
+        </a-button>
+      </template>
+      <a-list
+        :data-source="allTasks"
+        :loading="isLoading"
+        style="height: 400px; overflow-y: auto;"
       >
-        Add your first task
-      </a-button>
-    </a-empty>
-
-    <!-- Task Detail Modal -->
-    <TaskDetailModal
-      v-if="selectedTask"
-      :task="selectedTask"
-      :is-open="showDetailModal"
-      @close="closeDetailModal"
-      @save="saveTask"
-      @delete="deleteTask"
-    />
-
-    <!-- Add/Edit Task Modal -->
-    <TaskFormModal
-      :task="editingTask"
-      :is-open="showAddTaskModal || showEditTaskModal"
-      @close="closeTaskModal"
-      @save="saveTask"
-    />
+        <template #renderItem="{ item }">
+          <a-list-item>
+            <TaskCard
+              :task="item"
+              @view-details="handleTaskClick"
+            />
+          </a-list-item>
+        </template>
+      </a-list>
+    </a-card>
   </div>
 </template>
 
 <script>
 import { ref, computed, onMounted, h } from 'vue'
-import TaskCard from './TaskCard.vue'
-import TaskDetailModal from './TaskDetailModal.vue'
-import TaskFormModal from './TaskFormModal.vue'
-import { sampleTasks } from '../../data/sampleData.js'
 import { PlusOutlined } from '@ant-design/icons-vue'
-import { useNotifications } from '../../composables/useNotifications.js'
+import { notification } from 'ant-design-vue'
 import { useTheme } from '../../composables/useTheme.js'
+import TaskFormModal from './TaskFormModal.vue'
+import TaskDetailModal from './TaskDetailModal.vue'
+import TaskCard from './TaskCard.vue'
 
 export default {
   name: 'TaskList',
   components: {
-    TaskCard,
-    TaskDetailModal,
+    PlusOutlined,
     TaskFormModal,
-    PlusOutlined
+    TaskDetailModal,
+    TaskCard
   },
   setup() {
     const tasks = ref([])
-    const selectedProject = ref('All Projects')
-    const selectedFilter = ref('all')
+    const isLoading = ref(false)
     const selectedTask = ref(null)
-    const editingTask = ref(null)
     const showDetailModal = ref(false)
-    const showAddTaskModal = ref(false)
-    const showEditTaskModal = ref(false)
-    const { showSuccess, showError, showWarning } = useNotifications()
+    const isLoadingTaskDetails = ref(false)
+    const sortBy = ref('dueDate-asc')
     const { isDarkMode } = useTheme()
 
-    // Load sample data
-    onMounted(() => {
-      tasks.value = [...sampleTasks]
+    // Modal state for creating task
+    const showTaskModal = ref(false)
+
+    // Helpers: DB <-> UI mapping
+    const normalizeStatus = (value) => value
+
+    const mapFromDb = (row) => ({
+      id: row.task_id ?? row.id,
+      title: row.title,
+      dueDate: row.due_date || null,
+      status: normalizeStatus(row.status)
     })
 
-    const projects = computed(() => {
-      const projectSet = new Set(['All Projects'])
-      tasks.value.forEach(task => projectSet.add(task.project))
-      return Array.from(projectSet)
-    })
-
-    const filteredTasks = computed(() => {
-      let filtered = tasks.value
-
-      // Filter by project
-      if (selectedProject.value !== 'All Projects') {
-        filtered = filtered.filter(task => task.project === selectedProject.value)
+    // Handle task saved from TaskFormModal
+    const handleTaskSaved = (taskData) => {
+      // Transform the API response to match frontend format
+      const mappedTask = {
+        id: taskData.task_id || taskData.id,
+        title: taskData.title,
+        dueDate: taskData.due_date || taskData.dueDate,
+        status: taskData.status
       }
+      
+      // Add the new task to the tasks list
+      tasks.value.unshift(mappedTask)
+      
+      // Show success notification
+      notification.success({
+        message: 'Task created successfully',
+        description: `"${mappedTask.title}" has been added to your task list.`,
+        placement: 'topRight',
+        duration: 3
+      })
+      
+      // Close the modal
+      showTaskModal.value = false
+    }
 
-      // Filter by status
-      if (selectedFilter.value !== 'all') {
-        filtered = filtered.filter(task => {
-          if (selectedFilter.value === 'overdue') {
-            const dueDate = new Date(task.dueDate)
-            const now = new Date()
-            return dueDate < now && task.status !== 'completed'
-          }
-          return task.status === selectedFilter.value
+    // Fetch task details from getTask microservice
+    const fetchTaskDetails = async (taskId) => {
+      isLoadingTaskDetails.value = true
+      try {
+        const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const url = `${baseUrl}/tasks?task_id=${encodeURIComponent(taskId)}`
+        
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        
+        const payload = await response.json()
+        const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
+        
+        if (apiTasks.length === 0) {
+          throw new Error('Task not found')
+        }
+        
+        // Transform the API response to match TaskDetailModal expected format
+        const taskDetails = {
+          id: apiTasks[0].id,
+          title: apiTasks[0].title,
+          dueDate: apiTasks[0].dueDate,
+          status: apiTasks[0].status,
+          description: apiTasks[0].description || 'No description available',
+          priority: apiTasks[0].priority || 'Medium',
+          assignee: apiTasks[0].assignee || 'Unassigned',
+          project: apiTasks[0].project || 'Default Project',
+          activities: apiTasks[0].activities || [],
+          comments: apiTasks[0].comments || []
+        }
+        
+        return taskDetails
+      } catch (error) {
+        console.error('Failed to fetch task details:', error)
+        notification.error({
+          message: 'Failed to load task details',
+          description: error.message || 'Unable to fetch task information. Please try again.',
+          placement: 'topRight',
+          duration: 4
         })
-      }
-
-      return filtered
-    })
-
-    const getProjectTaskCount = (project) => {
-      if (project === 'All Projects') {
-        return tasks.value.length
-      }
-      return tasks.value.filter(task => task.project === project).length
-    }
-
-    // Theme-aware header style
-    const headerStyle = computed(() => {
-      const lightGradient = 'linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%)'
-      const darkGradient = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      
-      return {
-        marginBottom: '24px',
-        background: isDarkMode.value ? darkGradient : lightGradient
-      }
-    })
-
-    // Theme-aware illustration style
-    const illustrationStyle = computed(() => {
-      const baseStyle = {
-        width: '100px',
-        height: '100px',
-        objectFit: 'contain',
-        filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.1))'
-      }
-      
-      // Invert colors in dark mode to make black illustration white
-      if (isDarkMode.value) {
-        baseStyle.filter += ' invert(1) brightness(1.2)'
-      }
-      
-      return baseStyle
-    })
-
-    // Theme-aware text styles
-    const titleStyle = computed(() => ({
-      color: isDarkMode.value ? 'white' : '#1976d2',
-      marginBottom: '8px'
-    }))
-
-    const subtitleStyle = computed(() => ({
-      color: isDarkMode.value ? 'rgba(255,255,255,0.9)' : 'rgba(25,118,210,0.8)',
-      fontSize: '16px',
-      marginBottom: '12px'
-    }))
-
-    const dotStyle = computed(() => ({
-      width: '8px',
-      height: '8px',
-      background: isDarkMode.value ? 'rgba(255,255,255,0.8)' : 'rgba(25,118,210,0.8)',
-      borderRadius: '50%'
-    }))
-
-    const workspaceTextStyle = computed(() => ({
-      color: isDarkMode.value ? 'rgba(255,255,255,0.8)' : 'rgba(25,118,210,0.8)',
-      fontSize: '14px'
-    }))
-
-    const dateTextStyle = computed(() => ({
-      color: isDarkMode.value ? 'rgba(255,255,255,0.7)' : 'rgba(25,118,210,0.7)',
-      fontSize: '14px'
-    }))
-
-    const viewTaskDetails = (task) => {
-      selectedTask.value = task
-      showDetailModal.value = true
-    }
-
-    const editTask = (task) => {
-      editingTask.value = { ...task }
-      showEditTaskModal.value = true
-    }
-
-    const deleteTask = (task) => {
-      if (confirm('Are you sure you want to delete this task?')) {
-        tasks.value = tasks.value.filter(t => t.id !== task.id)
-        showSuccess('Task deleted', `"${task.title}" has been deleted successfully`)
-        closeDetailModal()
+        throw error
+      } finally {
+        isLoadingTaskDetails.value = false
       }
     }
 
-    const toggleTaskComplete = (updatedTask) => {
-      const index = tasks.value.findIndex(t => t.id === updatedTask.id)
-      if (index !== -1) {
-        tasks.value[index] = updatedTask
-        if (updatedTask.status === 'completed') {
-          showSuccess('Task completed', `"${updatedTask.title}" has been marked as completed! 🎉`)
-        } else {
-          showInfo('Task status updated', `"${updatedTask.title}" status changed to ${updatedTask.status}`)
-        }
+    // Handle task click
+    const handleTaskClick = async (task) => {
+      try {
+        const taskDetails = await fetchTaskDetails(task.id)
+        selectedTask.value = taskDetails
+        showDetailModal.value = true
+      } catch (error) {
+        // Error is already handled in fetchTaskDetails
       }
     }
 
-    const saveTask = (taskData) => {
-      if (taskData.id) {
-        // Update existing task
-        const index = tasks.value.findIndex(t => t.id === taskData.id)
-        if (index !== -1) {
-          tasks.value[index] = taskData
-          showSuccess('Task updated', `"${taskData.title}" has been updated successfully`)
-        }
-      } else {
-        // Add new task
-        const newTask = {
-          ...taskData,
-          id: Date.now(),
-          createdAt: new Date().toISOString()
-        }
-        tasks.value.push(newTask)
-        showSuccess('Task created', `"${taskData.title}" has been added successfully`)
-      }
-      closeTaskModal()
-      closeDetailModal()
-    }
-
+    // Handle modal close
     const closeDetailModal = () => {
       showDetailModal.value = false
       selectedTask.value = null
     }
 
-    const closeTaskModal = () => {
-      showAddTaskModal.value = false
-      showEditTaskModal.value = false
-      editingTask.value = null
+    // Handle task updated from modal
+    const handleTaskUpdated = (updatedTask) => {
+      const index = tasks.value.findIndex(t => t.id === updatedTask.id)
+      if (index !== -1) {
+        tasks.value[index] = {
+          ...tasks.value[index],
+          ...updatedTask
+        }
+        notification.success({
+          message: 'Task updated successfully',
+          description: `"${updatedTask.title}" has been updated.`,
+          placement: 'topRight',
+          duration: 3
+        })
+      }
+      closeDetailModal()
     }
+
+    // Handle task deleted from modal
+    const handleTaskDeleted = (deletedTask) => {
+      tasks.value = tasks.value.filter(t => t.id !== deletedTask.id)
+      notification.success({
+        message: 'Task deleted successfully',
+        description: `"${deletedTask.title}" has been deleted.`,
+        placement: 'topRight',
+        duration: 3
+      })
+      closeDetailModal()
+    }
+
+    // All tasks computed property with sorting
+    const allTasks = computed(() => {
+      const sortedTasks = [...tasks.value]
+      
+      if (sortBy.value === 'dueDate-asc') {
+        return sortedTasks.sort((a, b) => {
+          if (!a.dueDate) return 1
+          if (!b.dueDate) return -1
+          return new Date(a.dueDate) - new Date(b.dueDate)
+        })
+      } else if (sortBy.value === 'dueDate-desc') {
+        return sortedTasks.sort((a, b) => {
+          if (!a.dueDate) return 1
+          if (!b.dueDate) return -1
+          return new Date(b.dueDate) - new Date(a.dueDate)
+        })
+      } else if (sortBy.value === 'priority-asc') {
+        const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2, 'Lowest': 3 }
+        return sortedTasks.sort((a, b) => {
+          const aPriority = priorityOrder[a.priority] ?? 4
+          const bPriority = priorityOrder[b.priority] ?? 4
+          return aPriority - bPriority
+        })
+      } else if (sortBy.value === 'priority-desc') {
+        const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2, 'Lowest': 3 }
+        return sortedTasks.sort((a, b) => {
+          const aPriority = priorityOrder[a.priority] ?? 4
+          const bPriority = priorityOrder[b.priority] ?? 4
+          return bPriority - aPriority
+        })
+      }
+      
+      return sortedTasks
+    })
+
+    // Function to set sort option
+    const setSortBy = (newSortBy) => {
+      sortBy.value = newSortBy
+    }
+
+    // Function to toggle due date sort between ascending and descending
+    const toggleDueDateSort = () => {
+      if (sortBy.value === 'dueDate-asc') {
+        sortBy.value = 'dueDate-desc'
+      } else {
+        sortBy.value = 'dueDate-asc'
+      }
+    }
+
+    // Function to toggle priority sort between ascending and descending
+    const togglePrioritySort = () => {
+      if (sortBy.value === 'priority-asc') {
+        sortBy.value = 'priority-desc'
+      } else {
+        sortBy.value = 'priority-asc'
+      }
+    }
+
+    const currentUser = computed(() => {
+      const user = localStorage.getItem('user')
+      return user ? JSON.parse(user) : null
+    })
+
+    onMounted(async () => {
+      isLoading.value = true
+      try {
+        const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
+        const url = ownerId
+          ? `${baseUrl}/tasks?owner_id=${encodeURIComponent(ownerId)}`
+          : `${baseUrl}/tasks`
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const payload = await response.json()
+        const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
+        tasks.value = apiTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          dueDate: t.dueDate || null,
+          status: normalizeStatus(t.status)
+        }))
+      } catch (e) {
+        console.error('Failed to load tasks via service:', e)
+        tasks.value = []
+      } finally {
+        isLoading.value = false
+      }
+    })
 
     return {
       h,
-      tasks,
-      selectedProject,
-      selectedFilter,
+      allTasks,
+      isLoading,
       selectedTask,
-      editingTask,
       showDetailModal,
-      showAddTaskModal,
-      showEditTaskModal,
-      projects,
-      filteredTasks,
-      getProjectTaskCount,
-      headerStyle,
-      illustrationStyle,
-      titleStyle,
-      subtitleStyle,
-      dotStyle,
-      workspaceTextStyle,
-      dateTextStyle,
-      viewTaskDetails,
-      editTask,
-      deleteTask,
-      toggleTaskComplete,
-      saveTask,
+      isLoadingTaskDetails,
+      showTaskModal,
+      sortBy,
+      toggleDueDateSort,
+      togglePrioritySort,
+      handleTaskSaved,
+      handleTaskClick,
       closeDetailModal,
-      closeTaskModal
+      handleTaskUpdated,
+      handleTaskDeleted
     }
   }
 }
 </script>
+
+<style scoped>
+/* Custom scrollbar for better UX */
+:deep(.ant-list) {
+  scrollbar-width: thin;
+  scrollbar-color: #d9d9d9 transparent;
+}
+
+:deep(.ant-list::-webkit-scrollbar) {
+  width: 6px;
+}
+
+:deep(.ant-list::-webkit-scrollbar-track) {
+  background: transparent;
+}
+
+:deep(.ant-list::-webkit-scrollbar-thumb) {
+  background-color: #d9d9d9;
+  border-radius: 3px;
+}
+
+:deep(.ant-list::-webkit-scrollbar-thumb:hover) {
+  background-color: #bfbfbf;
+}
+
+/* Enhanced card hover effects */
+:deep(.ant-card) {
+  transition: all 0.2s ease;
+}
+
+:deep(.ant-card:hover) {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+/* Better spacing for nested cards */
+:deep(.ant-card .ant-card) {
+  margin-bottom: 8px;
+}
+
+:deep(.ant-card .ant-card:last-child) {
+  margin-bottom: 0;
+}
+</style>

@@ -1,116 +1,42 @@
 <template>
-  <a-card 
-    hoverable 
-    class="task-card cursor-pointer dark:bg-gray-800 dark:border-gray-700" 
+  <a-card
+    :hoverable="true"
+    size="small"
+    :style="{ width: '100%' }"
     @click="$emit('view-details', task)"
-    :body-style="{ padding: '16px' }"
+    :class="[
+      'cursor-pointer',
+      { 'urgent-task': isDueWithin24Hours(task.dueDate) && task.status !== 'Completed' }
+    ]"
   >
-    <div class="flex items-start justify-between">
-      <!-- Task content -->
-      <div class="flex-1 min-w-0">
-        <div class="flex items-center space-x-3 mb-2">
-          <a-checkbox
-            :checked="task.status === 'completed'"
-            @click.stop="toggleComplete"
-          />
-          <h3 
-            :class="[
-              'text-lg font-medium truncate',
-              task.status === 'completed' ? 'line-through text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'
-            ]"
-          >
-            {{ task.title }}
-          </h3>
-        </div>
-        
-        <p class="text-gray-600 dark:text-gray-300 text-sm mb-3 line-clamp-2">
-          {{ task.description }}
-        </p>
-
-        <!-- Task meta info -->
-        <a-space class="text-xs text-gray-500 dark:text-gray-400">
-          <span class="flex items-center">
-            <CalendarOutlined class="mr-1" />
-            {{ formatDate(task.dueDate) }}
-          </span>
-          
-          <span class="flex items-center">
-            <UserOutlined class="mr-1" />
-            {{ task.assignee }}
-          </span>
-        </a-space>
-      </div>
-
-      <!-- Task actions and status -->
-      <div class="flex flex-col items-end space-y-2 ml-4">
-        <!-- Status badge -->
+    <a-row justify="space-between" align="middle">
+      <a-col :span="16">
+        <a-typography-text strong>{{ task.title }}</a-typography-text>
+        <br>
+        <a-typography-text type="secondary" style="font-size: 12px;">
+          Due: {{ formatDate(task.dueDate) }}
+        </a-typography-text>
+      </a-col>
+      <a-col :span="8" style="text-align: right;">
         <a-tag :color="getStatusColor(task.status)">
           {{ getStatusText(task.status) }}
         </a-tag>
-
-        <!-- Priority indicator -->
-        <a-tag 
-          :color="getPriorityColor(task.priority)"
-          size="small"
-        >
-          {{ task.priority }}
-        </a-tag>
-
-        <!-- Action buttons -->
-        <div class="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <a-button
-            @click.stop="$emit('edit-task', task)"
-            type="text"
-            size="small"
-            :icon="h(EditOutlined)"
-            title="Edit task"
-          />
-          
-          <a-button
-            @click.stop="$emit('delete-task', task)"
-            type="text"
-            size="small"
-            danger
-            :icon="h(DeleteOutlined)"
-            title="Delete task"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- Project tag -->
-    <a-divider style="margin: 12px 0" />
-    <a-tag color="default">
-      {{ task.project }}
-    </a-tag>
+      </a-col>
+    </a-row>
   </a-card>
 </template>
 
 <script>
-import { h } from 'vue'
-import { CalendarOutlined, UserOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
-
 export default {
   name: 'TaskCard',
-  components: {
-    CalendarOutlined,
-    UserOutlined,
-    EditOutlined,
-    DeleteOutlined
-  },
   props: {
     task: {
       type: Object,
       required: true
     }
   },
-  emits: ['view-details', 'edit-task', 'delete-task', 'toggle-complete'],
+  emits: ['view-details'],
   setup(props, { emit }) {
-    const toggleComplete = () => {
-      const newStatus = props.task.status === 'completed' ? 'pending' : 'completed'
-      emit('toggle-complete', { ...props.task, status: newStatus })
-    }
-
     const formatDate = (dateString) => {
       const date = new Date(dateString)
       const now = new Date()
@@ -120,77 +46,58 @@ export default {
       if (diffDays < 0) {
         return `${Math.abs(diffDays)} days overdue`
       } else if (diffDays === 0) {
-        return 'Due today'
+        return 'today'
       } else if (diffDays === 1) {
-        return 'Due tomorrow'
+        return 'tomorrow'
       } else {
-        return `Due in ${diffDays} days`
+        return `in ${diffDays} days`
       }
     }
 
     const getStatusColor = (status) => {
       const colors = {
-        pending: 'orange',
-        'in-progress': 'blue',
-        completed: 'green',
-        overdue: 'red'
+        'Unassigned': 'default',
+        'Ongoing': 'blue',
+        'Under Review': 'gold',
+        'Completed': 'green'
       }
-      return colors[status] || colors.pending
+      return colors[status] || 'default'
     }
 
     const getStatusText = (status) => {
       const texts = {
-        pending: 'Pending',
-        'in-progress': 'In Progress',
-        completed: 'Completed',
-        overdue: 'Overdue'
+        'Unassigned': 'Unassigned',
+        'Ongoing': 'Ongoing',
+        'Under Review': 'Under Review',
+        'Completed': 'Completed'
       }
-      return texts[status] || 'Pending'
+      return texts[status] || 'Unassigned'
     }
 
-    const getPriorityColor = (priority) => {
-      const colors = {
-        low: 'green',
-        medium: 'orange',
-        high: 'red'
-      }
-      return colors[priority] || colors.medium
+    const isDueWithin24Hours = (dueDateString) => {
+      if (!dueDateString) return false
+      
+      const dueDate = new Date(dueDateString)
+      const now = new Date()
+      const timeDiff = dueDate.getTime() - now.getTime()
+      const hoursDiff = timeDiff / (1000 * 60 * 60) // Convert to hours
+      
+      // Return true if due within next 24 hours (and not overdue)
+      return hoursDiff >= 0 && hoursDiff <= 24
     }
 
     return {
-      h,
-      toggleComplete,
       formatDate,
       getStatusColor,
       getStatusText,
-      getPriorityColor
+      isDueWithin24Hours
     }
   }
 }
 </script>
 
 <style scoped>
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.card:hover .group-hover\:opacity-100 {
-  opacity: 1;
-}
-
-.task-card {
-  transition: all 0.3s ease;
-}
-
-.task-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.dark .task-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+.urgent-task {
+  border: 1px solid #ff4d4f !important;
 }
 </style>

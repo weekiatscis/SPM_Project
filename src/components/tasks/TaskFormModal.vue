@@ -36,8 +36,12 @@
               type="text"
               required
               class="input-field"
+              :class="{ 'border-red-500': errors.title }"
               placeholder="Enter task title"
             />
+            <div v-if="errors.title" class="mt-1 text-sm text-red-600">
+              {{ errors.title }}
+            </div>
           </div>
 
           <!-- Description -->
@@ -65,7 +69,11 @@
               type="date"
               required
               class="input-field"
+              :class="{ 'border-red-500': errors.dueDate }"
             />
+            <div v-if="errors.dueDate" class="mt-1 text-sm text-red-600">
+              {{ errors.dueDate }}
+            </div>
           </div>
 
           <!-- Status -->
@@ -82,6 +90,23 @@
               <option value="Ongoing">Ongoing</option>
               <option value="Under Review">Under Review</option>
               <option value="Completed">Completed</option>
+            </select>
+          </div>
+
+          <!-- Priority -->
+          <div>
+            <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
+              Priority
+            </label>
+            <select
+              id="priority"
+              v-model="form.priority"
+              class="input-field"
+            >
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+              <option value="Lowest">Lowest</option>
             </select>
           </div>
         </form>
@@ -129,7 +154,13 @@ export default {
       title: '',
       description: '',
       dueDate: '',
-      status: 'Unassigned'
+      status: 'Unassigned',
+      priority: 'Medium'
+    })
+
+    const errors = ref({
+      title: '',
+      dueDate: ''
     })
 
     const isLoading = ref(false)
@@ -147,15 +178,48 @@ export default {
           title: '',
           description: '',
           dueDate: '',
-          status: 'Unassigned'
+          status: 'Unassigned',
+          priority: 'Medium'
+        }
+        // Reset errors
+        errors.value = {
+          title: '',
+          dueDate: ''
         }
       }
     }, { immediate: true })
 
     const saveTask = async () => {
+      // Reset errors
+      errors.value = {
+        title: '',
+        dueDate: ''
+      }
+
       // Validate required fields
-      if (!form.value.title || !form.value.dueDate) {
-        alert('Please fill in all required fields (Title and Due Date)')
+      let hasErrors = false
+      
+      if (!form.value.title?.trim()) {
+        errors.value.title = 'Title is required'
+        hasErrors = true
+      }
+      
+      if (!form.value.dueDate) {
+        errors.value.dueDate = 'Due Date is required'
+        hasErrors = true
+      } else {
+        // Check if due date is in the past
+        const today = new Date()
+        today.setHours(0, 0, 0, 0) // Reset time to start of day for comparison
+        const selectedDate = new Date(form.value.dueDate)
+        
+        if (selectedDate < today) {
+          errors.value.dueDate = 'Please select a valid due date'
+          hasErrors = true
+        }
+      }
+
+      if (hasErrors) {
         return
       }
 
@@ -182,6 +246,7 @@ export default {
           description: form.value.description,
           due_date: form.value.dueDate,
           status: form.value.status,
+          priority: form.value.priority,
           owner_id: import.meta.env.VITE_TASK_OWNER_ID
         }
 
@@ -200,6 +265,21 @@ export default {
 
         const result = await response.json()
         
+        // Reset form after successful creation
+        form.value = {
+          title: '',
+          description: '',
+          dueDate: '',
+          status: 'Unassigned',
+          priority: 'Medium'
+        }
+        
+        // Reset errors
+        errors.value = {
+          title: '',
+          dueDate: ''
+        }
+        
         // Emit success with the created task data
         emit('save', result.task)
         
@@ -216,6 +296,7 @@ export default {
 
     return {
       form,
+      errors,
       isLoading,
       saveTask
     }
