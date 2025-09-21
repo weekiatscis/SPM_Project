@@ -7,14 +7,13 @@
     <!-- Logo/Brand -->
     <div class="p-4 border-b border-gray-200 dark:border-gray-700">
       <div class="flex items-center">
-        <div class="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-          <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-            <path fill-rule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
-          </svg>
+        <div class="flex items-center justify-center">
+          <img 
+            src="/taskio-logo.svg" 
+            alt="Taskio Logo" 
+            class="h-6 w-auto object-contain"
+          />
         </div>
-        <h1 v-if="!isCollapsed" class="ml-3 text-lg font-semibold text-gray-900 dark:text-gray-100">
-          TaskManager
-        </h1>
       </div>
     </div>
 
