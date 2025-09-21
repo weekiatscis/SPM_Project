@@ -95,7 +95,8 @@ export default {
 
     const navigationItems = computed(() => {
       return [
-        { name: 'Home', path: '/home', icon: 'HomeIcon' }
+        { name: 'Home', path: '/home', icon: 'HomeIcon' },
+        { name: 'Projects', path: '/projects', icon: 'ProjectIcon' }
       ]
     })
 

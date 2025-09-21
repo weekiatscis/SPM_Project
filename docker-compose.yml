@@ -20,3 +20,26 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
     command: ["python","createTask.py"]
+
+  create-project:
+    build:
+      context: .
+      dockerfile: ./src/microservices/projects/Dockerfile
+    ports:
+      - "8082:8082"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    command: ["python","createProject.py"]
+
+  get-project:
+    build:
+      context: .
+      dockerfile: ./src/microservices/projects/Dockerfile
+    ports:
+      - "8083:8083"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    command: ["python","getProject.py"]
+
