@@ -226,21 +226,40 @@ export default {
       isLoading.value = true
 
       try {
-        // If editing existing task, emit to parent (update functionality to be implemented)
+        // If editing existing task, call update endpoint
         if (props.task?.id) {
-          const taskData = {
-            ...form.value,
-            id: props.task.id,
-            dueDate: new Date(form.value.dueDate).toISOString(),
-            activities: props.task?.activities || [],
-            comments: props.task?.comments || []
+          const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+          const updatePayload = {
+            title: form.value.title,
+            description: form.value.description,
+            due_date: form.value.dueDate,
+            status: form.value.status,
+            priority: form.value.priority
           }
-          emit('save', taskData)
+
+          const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updatePayload)
+          })
+
+          if (!response.ok) {
+            const errorData = await response.json()
+            throw new Error(errorData.error || `HTTP ${response.status}`)
+          }
+
+          const result = await response.json()
+          
+          // Emit success with the updated task data
+          emit('save', result.task)
+          console.log('Task updated successfully:', result.task)
           return
         }
 
-        // For new task, call createTask microservice
-        const createTaskUrl = import.meta.env.VITE_CREATE_TASK_SERVICE_URL || 'http://localhost:8081'
+        // For new task, call unified task service
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const payload = {
           title: form.value.title,
           description: form.value.description,
@@ -250,7 +269,7 @@ export default {
           owner_id: import.meta.env.VITE_TASK_OWNER_ID
         }
 
-        const response = await fetch(`${createTaskUrl}/tasks`, {
+        const response = await fetch(`${taskServiceUrl}/tasks`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

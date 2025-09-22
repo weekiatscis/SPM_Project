@@ -5,7 +5,7 @@
       <a-row :gutter="24" align="middle">
         <a-col :span="16">
           <a-typography-title :level="2" :style="titleStyle">
-            {{ getGreeting() }}, {{ currentUser?.name }}! 👋
+            {{ getGreeting() }}, {{ currentUser?.name || 'User' }}! 👋
           </a-typography-title>
           <a-typography-paragraph :style="subtitleStyle">
             {{ getMotivationalMessage() }}
@@ -40,6 +40,7 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import { useTheme } from '../composables/useTheme.js'
+import { useUser } from '../composables/useUser.js'
 import TaskList from '../components/tasks/TaskList.vue'
 
 export default {
@@ -50,11 +51,9 @@ export default {
   setup() {
     const tasks = ref([])
     const { isDarkMode } = useTheme()
-
-    const currentUser = computed(() => {
-      const user = localStorage.getItem('user')
-      return user ? JSON.parse(user) : null
-    })
+    
+    // Use the user composable to get user data from microservice
+    const { user: currentUser, loading, error } = useUser()
 
     const stats = computed(() => {
       const total = tasks.value.length

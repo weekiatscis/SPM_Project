@@ -1,5 +1,5 @@
 services:
-  get-task:
+  task-service:
     build:
       context: .
       dockerfile: ./src/microservices/tasks/Dockerfile
@@ -8,18 +8,14 @@ services:
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-    command: ["python","getTask.py"]
-
-  create-task:
-    build:
-      context: .
-      dockerfile: ./src/microservices/tasks/Dockerfile
-    ports:
-      - "8081:8081"
-    environment:
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-    command: ["python","createTask.py"]
+      - PORT=8080
+    command: ["python", "task_service.py"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   create-project:
     build:
@@ -42,4 +38,23 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
     command: ["python","getProject.py"]
+
+  user-service:
+    build:
+      context: .
+      dockerfile: ./src/microservices/users/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - VITE_TASK_OWNER_ID=${VITE_TASK_OWNER_ID}
+      - PORT=8081
+    command: ["python", "user_service.py"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 

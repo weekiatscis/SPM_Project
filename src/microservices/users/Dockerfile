@@ -7,7 +7,7 @@ COPY requirements.txt .
 
 RUN pip install -r requirements.txt
 
-COPY src/microservices/tasks/ .
+COPY src/microservices/users/ .
 
-# Expose port for unified task service
-EXPOSE 8080
+# Expose port for user service
+EXPOSE 8081

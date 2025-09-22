@@ -43,11 +43,11 @@
           >
             <div class="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center">
               <span class="text-white text-sm font-medium">
-                {{ currentUser?.name?.charAt(0).toUpperCase() }}
+                {{ user?.name?.charAt(0).toUpperCase() || 'U' }}
               </span>
             </div>
             <span class="hidden sm:block text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ currentUser?.name }}
+              {{ user?.name || 'Loading...' }}
             </span>
             <ChevronDownIcon size="sm" color="gray" />
           </button>
@@ -78,8 +78,9 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { MenuIcon, SearchIcon, BellIcon, ChevronDownIcon } from '../components/icons/index.js'
+import { useUser } from '../composables/useUser.js'
 
 export default {
   name: 'Topbar',
@@ -94,11 +95,9 @@ export default {
     const searchQuery = ref('')
     const isProfileMenuOpen = ref(false)
     const profileDropdown = ref(null)
-
-    const currentUser = computed(() => {
-      const user = localStorage.getItem('user')
-      return user ? JSON.parse(user) : null
-    })
+    
+    // Use the user composable to get user data
+    const { user, loading, error } = useUser()
 
     const toggleProfileMenu = () => {
       isProfileMenuOpen.value = !isProfileMenuOpen.value
@@ -134,7 +133,9 @@ export default {
       searchQuery,
       isProfileMenuOpen,
       profileDropdown,
-      currentUser,
+      user,
+      loading,
+      error,
       toggleProfileMenu,
       handleSearch,
       logout

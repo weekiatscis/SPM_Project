@@ -12,8 +12,16 @@
     :task="selectedTask"
     :isOpen="showDetailModal"
     @close="closeDetailModal"
-    @save="handleTaskUpdated"
+    @edit="handleTaskEdit"
     @delete="handleTaskDeleted"
+  />
+
+  <!-- Task Form Modal for editing -->
+  <TaskFormModal 
+    :task="editingTask"
+    :isOpen="showEditModal" 
+    @close="closeEditModal" 
+    @save="handleTaskUpdated"
   />
 
   <div>
@@ -93,6 +101,10 @@ export default {
 
     // Modal state for creating task
     const showTaskModal = ref(false)
+
+    // Modal state for editing task
+    const showEditModal = ref(false)
+    const editingTask = ref(null)
 
     // Helpers: DB <-> UI mapping
     const normalizeStatus = (value) => value
@@ -194,6 +206,19 @@ export default {
       selectedTask.value = null
     }
 
+    // Handle task edit
+    const handleTaskEdit = (task) => {
+      editingTask.value = task
+      showEditModal.value = true
+      showDetailModal.value = false
+    }
+
+    // Handle edit modal close
+    const closeEditModal = () => {
+      showEditModal.value = false
+      editingTask.value = null
+    }
+
     // Handle task updated from modal
     const handleTaskUpdated = (updatedTask) => {
       const index = tasks.value.findIndex(t => t.id === updatedTask.id)
@@ -210,6 +235,7 @@ export default {
         })
       }
       closeDetailModal()
+      closeEditModal()
     }
 
     // Handle task deleted from modal
@@ -321,12 +347,16 @@ export default {
       showDetailModal,
       isLoadingTaskDetails,
       showTaskModal,
+      showEditModal,
+      editingTask,
       sortBy,
       toggleDueDateSort,
       togglePrioritySort,
       handleTaskSaved,
       handleTaskClick,
       closeDetailModal,
+      handleTaskEdit,
+      closeEditModal,
       handleTaskUpdated,
       handleTaskDeleted
     }

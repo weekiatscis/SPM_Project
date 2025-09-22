@@ -54,8 +54,8 @@
           <UserIcon size="sm" color="gray" />
         </div>
         <div v-if="!isCollapsed" class="ml-3">
-          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ currentUser?.name }}</p>
-          <p class="text-xs text-gray-500 dark:text-gray-400 capitalize">{{ currentUser?.role }}</p>
+          <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ user?.name || 'Loading...' }}</p>
+          <p class="text-xs text-gray-500 dark:text-gray-400 capitalize">{{ user?.role || 'Role' }}</p>
         </div>
       </div>
     </div>
@@ -66,6 +66,7 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { HomeIcon, TaskIcon, DashboardIcon, ProjectIcon, SettingsIcon, UserIcon, LogoutIcon } from '../components/icons/index.js'
+import { useUser } from '../composables/useUser.js'
 
 export default {
   name: 'Sidebar',
@@ -86,11 +87,9 @@ export default {
   },
   setup() {
     const router = useRouter()
-
-    const currentUser = computed(() => {
-      const user = localStorage.getItem('user')
-      return user ? JSON.parse(user) : null
-    })
+    
+    // Use the user composable to get user data
+    const { user, loading, error } = useUser()
 
     const navigationItems = computed(() => {
       return [
@@ -110,7 +109,9 @@ export default {
     }
 
     return {
-      currentUser,
+      user,
+      loading,
+      error,
       navigationItems,
       handleNavigation,
       logout
