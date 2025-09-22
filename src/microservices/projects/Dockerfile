@@ -10,4 +10,4 @@ RUN pip install -r requirements.txt
 COPY src/microservices/projects/ .
 
 # Expose port for project service
-EXPOSE 8082
+EXPOSE 8082 8083

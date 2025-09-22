@@ -44,7 +44,7 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
 def get_projects():
     try:
         limit_param = request.args.get("limit", default=None, type=int)
-        owner_id = request.args.get("owner_id", default=None, type=str)
+        created_by = request.args.get("created_by", default=None, type=str)
         project_id = request.args.get("project_id", default=None, type=str)
 
         query = (
@@ -56,8 +56,8 @@ def get_projects():
 
         if limit_param:
             query = query.limit(limit_param)
-        if owner_id:
-            query = query.eq("created_by", owner_id)  # Use created_by instead of owner_id
+        if created_by:
+            query = query.eq("created_by", created_by)
         if project_id:
             query = query.eq("project_id", project_id)
 
@@ -71,4 +71,5 @@ def get_projects():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8083)
+    port = int(os.getenv("PORT", 8083))
+    app.run(host="0.0.0.0", port=port)

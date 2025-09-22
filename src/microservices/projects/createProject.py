@@ -61,4 +61,5 @@ def create_project():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8082)
+    port = int(os.getenv("PORT", 8082))
+    app.run(host="0.0.0.0", port=port)

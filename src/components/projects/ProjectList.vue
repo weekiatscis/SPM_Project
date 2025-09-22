@@ -215,7 +215,7 @@ export default {
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8083'
         const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
         const url = ownerId
-          ? `${baseUrl}/projects?owner_id=${encodeURIComponent(ownerId)}`
+          ? `${baseUrl}/projects?created_by=${encodeURIComponent(ownerId)}`
           : `${baseUrl}/projects`
 
         const response = await fetch(url)
