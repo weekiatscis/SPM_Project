@@ -168,10 +168,16 @@ export default {
           status: apiTasks[0].status,
           description: apiTasks[0].description || 'No description available',
           priority: apiTasks[0].priority || 'Medium',
+          owner_id: apiTasks[0].owner_id || '',
           assignee: apiTasks[0].assignee || 'Unassigned',
+          project_id: apiTasks[0].project_id || '',
           project: apiTasks[0].project || 'Default Project',
+          collaborators: apiTasks[0].collaborators || '[]',
+          subtasks: apiTasks[0].subtasks || '[]',
           activities: apiTasks[0].activities || [],
-          comments: apiTasks[0].comments || []
+          comments: apiTasks[0].comments || [],
+          created_at: apiTasks[0].created_at,
+          updated_at: apiTasks[0].updated_at
         }
         
         return taskDetails

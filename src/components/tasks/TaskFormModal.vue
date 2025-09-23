@@ -109,6 +109,101 @@
               <option value="Lowest">Lowest</option>
             </select>
           </div>
+
+          <!-- Owner / Assignee -->
+          <div>
+            <label for="owner" class="block text-sm font-medium text-gray-700 mb-1">
+              Owner / Assignee
+            </label>
+            <select
+              id="owner"
+              v-model="form.owner_id"
+              class="input-field"
+              :disabled="isLoadingUsers"
+            >
+              <option value="">{{ isLoadingUsers ? 'Loading users...' : 'Select an owner' }}</option>
+              <option v-for="user in users" :key="user.id" :value="user.id">
+                {{ user.name }}
+              </option>
+            </select>
+            <div v-if="isLoadingUsers" class="mt-1 text-xs text-gray-500">Loading users from database...</div>
+          </div>
+
+          <!-- Collaborators / Invited Members -->
+          <div>
+            <label for="collaborators" class="block text-sm font-medium text-gray-700 mb-1">
+              Collaborators / Invited Members
+            </label>
+            <select
+              id="collaborators"
+              v-model="form.collaborators"
+              multiple
+              class="input-field"
+              :disabled="isLoadingUsers"
+            >
+              <option v-if="isLoadingUsers" value="" disabled>Loading users...</option>
+              <option v-for="user in users" :key="user.id" :value="user.id">
+                {{ user.name }}
+              </option>
+            </select>
+            <div class="mt-1 text-xs text-gray-500">
+              {{ isLoadingUsers ? 'Loading users from database...' : 'Hold Ctrl/Cmd to select multiple' }}
+            </div>
+          </div>
+
+          <!-- Parent Project / Group -->
+          <div>
+            <label for="project" class="block text-sm font-medium text-gray-700 mb-1">
+              Parent Project / Group
+            </label>
+            <select
+              id="project"
+              v-model="form.project_id"
+              class="input-field"
+            >
+              <option value="">No parent project</option>
+              <option v-for="project in projects" :key="project.id" :value="project.id">
+                {{ project.title }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Subtasks -->
+          <div>
+            <div class="flex justify-between items-center">
+              <label class="block text-sm font-medium text-gray-700">
+                Subtasks
+              </label>
+              <button 
+                type="button" 
+                @click="addSubtask" 
+                class="text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                + Add subtask
+              </button>
+            </div>
+            
+            <div v-for="(subtask, index) in form.subtasks" :key="index" class="mt-2 flex items-center">
+              <input
+                v-model="subtask.title"
+                type="text"
+                class="input-field flex-grow"
+                placeholder="Enter subtask"
+              />
+              <button 
+                type="button" 
+                @click="removeSubtask(index)" 
+                class="ml-2 text-red-600 hover:text-red-800"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </div>
+            <div v-if="form.subtasks.length === 0" class="mt-2 text-sm text-gray-500">
+              No subtasks added
+            </div>
+          </div>
         </form>
 
         <!-- Footer -->
@@ -134,7 +229,7 @@
 </template>
 
 <script>
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 
 export default {
   name: 'TaskFormModal',
@@ -155,22 +250,88 @@ export default {
       description: '',
       dueDate: '',
       status: 'Unassigned',
-      priority: 'Medium'
+      priority: 'Medium',
+      owner_id: '',
+      collaborators: [],
+      project_id: '',
+      subtasks: []
     })
 
     const errors = ref({
       title: '',
       dueDate: ''
     })
+    
+    // Users will be fetched from the database
+    const users = ref([])
+    const isLoadingUsers = ref(false)
+    
+    // Projects will continue to use dummy data
+    const projects = ref([
+      { id: 'a42ce90d-0125-4780-8ab0-41f73a7d2d86', title: 'Marketing Campaign' },
+      { id: 'b9e5328b-8c4f-4ae4-b6e5-ffedd03c4123', title: 'Website Redesign' },
+      { id: 'c8f1a451-6b90-4a5d-8f1b-a940c2374e58', title: 'Mobile App Development' }
+    ])
 
     const isLoading = ref(false)
+    
+    // Subtask management methods
+    const addSubtask = () => {
+      form.value.subtasks.push({ title: '', completed: false })
+    }
+    
+    const removeSubtask = (index) => {
+      form.value.subtasks.splice(index, 1)
+    }
+    
+    // UUID validation function
+    const isValidUUID = (uuid) => {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      return uuid && uuidRegex.test(uuid);
+    }
 
     // Watch for task changes to populate form
     watch(() => props.task, (newTask) => {
       if (newTask) {
+        // Parse collaborators and subtasks if they're JSON strings
+        let collaborators = [];
+        let subtasks = [];
+        
+        if (newTask.collaborators) {
+          try {
+            // Check if it's a string that needs parsing
+            if (typeof newTask.collaborators === 'string') {
+              collaborators = JSON.parse(newTask.collaborators);
+            } else {
+              collaborators = newTask.collaborators;
+            }
+          } catch (e) {
+            console.error("Failed to parse collaborators:", e);
+            collaborators = [];
+          }
+        }
+        
+        if (newTask.subtasks) {
+          try {
+            // Check if it's a string that needs parsing
+            if (typeof newTask.subtasks === 'string') {
+              subtasks = JSON.parse(newTask.subtasks);
+            } else {
+              subtasks = newTask.subtasks;
+            }
+          } catch (e) {
+            console.error("Failed to parse subtasks:", e);
+            subtasks = [];
+          }
+        }
+        
         form.value = {
           ...newTask,
-          dueDate: newTask.dueDate ? new Date(newTask.dueDate).toISOString().split('T')[0] : ''
+          dueDate: newTask.dueDate ? new Date(newTask.dueDate).toISOString().split('T')[0] : '',
+          owner_id: newTask.owner_id || '',
+          collaborators: collaborators,
+          project_id: newTask.project_id || '',
+          subtasks: subtasks
         }
       } else {
         // Reset form for new task
@@ -179,7 +340,11 @@ export default {
           description: '',
           dueDate: '',
           status: 'Unassigned',
-          priority: 'Medium'
+          priority: 'Medium',
+          owner_id: '',
+          collaborators: [],
+          project_id: '',
+          subtasks: []
         }
         // Reset errors
         errors.value = {
@@ -229,12 +394,31 @@ export default {
         // If editing existing task, call update endpoint
         if (props.task?.id) {
           const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+          // Process the payload to ensure proper format for update
+          let ownerId = form.value.owner_id;
+          // If owner_id is not a valid UUID, use null
+          if (!isValidUUID(ownerId)) {
+            ownerId = null;
+          }
+          
+          // Ensure collaborators is a properly formatted JSON string
+          const processedCollaborators = form.value.collaborators && form.value.collaborators.length > 0 
+            ? JSON.stringify(form.value.collaborators.filter(id => isValidUUID(id))) 
+            : JSON.stringify([]);
+            
+          // Format subtasks as JSON string
+          const processedSubtasks = JSON.stringify(form.value.subtasks || []);
+          
           const updatePayload = {
             title: form.value.title,
             description: form.value.description,
             due_date: form.value.dueDate,
             status: form.value.status,
-            priority: form.value.priority
+            priority: form.value.priority,
+            owner_id: ownerId,
+            collaborators: processedCollaborators,
+            project_id: form.value.project_id && isValidUUID(form.value.project_id) ? form.value.project_id : null,
+            subtasks: processedSubtasks
           }
 
           const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}`, {
@@ -260,13 +444,32 @@ export default {
 
         // For new task, call unified task service
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        
+        // Process the payload to ensure proper format
+        let ownerId = form.value.owner_id;
+        // If owner_id is empty or not a valid UUID, use the default or null
+        if (!ownerId || !isValidUUID(ownerId)) {
+          ownerId = import.meta.env.VITE_TASK_OWNER_ID || null;
+        }
+        
+        // Ensure collaborators is a properly formatted array
+        const processedCollaborators = form.value.collaborators && form.value.collaborators.length > 0 
+          ? JSON.stringify(form.value.collaborators.filter(id => isValidUUID(id))) 
+          : JSON.stringify([]);
+          
+        // Format subtasks as JSON
+        const processedSubtasks = JSON.stringify(form.value.subtasks || []);
+        
         const payload = {
           title: form.value.title,
           description: form.value.description,
           due_date: form.value.dueDate,
           status: form.value.status,
           priority: form.value.priority,
-          owner_id: import.meta.env.VITE_TASK_OWNER_ID
+          owner_id: ownerId,
+          collaborators: processedCollaborators,
+          project_id: form.value.project_id && isValidUUID(form.value.project_id) ? form.value.project_id : null,
+          subtasks: processedSubtasks
         }
 
         const response = await fetch(`${taskServiceUrl}/tasks`, {
@@ -290,7 +493,11 @@ export default {
           description: '',
           dueDate: '',
           status: 'Unassigned',
-          priority: 'Medium'
+          priority: 'Medium',
+          owner_id: '',
+          collaborators: [],
+          project_id: '',
+          subtasks: []
         }
         
         // Reset errors
@@ -313,10 +520,63 @@ export default {
       }
     }
 
+    // Fetch users from the database
+    const fetchUsers = async () => {
+      isLoadingUsers.value = true
+      try {
+        const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
+        const response = await fetch(`${userServiceUrl}/users`)
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`)
+        }
+        
+        const data = await response.json()
+        if (Array.isArray(data.users)) {
+          users.value = data.users.map(user => ({
+            id: user.user_id,  // Changed from user.id to user.user_id to match the backend field
+            name: user.name || user.email || user.user_id
+          }))
+          console.log('Fetched users:', users.value)
+        } else {
+          console.error('Expected users array in response, got:', data)
+          // Fall back to default users if API response format is unexpected
+          fallbackToDefaultUsers()
+        }
+      } catch (error) {
+        console.error('Failed to fetch users:', error)
+        // Fall back to default users if there's an error
+        fallbackToDefaultUsers()
+      } finally {
+        isLoadingUsers.value = false
+      }
+    }
+    
+    // Fallback function to use default users if the API fails
+    const fallbackToDefaultUsers = () => {
+      console.warn('Using fallback user data')
+      users.value = [
+        { id: '3fa85f64-5717-4562-b3fc-2c963f66afa6', name: 'John Doe' },
+        { id: '5dc8784a-f695-4060-9a9a-0a375661a6e1', name: 'Jane Smith' },
+        { id: '2abf3fc3-3b5a-49c5-88f5-85dbd5a3f2cd', name: 'Mike Johnson' },
+        { id: '612c8e02-9d1d-4a11-9f4f-49f8ae5aba97', name: 'Wee Kiat' }
+      ]
+    }
+    
+    // Fetch users when component is mounted
+    onMounted(() => {
+      fetchUsers()
+    })
+
     return {
       form,
       errors,
       isLoading,
+      isLoadingUsers,
+      users,
+      projects,
+      addSubtask,
+      removeSubtask,
       saveTask
     }
   }
