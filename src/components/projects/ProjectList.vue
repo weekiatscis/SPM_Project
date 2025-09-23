@@ -6,15 +6,6 @@
     @save="handleProjectSaved"
   />
 
-  <!-- Project Detail Modal -->
-  <ProjectDetailModal
-    v-if="selectedProject"
-    :project="selectedProject"
-    :isOpen="showDetailModal"
-    @close="closeDetailModal"
-    @save="handleProjectUpdated"
-    @delete="handleProjectDeleted"
-  />
 
   <div>
     <!-- Projects Section -->
@@ -77,11 +68,11 @@
 
 <script>
 import { ref, computed, onMounted, h } from 'vue'
+import { useRouter } from 'vue-router'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { notification } from 'ant-design-vue'
 import { useTheme } from '../../composables/useTheme.js'
 import ProjectFormModal from './ProjectFormModal.vue'
-import ProjectDetailModal from './ProjectDetailModal.vue'
 import ProjectCard from './ProjectCard.vue'
 
 export default {
@@ -89,16 +80,13 @@ export default {
   components: {
     PlusOutlined,
     ProjectFormModal,
-    ProjectDetailModal,
     ProjectCard
   },
   emits: ['create-project'],
   setup(props, { emit }) {
+    const router = useRouter()
     const projects = ref([])
     const isLoading = ref(false)
-    const selectedProject = ref(null)
-    const showDetailModal = ref(false)
-    const isLoadingProjectDetails = ref(false)
     const sortBy = ref('created_at-desc')
     const { isDarkMode } = useTheme()
 
@@ -132,47 +120,11 @@ export default {
       showProjectModal.value = false
     }
 
-    // Handle project click
+    // Handle project click - navigate to project details page
     const handleProjectClick = async (project) => {
-      selectedProject.value = project
-      showDetailModal.value = true
+      router.push(`/projects/${project.project_id}`)
     }
 
-    // Handle modal close
-    const closeDetailModal = () => {
-      showDetailModal.value = false
-      selectedProject.value = null
-    }
-
-    // Handle project updated from modal
-    const handleProjectUpdated = (updatedProject) => {
-      const index = projects.value.findIndex(p => p.project_id === updatedProject.project_id)
-      if (index !== -1) {
-        projects.value[index] = {
-          ...projects.value[index],
-          ...updatedProject
-        }
-        notification.success({
-          message: 'Project updated successfully',
-          description: `"${updatedProject.project_name}" has been updated.`,
-          placement: 'topRight',
-          duration: 3
-        })
-      }
-      closeDetailModal()
-    }
-
-    // Handle project deleted from modal
-    const handleProjectDeleted = (deletedProject) => {
-      projects.value = projects.value.filter(p => p.project_id !== deletedProject.project_id)
-      notification.success({
-        message: 'Project deleted successfully',
-        description: `"${deletedProject.project_name}" has been deleted.`,
-        placement: 'topRight',
-        duration: 3
-      })
-      closeDetailModal()
-    }
 
     // All projects computed property with sorting
     const allProjects = computed(() => {
@@ -250,18 +202,12 @@ export default {
       h,
       allProjects,
       isLoading,
-      selectedProject,
-      showDetailModal,
-      isLoadingProjectDetails,
       showProjectModal,
       sortBy,
       toggleDateSort,
       toggleStatusSort,
       handleProjectSaved,
-      handleProjectClick,
-      closeDetailModal,
-      handleProjectUpdated,
-      handleProjectDeleted
+      handleProjectClick
     }
   }
 }

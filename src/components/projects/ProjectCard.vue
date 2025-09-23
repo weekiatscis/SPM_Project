@@ -21,9 +21,12 @@
             flexShrink: 0
           }"
         ></div>
-        <a-typography-text strong style="font-size: 14px;" :ellipsis="true">
-          {{ project.project_name }}
-        </a-typography-text>
+        <a-typography-text
+          strong
+          style="font-size: 14px;"
+          :ellipsis="true"
+          :content="project.project_name"
+        />
       </div>
     </template>
 
