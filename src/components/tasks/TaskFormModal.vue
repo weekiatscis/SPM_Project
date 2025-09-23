@@ -4,8 +4,8 @@
       <!-- Background overlay -->
       <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="$emit('close')"></div>
 
-      <!-- Modal panel -->
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+      <!-- Modal panel - widened -->
+      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
         <!-- Header -->
         <div class="bg-white px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
@@ -76,44 +76,47 @@
             </div>
           </div>
 
-          <!-- Status -->
-          <div>
-            <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
-              Status
-            </label>
-            <select
-              id="status"
-              v-model="form.status"
-              class="input-field"
-            >
-              <option value="Unassigned">Unassigned</option>
-              <option value="Ongoing">Ongoing</option>
-              <option value="Under Review">Under Review</option>
-              <option value="Completed">Completed</option>
-            </select>
+          <!-- Status and Priority in a single row -->
+          <div class="grid grid-cols-2 gap-4">
+            <!-- Status -->
+            <div>
+              <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                id="status"
+                v-model="form.status"
+                class="input-field w-full"
+              >
+                <option value="Unassigned">Unassigned</option>
+                <option value="Ongoing">Ongoing</option>
+                <option value="Under Review">Under Review</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
+
+            <!-- Priority -->
+            <div>
+              <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
+                Priority
+              </label>
+              <select
+                id="priority"
+                v-model="form.priority"
+                class="input-field w-full"
+              >
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+                <option value="Lowest">Lowest</option>
+              </select>
+            </div>
           </div>
 
-          <!-- Priority -->
-          <div>
-            <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
-              Priority
-            </label>
-            <select
-              id="priority"
-              v-model="form.priority"
-              class="input-field"
-            >
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-              <option value="Lowest">Lowest</option>
-            </select>
-          </div>
-
-          <!-- Owner / Assignee -->
+          <!-- Owner -->
           <div>
             <label for="owner" class="block text-sm font-medium text-gray-700 mb-1">
-              Owner / Assignee
+              Owner
             </label>
             <select
               id="owner"
