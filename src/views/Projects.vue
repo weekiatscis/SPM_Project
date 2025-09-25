@@ -1,5 +1,5 @@
 <template>
-  <div style="max-width: 1600px; margin: 0 auto; padding: 24px;">
+  <div style="max-width: 1600px; margin: 0 auto; padding: 0px;">
     <!-- Welcome Header -->
     <a-card :bordered="false" :style="headerStyle">
       <a-row :gutter="24" align="middle">
