@@ -1,6 +1,7 @@
 import os
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
+import json
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -35,6 +36,11 @@ class TaskUpdate(BaseModel):
     status: Optional[str] = None
 
 
+# Pydantic model for rescheduling a task
+class RescheduleTask(BaseModel):
+    actor_id: str
+    new_due_date: str
+
 # Helper functions
 def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
     """Convert database row to API response format"""
@@ -61,6 +67,48 @@ def get_task_by_id(task_id: str) -> Optional[Dict[str, Any]]:
             return response.data[0]
         return None
     except Exception:
+        return None
+
+def to_yyyy_mm_dd(val):
+    if val is None: return None
+    if hasattr(val, "isoformat"):  # date/datetime
+        return val.isoformat()[:10]
+    s = str(val)
+    return s[:10]
+
+def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": row.get("task_id") or row.get("id"),
+        "title": row.get("title"),
+        "description": row.get("description", ""),
+        "dueDate": to_yyyy_mm_dd(row.get("due_date")),  # normalize for FE
+        "status": row.get("status"),
+        "priority": row.get("priority"),
+        "owner_id": row.get("owner_id"),
+        "project_id": row.get("project_id"),
+        "collaborators": row.get("collaborators") or [],
+        "subtasks": row.get("subtasks") or [],
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at", row.get("created_at")),
+    }
+
+def log_task_change(task_id: str, action: str, field: str, user_id: str,
+                    old_value: Any, new_value: Any) -> Optional[Dict[str, Any]]:
+    try:
+        log_data = {
+            "task_id": task_id,
+            "action": action,
+            "field": field,
+            "user_id": user_id,
+            # send JSON objects, not strings, if the column is json/jsonb
+            "old_value": {field: old_value} if not isinstance(old_value, (dict, list)) else old_value,
+            "new_value": {field: new_value} if not isinstance(new_value, (dict, list)) else new_value,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        response = supabase.table("task_log").insert(log_data).execute()
+        return (response.data or [None])[0]
+    except Exception as exc:
+        print(f"Failed to log task change: {exc}")
         return None
 
 
@@ -169,7 +217,31 @@ def create_task():
     except Exception as exc:
         return jsonify({"error": f"Failed to create task: {str(exc)}"}), 500
 
+@app.route("/tasks/<task_id>/logs", methods=["GET"])
+def get_task_logs(task_id: str):
+    """
+    GET /tasks/<task_id>/logs - Get change logs for a specific task
+    """
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
 
+        # Query task_log table for this task
+        response = supabase.table("task_log").select(
+            "log_id,task_id,action,user_id,old_value,new_value,created_at,field"
+        ).eq("task_id", task_id).order("created_at", desc=False).execute()
+        logs = response.data or []
+
+        # Format logs for frontend (stringify old/new if needed)
+        for log in logs:
+            # old_value and new_value are JSON, convert to string for display
+            log["old_value"] = str(log.get("old_value", ""))
+            log["new_value"] = str(log.get("new_value", ""))
+
+        return jsonify({"logs": logs, "count": len(logs)}), 200
+    except Exception as exc:
+        return jsonify({"error": f"Failed to retrieve logs: {str(exc)}"}), 500
+    
 @app.route("/tasks/<task_id>", methods=["PUT"])
 def update_task(task_id: str):
     """
@@ -207,6 +279,72 @@ def update_task(task_id: str):
 
     except Exception as exc:
         return jsonify({"error": f"Failed to update task: {str(exc)}"}), 500
+
+@app.route("/tasks/<task_id>/reschedule", methods=["PATCH"])
+def reschedule_task(task_id: str):
+    """
+    PATCH /tasks/<task_id>/reschedule - Update task due date
+    """
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        body = request.get_json(silent=True) or {}
+        try:
+            reschedule_data = RescheduleTask(**body)
+        except ValidationError as e:
+            return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
+
+        # Check if task exists
+        existing_task = get_task_by_id(task_id)
+        if not existing_task:
+            return jsonify({"error": "Task not found"}), 404
+
+        # Check if user has permission to reschedule
+        if existing_task.get("owner_id") != reschedule_data.actor_id:
+            return jsonify({"error": "Only the task owner can reschedule the due date"}), 403
+
+        # Validate new due date format
+        try:
+            new_date = datetime.strptime(reschedule_data.new_due_date, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+        
+        # Check if date is not in the past
+        if new_date < datetime.now(timezone.utc).date():
+            return jsonify({"error": "Due date cannot be in the past"}), 400
+
+        # Store old value for logging
+        old_due_date = existing_task.get("due_date")
+
+        # Update the task
+        update_data = {"due_date": reschedule_data.new_due_date}
+        response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
+        
+        if not response.data:
+            return jsonify({"error": "Failed to update due date"}), 500
+
+        # Get the updated task
+        updated_task = map_db_row_to_api(response.data[0])
+
+        # Log the change
+        log_entry = log_task_change(
+            task_id=task_id,
+            action="reschedule",
+            field="due_date",
+            user_id=reschedule_data.actor_id,
+            old_value=old_due_date,
+            new_value=reschedule_data.new_due_date
+        )
+
+        return jsonify({
+            "message": "Due date updated successfully",
+            "task": updated_task,
+            "log_entry": log_entry
+        }), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to reschedule task: {str(exc)}"}), 500
 
 
 @app.route("/tasks/<task_id>", methods=["DELETE"])
