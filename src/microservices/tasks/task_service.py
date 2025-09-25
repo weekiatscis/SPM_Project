@@ -65,9 +65,9 @@ def validate_task_id(task_id: str) -> bool:
     return task_id and task_id.strip()
 
 def get_task_by_id(task_id: str) -> Optional[Dict[str, Any]]:
-    """Get a single task by ID"""
+    """Get a single task by ID with all fields"""
     try:
-        response = supabase.table("task").select("task_id,title,due_date,status,created_at,owner_id").eq("task_id", task_id).execute()
+        response = supabase.table("task").select("*").eq("task_id", task_id).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]
         return None
@@ -110,10 +110,16 @@ def log_task_change(task_id: str, action: str, field: str, user_id: str,
             "new_value": {field: new_value} if not isinstance(new_value, (dict, list)) else new_value,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
+        
         response = supabase.table("task_log").insert(log_data).execute()
-        return (response.data or [None])[0]
+        
+        if not response.data:
+            print(f"WARNING: No data returned from task_log insert for task {task_id}")
+            return None
+            
+        return response.data[0]
     except Exception as exc:
-        print(f"Failed to log task change: {exc}")
+        print(f"ERROR: Failed to log task change for {task_id}: {exc}")
         return None
 
 
@@ -247,10 +253,11 @@ def get_task_logs(task_id: str):
     except Exception as exc:
         return jsonify({"error": f"Failed to retrieve logs: {str(exc)}"}), 500
     
-@app.route("/tasks/<task_id>", methods=["PUT"])
+@app.route("/tasks/<task_id>", methods=["PUT", "PATCH"])
 def update_task(task_id: str):
     """
-    PUT /tasks/<task_id> - Update an existing task
+    PUT/PATCH /tasks/<task_id> - Update an existing task
+    Supports both regular updates and reschedule operations
     """
     try:
         if not validate_task_id(task_id):
@@ -263,14 +270,53 @@ def update_task(task_id: str):
 
         body = request.get_json(silent=True) or {}
         
-        # Validate request body
-        try:
-            task_data = TaskUpdate(**body)
-        except ValidationError as e:
-            return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
+        # Check if this is a reschedule request (has actor_id and new_due_date)
+        is_reschedule = "actor_id" in body and "new_due_date" in body
+        
+        if is_reschedule:
+            # Handle reschedule operation
+            try:
+                reschedule_data = RescheduleTask(**body)
+            except ValidationError as e:
+                return jsonify({"error": "Invalid reschedule request data", "details": e.errors()}), 400
 
-        # Prepare update data (only include non-None values)
-        update_data = {k: v for k, v in task_data.dict().items() if v is not None}
+            # Check if user has permission to reschedule
+            if existing_task.get("owner_id") != reschedule_data.actor_id:
+                return jsonify({"error": "Only the task owner can reschedule the due date"}), 403
+
+            # Validate new due date format
+            try:
+                new_date = datetime.strptime(reschedule_data.new_due_date, "%Y-%m-%d").date()
+            except ValueError:
+                return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+            
+            # Check if date is not in the past
+            if new_date < datetime.now(timezone.utc).date():
+                return jsonify({"error": "Due date cannot be in the past"}), 400
+
+            # Prepare update data for reschedule
+            update_data = {"due_date": reschedule_data.new_due_date}
+            actor_id = reschedule_data.actor_id
+        else:
+            # Handle regular update operation
+            try:
+                task_data = TaskUpdate(**body)
+            except ValidationError as e:
+                return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
+
+            # Prepare update data (only include non-None values)
+            update_data = {k: v for k, v in task_data.dict().items() if v is not None}
+            actor_id = existing_task.get("owner_id", "system")
+        
+        if not update_data:
+            return jsonify({"error": "No valid fields to update"}), 400
+
+        # Get complete existing task data with all fields for accurate comparison BEFORE update
+        fresh_existing_data = supabase.table("task").select("*").eq("task_id", task_id).execute()
+        if not fresh_existing_data.data:
+            return jsonify({"error": "Task not found for logging"}), 404
+        
+        complete_existing_task = fresh_existing_data.data[0]
 
         # Update in database
         response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
@@ -278,79 +324,54 @@ def update_task(task_id: str):
         if not response.data:
             return jsonify({"error": "Failed to update task"}), 500
 
-        # Return updated task
+        # Get updated task
         updated_task = map_db_row_to_api(response.data[0])
+        
+        # Log changes for audit trail
+        changes_made = False
+        for field, new_value in update_data.items():
+            # Get the actual OLD value from the complete task data (before update)
+            old_value = complete_existing_task.get(field)
+            
+            # Normalize values for accurate comparison
+            if field == "due_date":
+                # Handle date comparison - normalize to YYYY-MM-DD format
+                if old_value:
+                    if isinstance(old_value, str):
+                        old_value = old_value[:10]  # Take first 10 chars (YYYY-MM-DD)
+                    else:
+                        old_value = str(old_value)[:10]
+                else:
+                    old_value = None
+                    
+                if new_value:
+                    new_value = str(new_value)[:10]  # Normalize to YYYY-MM-DD
+                else:
+                    new_value = None
+            else:
+                # For all other fields, handle None/empty string normalization
+                # Convert empty strings to None for consistent comparison
+                if old_value == "":
+                    old_value = None
+                if new_value == "":
+                    new_value = None
+            
+            # Only log if there's actually a change
+            if old_value != new_value:
+                log_task_change(
+                    task_id=task_id,
+                    action="update",
+                    field=field,
+                    user_id=actor_id,
+                    old_value=old_value,
+                    new_value=new_value
+                )
+                changes_made = True
+
         return jsonify({"task": updated_task, "message": "Task updated successfully"}), 200
 
     except Exception as exc:
         return jsonify({"error": f"Failed to update task: {str(exc)}"}), 500
-
-@app.route("/tasks/<task_id>/reschedule", methods=["PATCH"])
-def reschedule_task(task_id: str):
-    """
-    PATCH /tasks/<task_id>/reschedule - Update task due date
-    """
-    try:
-        if not validate_task_id(task_id):
-            return jsonify({"error": "Invalid task ID"}), 400
-
-        body = request.get_json(silent=True) or {}
-        try:
-            reschedule_data = RescheduleTask(**body)
-        except ValidationError as e:
-            return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
-
-        # Check if task exists
-        existing_task = get_task_by_id(task_id)
-        if not existing_task:
-            return jsonify({"error": "Task not found"}), 404
-
-        # Check if user has permission to reschedule
-        if existing_task.get("owner_id") != reschedule_data.actor_id:
-            return jsonify({"error": "Only the task owner can reschedule the due date"}), 403
-
-        # Validate new due date format
-        try:
-            new_date = datetime.strptime(reschedule_data.new_due_date, "%Y-%m-%d").date()
-        except ValueError:
-            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
-        
-        # Check if date is not in the past
-        if new_date < datetime.now(timezone.utc).date():
-            return jsonify({"error": "Due date cannot be in the past"}), 400
-
-        # Store old value for logging
-        old_due_date = existing_task.get("due_date")
-
-        # Update the task
-        update_data = {"due_date": reschedule_data.new_due_date}
-        response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
-        
-        if not response.data:
-            return jsonify({"error": "Failed to update due date"}), 500
-
-        # Get the updated task
-        updated_task = map_db_row_to_api(response.data[0])
-
-        # Log the change
-        log_entry = log_task_change(
-            task_id=task_id,
-            action="reschedule",
-            field="due_date",
-            user_id=reschedule_data.actor_id,
-            old_value=old_due_date,
-            new_value=reschedule_data.new_due_date
-        )
-
-        return jsonify({
-            "message": "Due date updated successfully",
-            "task": updated_task,
-            "log_entry": log_entry
-        }), 200
-
-    except Exception as exc:
-        return jsonify({"error": f"Failed to reschedule task: {str(exc)}"}), 500
-
 
 @app.route("/tasks/<task_id>", methods=["DELETE"])
 def delete_task(task_id: str):
