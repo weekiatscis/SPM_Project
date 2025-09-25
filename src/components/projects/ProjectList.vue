@@ -224,6 +224,9 @@
                         <div style="font-size: 11px; color: #999;">
                           Created: {{ formatDate(item.created_at) }} • By: {{ item.created_by }}
                         </div>
+                        <div style="font-size: 11px; color: #999;">
+                          Due: {{ formatProjectDueDate(item.due_date) }}
+                        </div>
                       </div>
                     </a-list-item>
                   </template>
@@ -456,6 +459,31 @@ export default {
       })
     }
 
+    const formatProjectDueDate = (dateString) => {
+      if (!dateString) return 'No due date'
+
+      const date = new Date(dateString)
+      const now = new Date()
+      const timeDiff = date.getTime() - now.getTime()
+      const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24))
+
+      if (daysDiff < 0) {
+        return `Overdue by ${Math.abs(daysDiff)} day(s)`
+      } else if (daysDiff === 0) {
+        return 'Due today'
+      } else if (daysDiff === 1) {
+        return 'Due tomorrow'
+      } else if (daysDiff <= 7) {
+        return `Due in ${daysDiff} day(s)`
+      } else {
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+        })
+      }
+    }
+
     const getTaskStatusColor = (status) => {
       const colors = {
         'Completed': 'green',
@@ -611,6 +639,7 @@ export default {
           project_description: p.project_description,
           created_at: p.created_at,
           created_by: p.created_by,
+          due_date: p.due_date,
           status: 'Active' // Default status since not in DB yet
         }))
       } catch (error) {
@@ -651,6 +680,7 @@ export default {
       selectTaskForAssign,
       isTaskSelected,
       formatDate,
+      formatProjectDueDate,
       getTaskStatusColor,
       // Project assignment related
       filteredProjectsForAssign,

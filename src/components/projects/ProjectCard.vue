@@ -55,10 +55,18 @@
         </div>
 
         <!-- Created by -->
-        <div style="display: flex; align-items: center; gap: 4px;">
+        <div style="display: flex; align-items: center; gap: 4px; margin-bottom: 4px;">
           <UserOutlined style="font-size: 11px; color: #999;" />
           <a-typography-text type="secondary" style="font-size: 11px;">
             {{ project.created_by || 'Unknown' }}
+          </a-typography-text>
+        </div>
+
+        <!-- Due date -->
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <CalendarOutlined style="font-size: 11px; color: #999;" />
+          <a-typography-text type="secondary" style="font-size: 11px;">
+            Due: {{ formatDueDate(project.due_date) }}
           </a-typography-text>
         </div>
       </div>
@@ -67,12 +75,13 @@
 </template>
 
 <script>
-import { UserOutlined } from '@ant-design/icons-vue'
+import { UserOutlined, CalendarOutlined } from '@ant-design/icons-vue'
 
 export default {
   name: 'ProjectCard',
   components: {
-    UserOutlined
+    UserOutlined,
+    CalendarOutlined
   },
   props: {
     project: {
@@ -131,6 +140,31 @@ export default {
       return colors[status] || '#1890ff'
     }
 
+    const formatDueDate = (dateString) => {
+      if (!dateString) return 'No due date'
+
+      const date = new Date(dateString)
+      const now = new Date()
+      const timeDiff = date.getTime() - now.getTime()
+      const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24))
+
+      if (daysDiff < 0) {
+        return `Overdue by ${Math.abs(daysDiff)} day(s)`
+      } else if (daysDiff === 0) {
+        return 'Due today'
+      } else if (daysDiff === 1) {
+        return 'Due tomorrow'
+      } else if (daysDiff <= 7) {
+        return `Due in ${daysDiff} day(s)`
+      } else {
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+        })
+      }
+    }
+
     const isUrgent = (endDateString) => {
       if (!endDateString) return false
 
@@ -145,6 +179,7 @@ export default {
 
     return {
       formatDate,
+      formatDueDate,
       getStatusColor,
       getStatusText,
       getProjectColor,

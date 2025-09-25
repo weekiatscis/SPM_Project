@@ -58,6 +58,24 @@
             ></textarea>
           </div>
 
+          <!-- Due Date -->
+          <div>
+            <label for="due_date" class="block text-sm font-medium text-gray-700 mb-1">
+              Due Date *
+            </label>
+            <input
+              id="due_date"
+              v-model="form.due_date"
+              type="date"
+              required
+              class="input-field"
+              :class="{ 'border-red-500': errors.due_date }"
+            />
+            <div v-if="errors.due_date" class="mt-1 text-sm text-red-600">
+              {{ errors.due_date }}
+            </div>
+          </div>
+
           <!-- Created By -->
           <div>
             <label for="created_by" class="block text-sm font-medium text-gray-700 mb-1">
@@ -115,11 +133,13 @@ export default {
     const form = ref({
       project_name: '',
       project_description: '',
+      due_date: '',
       created_by: ''
     })
 
     const errors = ref({
-      project_name: ''
+      project_name: '',
+      due_date: ''
     })
 
     const isLoading = ref(false)
@@ -130,6 +150,7 @@ export default {
         form.value = {
           project_name: newProject.project_name || '',
           project_description: newProject.project_description || '',
+          due_date: newProject.due_date || '',
           created_by: newProject.created_by || ''
         }
       } else {
@@ -137,11 +158,13 @@ export default {
         form.value = {
           project_name: '',
           project_description: '',
+          due_date: '',
           created_by: ''
         }
         // Reset errors
         errors.value = {
-          project_name: ''
+          project_name: '',
+          due_date: ''
         }
       }
     }, { immediate: true })
@@ -149,7 +172,8 @@ export default {
     const saveProject = async () => {
       // Reset errors
       errors.value = {
-        project_name: ''
+        project_name: '',
+        due_date: ''
       }
 
       // Validate required fields
@@ -157,6 +181,11 @@ export default {
 
       if (!form.value.project_name?.trim()) {
         errors.value.project_name = 'Project name is required'
+        hasErrors = true
+      }
+
+      if (!form.value.due_date) {
+        errors.value.due_date = 'Due date is required'
         hasErrors = true
       }
 
@@ -182,6 +211,7 @@ export default {
         const payload = {
           project_name: form.value.project_name.trim(),
           project_description: form.value.project_description?.trim() || '',
+          due_date: form.value.due_date,
           created_by: form.value.created_by?.trim() || 'Unknown',
           owner_id: import.meta.env.VITE_TASK_OWNER_ID
         }
@@ -205,12 +235,14 @@ export default {
         form.value = {
           project_name: '',
           project_description: '',
+          due_date: '',
           created_by: ''
         }
 
         // Reset errors
         errors.value = {
-          project_name: ''
+          project_name: '',
+          due_date: ''
         }
 
         // Emit success with the created project data
