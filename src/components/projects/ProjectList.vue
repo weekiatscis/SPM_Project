@@ -82,13 +82,86 @@
         </div>
       </template>
 
-      <div style="text-align: center; padding: 50px;">
-        <a-empty description="Assign Task section coming soon">
-          <a-typography-text type="secondary">
-            This section will allow you to assign tasks to projects.
-          </a-typography-text>
-        </a-empty>
-      </div>
+      <!-- Two Column Layout -->
+      <a-row :gutter="16" style="height: 450px;">
+        <!-- Left Side - Tasks List (30%) -->
+        <a-col :span="7">
+          <div style="border-right: 1px solid #f0f0f0; padding-right: 16px; height: 100%;">
+            <div style="display: flex; align-items: center; justify-between; margin-bottom: 16px;">
+              <h4 style="margin: 0;">Available Tasks</h4>
+              <a-space size="small">
+                <a-button
+                  size="small"
+                  :type="taskSortBy.startsWith('dueDate') ? 'primary' : 'default'"
+                  @click="toggleTaskDueDateSort"
+                >
+                  Due Date {{ taskSortBy === 'dueDate-asc' ? '↑' : taskSortBy === 'dueDate-desc' ? '↓' : '↑' }}
+                </a-button>
+                <a-button
+                  size="small"
+                  :type="taskSortBy.startsWith('status') ? 'primary' : 'default'"
+                  @click="toggleTaskStatusSort"
+                >
+                  Status {{ taskSortBy === 'status-asc' ? '↑' : taskSortBy === 'status-desc' ? '↓' : '↑' }}
+                </a-button>
+              </a-space>
+            </div>
+
+            <div v-if="isLoadingTasks" style="text-align: center; padding: 50px;">
+              <a-spin size="large" />
+              <p style="margin-top: 16px;">Loading tasks...</p>
+            </div>
+
+            <div v-else-if="allAvailableTasks.length === 0" style="text-align: center; padding: 50px;">
+              <a-empty description="No tasks found" />
+            </div>
+
+            <a-list
+              v-else
+              :data-source="allAvailableTasks"
+              style="height: 350px; overflow-y: auto;"
+            >
+              <template #renderItem="{ item }">
+                <a-list-item
+                  style="cursor: pointer; padding: 8px; border-radius: 4px; margin-bottom: 4px;"
+                  :style="selectedTaskForAssign?.id === item.id ? { background: '#e6f7ff', border: '1px solid #1890ff' } : {}"
+                  @click="selectTaskForAssign(item)"
+                >
+                  <div style="width: 100%;">
+                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 4px;">
+                      <strong>{{ item.title }}</strong>
+                      <a-tag :color="getTaskStatusColor(item.status)" size="small">
+                        {{ item.status }}
+                      </a-tag>
+                    </div>
+                    <div style="font-size: 12px; color: #666;">
+                      Due: {{ item.dueDate ? formatDate(item.dueDate) : 'No due date' }}
+                    </div>
+                  </div>
+                </a-list-item>
+              </template>
+            </a-list>
+          </div>
+        </a-col>
+
+        <!-- Right Side - Project Assignment (70%) -->
+        <a-col :span="17">
+          <div style="padding-left: 16px; height: 100%;">
+            <h4 style="margin: 0 0 16px 0;">Assign to Project</h4>
+            <div v-if="!selectedTaskForAssign" style="text-align: center; padding: 50px;">
+              <a-empty description="Select a task from the left to assign it to a project" />
+            </div>
+            <div v-else>
+              <p><strong>Selected Task:</strong> {{ selectedTaskForAssign.title }}</p>
+              <div style="text-align: center; padding: 50px;">
+                <a-typography-text type="secondary">
+                  Project assignment interface coming soon...
+                </a-typography-text>
+              </div>
+            </div>
+          </div>
+        </a-col>
+      </a-row>
     </a-card>
   </div>
 </template>
@@ -122,6 +195,12 @@ export default {
 
     // Modal state for creating project
     const showProjectModal = ref(false)
+
+    // Task assignment state
+    const tasks = ref([])
+    const isLoadingTasks = ref(false)
+    const taskSortBy = ref('dueDate-asc')
+    const selectedTaskForAssign = ref(null)
 
     // Handle project saved from ProjectFormModal
     const handleProjectSaved = (projectData) => {
@@ -191,7 +270,110 @@ export default {
       }
     }
 
+    // Task-related functions
+    const loadTasks = async () => {
+      isLoadingTasks.value = true
+      try {
+        const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
+        const url = ownerId
+          ? `${baseUrl}/tasks?owner_id=${encodeURIComponent(ownerId)}`
+          : `${baseUrl}/tasks`
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const payload = await response.json()
+        const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
+        tasks.value = apiTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          dueDate: t.dueDate || null,
+          status: t.status
+        }))
+      } catch (error) {
+        console.error('Failed to load tasks:', error)
+        tasks.value = []
+        notification.error({
+          message: 'Failed to load tasks',
+          description: error.message || 'Unable to fetch tasks. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      } finally {
+        isLoadingTasks.value = false
+      }
+    }
+
+    // All available tasks computed property with sorting
+    const allAvailableTasks = computed(() => {
+      const sortedTasks = [...tasks.value]
+
+      if (taskSortBy.value === 'dueDate-asc') {
+        return sortedTasks.sort((a, b) => {
+          if (!a.dueDate) return 1
+          if (!b.dueDate) return -1
+          return new Date(a.dueDate) - new Date(b.dueDate)
+        })
+      } else if (taskSortBy.value === 'dueDate-desc') {
+        return sortedTasks.sort((a, b) => {
+          if (!a.dueDate) return 1
+          if (!b.dueDate) return -1
+          return new Date(b.dueDate) - new Date(a.dueDate)
+        })
+      } else if (taskSortBy.value === 'status-asc') {
+        return sortedTasks.sort((a, b) => a.status.localeCompare(b.status))
+      } else if (taskSortBy.value === 'status-desc') {
+        return sortedTasks.sort((a, b) => b.status.localeCompare(a.status))
+      }
+
+      return sortedTasks
+    })
+
+    // Task sort functions
+    const toggleTaskDueDateSort = () => {
+      if (taskSortBy.value === 'dueDate-asc') {
+        taskSortBy.value = 'dueDate-desc'
+      } else {
+        taskSortBy.value = 'dueDate-asc'
+      }
+    }
+
+    const toggleTaskStatusSort = () => {
+      if (taskSortBy.value === 'status-asc') {
+        taskSortBy.value = 'status-desc'
+      } else {
+        taskSortBy.value = 'status-asc'
+      }
+    }
+
+    // Task selection
+    const selectTaskForAssign = (task) => {
+      selectedTaskForAssign.value = task
+    }
+
+    // Helper functions
+    const formatDate = (dateString) => {
+      if (!dateString) return 'No due date'
+      const date = new Date(dateString)
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      })
+    }
+
+    const getTaskStatusColor = (status) => {
+      const colors = {
+        'Completed': 'green',
+        'In Progress': 'blue',
+        'Pending': 'orange',
+        'On Hold': 'red',
+        'Unassigned': 'default'
+      }
+      return colors[status] || 'default'
+    }
+
     onMounted(async () => {
+      // Load projects
       isLoading.value = true
       try {
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8083'
@@ -226,6 +408,9 @@ export default {
       } finally {
         isLoading.value = false
       }
+
+      // Load tasks for assignment
+      await loadTasks()
     })
 
     return {
@@ -238,7 +423,17 @@ export default {
       toggleDateSort,
       toggleStatusSort,
       handleProjectSaved,
-      handleProjectClick
+      handleProjectClick,
+      // Task assignment related
+      allAvailableTasks,
+      isLoadingTasks,
+      taskSortBy,
+      selectedTaskForAssign,
+      toggleTaskDueDateSort,
+      toggleTaskStatusSort,
+      selectTaskForAssign,
+      formatDate,
+      getTaskStatusColor
     }
   }
 }
