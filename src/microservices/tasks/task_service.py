@@ -34,6 +34,11 @@ class TaskUpdate(BaseModel):
     title: Optional[str] = None
     due_date: Optional[str] = None
     status: Optional[str] = None
+    priority: Optional[str] = None
+    description: Optional[str] = None
+    collaborators: Optional[str] = None
+    project_id: Optional[str] = None
+    subtasks: Optional[str] = None
 
 
 # Pydantic model for rescheduling a task
