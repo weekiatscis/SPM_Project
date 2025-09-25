@@ -36,22 +36,6 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-@app.get("/users")
-def get_all_users():
-    """Get all users from the database"""
-    try:
-        response = supabase.table("user").select("*").execute()
-        
-        if response.data:
-            users_data = [map_db_row_to_api(user) for user in response.data]
-            return jsonify({"users": users_data})
-        else:
-            return jsonify({"users": []})
-
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-
 @app.get("/user")
 def get_current_user():
     """Get the current active user info using the userid from .env"""
@@ -67,6 +51,12 @@ def get_current_user():
 
     except Exception as exc:
         return jsonify({"error": str(exc), "user_id": CURRENT_USER_ID}), 500
+
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint"""
+    return jsonify({"status": "healthy"})
 
 
 if __name__ == "__main__":

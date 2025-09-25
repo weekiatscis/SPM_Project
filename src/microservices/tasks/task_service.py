@@ -28,22 +28,11 @@ class TaskCreate(BaseModel):
     due_date: Optional[str] = None
     status: Optional[str] = "Unassigned"
     owner_id: Optional[str] = None
-    priority: Optional[str] = "Medium"
-    description: Optional[str] = None
-    collaborators: Optional[str] = None  # JSON string of collaborator IDs
-    project_id: Optional[str] = None
-    subtasks: Optional[str] = None  # JSON string of subtask objects
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
     due_date: Optional[str] = None
     status: Optional[str] = None
-    owner_id: Optional[str] = None
-    priority: Optional[str] = None
-    description: Optional[str] = None
-    collaborators: Optional[str] = None
-    project_id: Optional[str] = None
-    subtasks: Optional[str] = None
 
 
 # Helper functions
@@ -55,11 +44,7 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "description": row.get("description", "No description available"),  # Default if not in DB
         "dueDate": row.get("due_date"),
         "status": row.get("status"),
-        "priority": row.get("priority"),
         "owner_id": row.get("owner_id"),
-        "project_id": row.get("project_id"),
-        "collaborators": row.get("collaborators"),
-        "subtasks": row.get("subtasks"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at"))  # Use created_at if updated_at doesn't exist
     }
@@ -71,7 +56,7 @@ def validate_task_id(task_id: str) -> bool:
 def get_task_by_id(task_id: str) -> Optional[Dict[str, Any]]:
     """Get a single task by ID"""
     try:
-        response = supabase.table("task").select("*").eq("task_id", task_id).execute()
+        response = supabase.table("task").select("task_id,title,due_date,status,created_at,owner_id").eq("task_id", task_id).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]
         return None
@@ -79,12 +64,13 @@ def get_task_by_id(task_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-# API Routes (CRUD)
+# API Routes
 
 @app.route("/tasks", methods=["GET"])
 def get_tasks():
     """
-    Use the parameters below to get all tasks:
+    GET /tasks - Retrieve tasks with optional filtering
+    Query parameters:
     - limit: Maximum number of tasks to return
     - owner_id: Filter by owner ID
     - task_id: Get specific task by ID
@@ -99,15 +85,15 @@ def get_tasks():
         status = request.args.get("status", default=None, type=str)
         priority = request.args.get("priority", default=None, type=str)
 
-        # Build query - include all fields, including collaborators and subtasks
+        # Build query - only select fields that definitely exist in the database
         query = (
             supabase
             .table("task")
-            .select("*")  # Select all columns including collaborators and subtasks
+            .select("task_id,title,due_date,status,created_at,owner_id")
             .order("created_at", desc=True)
         )
 
-        # Apply the filters in the query
+        # Apply filters
         if limit_param:
             query = query.limit(limit_param)
         if owner_id:
@@ -154,6 +140,9 @@ def get_task(task_id: str):
 
 @app.route("/tasks", methods=["POST"])
 def create_task():
+    """
+    POST /tasks - Create a new task
+    """
     try:
         body = request.get_json(silent=True) or {}
         
@@ -183,6 +172,9 @@ def create_task():
 
 @app.route("/tasks/<task_id>", methods=["PUT"])
 def update_task(task_id: str):
+    """
+    PUT /tasks/<task_id> - Update an existing task
+    """
     try:
         if not validate_task_id(task_id):
             return jsonify({"error": "Invalid task ID"}), 400
@@ -219,6 +211,9 @@ def update_task(task_id: str):
 
 @app.route("/tasks/<task_id>", methods=["DELETE"])
 def delete_task(task_id: str):
+    """
+    DELETE /tasks/<task_id> - Delete a task
+    """
     try:
         if not validate_task_id(task_id):
             return jsonify({"error": "Invalid task ID"}), 400
@@ -238,6 +233,26 @@ def delete_task(task_id: str):
 
     except Exception as exc:
         return jsonify({"error": f"Failed to delete task: {str(exc)}"}), 500
+
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({"status": "healthy", "service": "task-service"}), 200
+
+
+# Error handlers
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Endpoint not found"}), 404
+
+@app.errorhandler(405)
+def method_not_allowed(error):
+    return jsonify({"error": "Method not allowed"}), 405
+
+@app.errorhandler(500)
+def internal_error(error):
+    return jsonify({"error": "Internal server error"}), 500
 
 
 if __name__ == "__main__":
