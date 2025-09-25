@@ -43,23 +43,24 @@
           
           <!-- Content -->
           <a-layout-content :style="{ 
-            margin: '24px 24px 0', 
+            margin: '12px 12px 0', 
             overflow: 'auto',
             background: '#fff',
             borderRadius: '8px',
-            minHeight: 'calc(100vh - 112px)'
+            minHeight: 'calc(100vh - 112px)',
+            padding: '0px'
           }">
             <!-- Breadcrumb -->
-            <a-breadcrumb :style="{ margin: '16px 24px' }">
+            <!-- <a-breadcrumb :style="{ margin: '16px 24px' }">
               <a-breadcrumb-item>Home</a-breadcrumb-item>
               <a-breadcrumb-item>{{ currentPageTitle }}</a-breadcrumb-item>
-            </a-breadcrumb>
+            </a-breadcrumb> -->
             
             <!-- Page Content -->
             <div :style="{ 
               background: '#fff', 
-              padding: '24px', 
-              minHeight: '280px'
+              padding: '8px', 
+              minHeight: '280px',
             }">
               <router-view />
             </div>
@@ -67,7 +68,6 @@
           
           <!-- Footer -->
           <a-layout-footer :style="{ textAlign: 'center', background: '#fff', padding: '12px 24px' }">
-            Taskio ©{{ new Date().getFullYear() }} - Smart Task Management
           </a-layout-footer>
         </a-layout>
 
