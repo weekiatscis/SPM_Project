@@ -8,8 +8,15 @@
 
 
   <div>
+    <!-- Section Toggle Tabs -->
+    <a-tabs v-model:activeKey="activeTab" style="margin-bottom: 16px;">
+      <a-tab-pane key="projects" tab="All Projects" />
+      <a-tab-pane key="assign" tab="Assign Task" />
+    </a-tabs>
+
     <!-- Projects Section -->
     <a-card
+      v-if="activeTab === 'projects'"
       style="min-height: 500px;"
     >
       <template #title>
@@ -63,6 +70,26 @@
         </a-col>
       </a-row>
     </a-card>
+
+    <!-- Assign Task Section -->
+    <a-card
+      v-if="activeTab === 'assign'"
+      style="min-height: 500px;"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>Assign Task</span>
+        </div>
+      </template>
+
+      <div style="text-align: center; padding: 50px;">
+        <a-empty description="Assign Task section coming soon">
+          <a-typography-text type="secondary">
+            This section will allow you to assign tasks to projects.
+          </a-typography-text>
+        </a-empty>
+      </div>
+    </a-card>
   </div>
 </template>
 
@@ -89,6 +116,9 @@ export default {
     const isLoading = ref(false)
     const sortBy = ref('created_at-desc')
     const { isDarkMode } = useTheme()
+
+    // Tab state for switching between sections
+    const activeTab = ref('projects')
 
     // Modal state for creating project
     const showProjectModal = ref(false)
@@ -202,6 +232,7 @@ export default {
       h,
       allProjects,
       isLoading,
+      activeTab,
       showProjectModal,
       sortBy,
       toggleDateSort,
