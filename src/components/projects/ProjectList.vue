@@ -350,7 +350,8 @@ export default {
           id: t.id,
           title: t.title,
           dueDate: t.dueDate || null,
-          status: t.status
+          status: t.status,
+          project_id: t.project_id || null
         }))
       } catch (error) {
         console.error('Failed to load tasks:', error)
@@ -366,9 +367,14 @@ export default {
       }
     }
 
-    // All available tasks computed property with sorting
+    // All available tasks computed property with sorting - only unassigned tasks
     const allAvailableTasks = computed(() => {
-      const sortedTasks = [...tasks.value]
+      // Filter tasks that are not assigned to any project (project_id is null/undefined)
+      const unassignedTasks = tasks.value.filter(task =>
+        !task.project_id || task.project_id === null
+      )
+
+      let sortedTasks = [...unassignedTasks]
 
       if (taskSortBy.value === 'dueDate-asc') {
         return sortedTasks.sort((a, b) => {
