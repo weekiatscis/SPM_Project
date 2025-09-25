@@ -4,8 +4,8 @@
       <!-- Background overlay -->
       <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="$emit('close')"></div>
 
-      <!-- Modal panel - widened -->
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+      <!-- Modal panel -->
+      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
         <!-- Header -->
         <div class="bg-white px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
@@ -76,154 +76,38 @@
             </div>
           </div>
 
-          <!-- Status and Priority in a single row -->
-          <div class="grid grid-cols-2 gap-4">
-            <!-- Status -->
-            <div>
-              <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                id="status"
-                v-model="form.status"
-                class="input-field w-full"
-              >
-                <option value="Unassigned">Unassigned</option>
-                <option value="Ongoing">Ongoing</option>
-                <option value="Under Review">Under Review</option>
-                <option value="Completed">Completed</option>
-              </select>
-            </div>
-
-            <!-- Priority -->
-            <div>
-              <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
-                Priority
-              </label>
-              <select
-                id="priority"
-                v-model="form.priority"
-                class="input-field w-full"
-              >
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-                <option value="Lowest">Lowest</option>
-              </select>
-            </div>
-          </div>
-
-            <!-- Priority -->
-            <div>
-              <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
-                Priority
-              </label>
-              <select
-                id="priority"
-                v-model="form.priority"
-                class="input-field w-full"
-              >
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
-                <option value="Lowest">Lowest</option>
-              </select>
-            </div>
-          </div>
-
-          <!-- Owner -->
+          <!-- Status -->
           <div>
-            <label for="owner" class="block text-sm font-medium text-gray-700 mb-1">
-              Owner
+            <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
+              Status
             </label>
             <select
-              id="owner"
-              v-model="form.owner_id"
-              class="input-field"
-              :disabled="isLoadingUsers"
-            >
-              <option value="">{{ isLoadingUsers ? 'Loading users...' : 'Select an owner' }}</option>
-              <option v-for="user in users" :key="user.id" :value="user.id">
-                {{ user.name }}
-              </option>
-            </select>
-            <div v-if="isLoadingUsers" class="mt-1 text-xs text-gray-500">Loading users from database...</div>
-          </div>
-
-          <!-- Collaborators / Invited Members -->
-          <div>
-            <label for="collaborators" class="block text-sm font-medium text-gray-700 mb-1">
-              Collaborators / Invited Members
-            </label>
-            <select
-              id="collaborators"
-              v-model="form.collaborators"
-              multiple
-              class="input-field"
-              :disabled="isLoadingUsers"
-            >
-              <option v-if="isLoadingUsers" value="" disabled>Loading users...</option>
-              <option v-for="user in users" :key="user.id" :value="user.id">
-                {{ user.name }}
-              </option>
-            </select>
-            <div class="mt-1 text-xs text-gray-500">
-              {{ isLoadingUsers ? 'Loading users from database...' : 'Hold Ctrl/Cmd to select multiple' }}
-            </div>
-          </div>
-
-          <!-- Parent Project / Group -->
-          <div>
-            <label for="project" class="block text-sm font-medium text-gray-700 mb-1">
-              Parent Project / Group
-            </label>
-            <select
-              id="project"
-              v-model="form.project_id"
+              id="status"
+              v-model="form.status"
               class="input-field"
             >
-              <option value="">No parent project</option>
-              <option v-for="project in projects" :key="project.id" :value="project.id">
-                {{ project.title }}
-              </option>
+              <option value="Unassigned">Unassigned</option>
+              <option value="Ongoing">Ongoing</option>
+              <option value="Under Review">Under Review</option>
+              <option value="Completed">Completed</option>
             </select>
           </div>
 
-          <!-- Subtasks -->
+          <!-- Priority -->
           <div>
-            <div class="flex justify-between items-center">
-              <label class="block text-sm font-medium text-gray-700">
-                Subtasks
-              </label>
-              <button 
-                type="button" 
-                @click="addSubtask" 
-                class="text-blue-600 hover:text-blue-800 text-sm font-medium"
-              >
-                + Add subtask
-              </button>
-            </div>
-            
-            <div v-for="(subtask, index) in form.subtasks" :key="index" class="mt-2 flex items-center">
-              <input
-                v-model="subtask.title"
-                type="text"
-                class="input-field flex-grow"
-                placeholder="Enter subtask"
-              />
-              <button 
-                type="button" 
-                @click="removeSubtask(index)" 
-                class="ml-2 text-red-600 hover:text-red-800"
-              >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
-            <div v-if="form.subtasks.length === 0" class="mt-2 text-sm text-gray-500">
-              No subtasks added
-            </div>
+            <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
+              Priority
+            </label>
+            <select
+              id="priority"
+              v-model="form.priority"
+              class="input-field"
+            >
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+              <option value="Lowest">Lowest</option>
+            </select>
           </div>
         </form>
 

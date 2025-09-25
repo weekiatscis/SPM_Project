@@ -11,6 +11,11 @@ services:
       - PORT=8080
     command: ["python", "task_service.py"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   create-project:
     build:
@@ -21,7 +26,6 @@ services:
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      - PORT=8082
     command: ["python","createProject.py"]
 
   get-project:
@@ -33,7 +37,6 @@ services:
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-      - PORT=8083
     command: ["python","getProject.py"]
 
   user-service:
@@ -49,4 +52,8 @@ services:
       - PORT=8081
     command: ["python", "user_service.py"]
     restart: unless-stopped
-
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
