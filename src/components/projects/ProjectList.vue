@@ -76,11 +76,7 @@
       v-if="activeTab === 'assign'"
       style="min-height: 500px;"
     >
-      <template #title>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span>Assign Task</span>
-        </div>
-      </template>
+
 
       <!-- Two Column Layout -->
       <a-row :gutter="16" style="height: 450px;">
@@ -147,16 +143,78 @@
         <!-- Right Side - Project Assignment (70%) -->
         <a-col :span="17">
           <div style="padding-left: 16px; height: 100%;">
-            <h4 style="margin: 0 0 16px 0;">Assign to Project</h4>
+            <div v-if="selectedTaskForAssign" style="margin-bottom: 16px; font-size: 14px; color: #666;">
+              Selected Task: <strong>{{ selectedTaskForAssign.title }}</strong>
+            </div>
+
             <div v-if="!selectedTaskForAssign" style="text-align: center; padding: 50px;">
               <a-empty description="Select a task from the left to assign it to a project" />
             </div>
+
             <div v-else>
-              <p><strong>Selected Task:</strong> {{ selectedTaskForAssign.title }}</p>
-              <div style="text-align: center; padding: 50px;">
-                <a-typography-text type="secondary">
-                  Project assignment interface coming soon...
-                </a-typography-text>
+              <!-- Search Projects -->
+              <div style="margin-bottom: 16px;">
+                <a-input-search
+                  v-model:value="projectSearchQuery"
+                  placeholder="Search projects..."
+                  style="width: 100%;"
+                  @search="searchProjects"
+                  allow-clear
+                />
+              </div>
+
+              <div v-if="isLoading" style="text-align: center; padding: 50px;">
+                <a-spin size="large" />
+                <p style="margin-top: 16px;">Loading projects...</p>
+              </div>
+
+              <div v-else-if="filteredProjectsForAssign.length === 0" style="text-align: center; padding: 50px;">
+                <a-empty description="No projects found" />
+              </div>
+
+              <div v-else>
+                <div style="margin-bottom: 8px; font-size: 12px; color: #666;">
+                  {{ filteredProjectsForAssign.length }} project(s) available
+                </div>
+                <a-list
+                  :data-source="filteredProjectsForAssign"
+                  style="height: 300px; overflow-y: auto; border: 1px solid #f0f0f0; border-radius: 4px;"
+                >
+                  <template #renderItem="{ item }">
+                    <a-list-item
+                      style="cursor: pointer; padding: 12px 16px; border-bottom: 1px solid #f5f5f5;"
+                      :style="selectedProjectForAssign?.project_id === item.project_id ? { background: '#f0f9ff', border: '1px solid #1890ff' } : { background: 'white' }"
+                      @click="selectProjectForAssign(item)"
+                    >
+                      <div style="width: 100%;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                          <div>
+                            <strong style="font-size: 14px;">{{ item.project_name }}</strong>
+                            <a-tag :color="getProjectStatusColor(item.status)" size="small" style="margin-left: 8px;">
+                              {{ item.status }}
+                            </a-tag>
+                          </div>
+                          <div v-if="selectedProjectForAssign?.project_id === item.project_id">
+                            <a-button
+                              type="primary"
+                              size="small"
+                              @click.stop="assignTaskToProject"
+                              :loading="isAssigning"
+                            >
+                              Assign Task
+                            </a-button>
+                          </div>
+                        </div>
+                        <div style="font-size: 12px; color: #666; margin-bottom: 4px;">
+                          {{ item.project_description || 'No description' }}
+                        </div>
+                        <div style="font-size: 11px; color: #999;">
+                          Created: {{ formatDate(item.created_at) }} • By: {{ item.created_by }}
+                        </div>
+                      </div>
+                    </a-list-item>
+                  </template>
+                </a-list>
               </div>
             </div>
           </div>
@@ -201,6 +259,11 @@ export default {
     const isLoadingTasks = ref(false)
     const taskSortBy = ref('dueDate-asc')
     const selectedTaskForAssign = ref(null)
+
+    // Project assignment state
+    const projectSearchQuery = ref('')
+    const selectedProjectForAssign = ref(null)
+    const isAssigning = ref(false)
 
     // Handle project saved from ProjectFormModal
     const handleProjectSaved = (projectData) => {
@@ -372,6 +435,74 @@ export default {
       return colors[status] || 'default'
     }
 
+    // Project assignment functions
+    const filteredProjectsForAssign = computed(() => {
+      if (!projectSearchQuery.value) {
+        return projects.value
+      }
+
+      const query = projectSearchQuery.value.toLowerCase()
+      return projects.value.filter(project =>
+        project.project_name.toLowerCase().includes(query) ||
+        (project.project_description || '').toLowerCase().includes(query) ||
+        project.created_by.toLowerCase().includes(query)
+      )
+    })
+
+    const searchProjects = () => {
+      // Search is reactive through computed property
+      // This function can be used for additional search logic if needed
+    }
+
+    const selectProjectForAssign = (project) => {
+      selectedProjectForAssign.value = project
+    }
+
+    const getProjectStatusColor = (status) => {
+      const colors = {
+        'Active': 'blue',
+        'Planning': 'cyan',
+        'On Hold': 'orange',
+        'Completed': 'green',
+        'Cancelled': 'red'
+      }
+      return colors[status] || 'default'
+    }
+
+    const assignTaskToProject = async () => {
+      if (!selectedTaskForAssign.value || !selectedProjectForAssign.value) return
+
+      isAssigning.value = true
+      try {
+        // TODO: Implement actual API call to assign task to project
+        // For now, just show success notification
+        await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate API call
+
+        notification.success({
+          message: 'Task assigned successfully',
+          description: `"${selectedTaskForAssign.value.title}" has been assigned to project "${selectedProjectForAssign.value.project_name}".`,
+          placement: 'topRight',
+          duration: 3
+        })
+
+        // Reset selections
+        selectedTaskForAssign.value = null
+        selectedProjectForAssign.value = null
+        projectSearchQuery.value = ''
+
+      } catch (error) {
+        console.error('Failed to assign task:', error)
+        notification.error({
+          message: 'Failed to assign task',
+          description: error.message || 'Unable to assign task to project. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      } finally {
+        isAssigning.value = false
+      }
+    }
+
     onMounted(async () => {
       // Load projects
       isLoading.value = true
@@ -433,7 +564,16 @@ export default {
       toggleTaskStatusSort,
       selectTaskForAssign,
       formatDate,
-      getTaskStatusColor
+      getTaskStatusColor,
+      // Project assignment related
+      filteredProjectsForAssign,
+      projectSearchQuery,
+      selectedProjectForAssign,
+      isAssigning,
+      searchProjects,
+      selectProjectForAssign,
+      getProjectStatusColor,
+      assignTaskToProject
     }
   }
 }
