@@ -167,7 +167,7 @@ export default {
           dueDate: apiTasks[0].dueDate,
           status: apiTasks[0].status,
           description: apiTasks[0].description || 'No description available',
-          priority: apiTasks[0].priority || 'Medium',
+          priority: apiTasks[0].priority || 'Medium', // Default to Medium for consistency
           assignee: apiTasks[0].assignee || 'Unassigned',
           project: apiTasks[0].project || 'Default Project',
           activities: apiTasks[0].activities || [],

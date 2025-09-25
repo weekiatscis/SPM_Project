@@ -169,8 +169,11 @@ export default {
     watch(() => props.task, (newTask) => {
       if (newTask) {
         form.value = {
-          ...newTask,
-          dueDate: newTask.dueDate ? new Date(newTask.dueDate).toISOString().split('T')[0] : ''
+          title: newTask.title || '',
+          description: newTask.description || '',
+          dueDate: newTask.dueDate ? new Date(newTask.dueDate).toISOString().split('T')[0] : '',
+          status: newTask.status || 'Unassigned',
+          priority: newTask.priority || 'Medium'
         }
       } else {
         // Reset form for new task

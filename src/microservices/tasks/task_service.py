@@ -28,6 +28,8 @@ class TaskCreate(BaseModel):
     title: str
     due_date: Optional[str] = None
     status: Optional[str] = "Unassigned"
+    priority: Optional[str] = None
+    description: Optional[str] = None
     owner_id: Optional[str] = None
 
 class TaskUpdate(BaseModel):
@@ -88,7 +90,7 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "description": row.get("description", ""),
         "dueDate": to_yyyy_mm_dd(row.get("due_date")),  # normalize for FE
         "status": row.get("status"),
-        "priority": row.get("priority"),
+        "priority": row.get("priority") or "Medium",  # Default to Medium if null
         "owner_id": row.get("owner_id"),
         "project_id": row.get("project_id"),
         "collaborators": row.get("collaborators") or [],
@@ -148,7 +150,7 @@ def get_tasks():
         query = (
             supabase
             .table("task")
-            .select("task_id,title,due_date,status,created_at,owner_id")
+            .select("task_id,title,due_date,status,priority,description,created_at,owner_id")
             .order("created_at", desc=True)
         )
 
@@ -221,8 +223,44 @@ def create_task():
         if not response.data:
             return jsonify({"error": "Failed to create task"}), 500
 
+        created_task_data = response.data[0]
+        task_id = created_task_data.get("task_id")
+        
+        # Log task creation for audit trail - single log entry with all created fields
+        # Define all possible task fields for logging
+        task_fields = ["title", "due_date", "status", "priority", "description", 
+                      "collaborators", "project_id", "subtasks", "owner_id"]
+        
+        # Get owner_id for logging (could be from request or default)
+        actor_id = db_data.get("owner_id", "system")
+        
+        # Collect all created field values into single log entry
+        old_values = {}
+        new_values = {}
+        
+        for field in task_fields:
+            new_value = created_task_data.get(field)
+            if new_value is not None:  # Only include fields that were actually set
+                # Normalize date fields for consistency
+                if field == "due_date" and new_value:
+                    new_value = str(new_value)[:10]  # Normalize to YYYY-MM-DD
+                
+                old_values[field] = None  # No old value for creation
+                new_values[field] = new_value
+        
+        # Create single log entry for task creation
+        if new_values:  # Only log if there are values to log
+            log_task_change(
+                task_id=task_id,
+                action="create",
+                field="task",  # Use generic field name for creation
+                user_id=actor_id,
+                old_value=old_values,
+                new_value=new_values
+            )
+
         # Return created task
-        created_task = map_db_row_to_api(response.data[0])
+        created_task = map_db_row_to_api(created_task_data)
         return jsonify({"task": created_task, "message": "Task created successfully"}), 201
 
     except Exception as exc:
@@ -327,7 +365,7 @@ def update_task(task_id: str):
         # Get updated task
         updated_task = map_db_row_to_api(response.data[0])
         
-        # Log changes for audit trail
+        # Log changes for audit trail - only log ACTUAL changes
         changes_made = False
         for field, new_value in update_data.items():
             # Get the actual OLD value from the complete task data (before update)
@@ -355,6 +393,13 @@ def update_task(task_id: str):
                     old_value = None
                 if new_value == "":
                     new_value = None
+                    
+                # Special handling for description field - map API default to database null
+                if field == "description":
+                    if old_value is None and new_value == "No description available":
+                        new_value = None  # Treat API default as null for comparison
+                    elif old_value == "No description available" and new_value is None:
+                        old_value = None  # Normalize API default in old value too
             
             # Only log if there's actually a change
             if old_value != new_value:
