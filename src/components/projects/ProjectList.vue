@@ -474,9 +474,37 @@ export default {
 
       isAssigning.value = true
       try {
-        // TODO: Implement actual API call to assign task to project
-        // For now, just show success notification
-        await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate API call
+        // Make API call to update task with project_id
+        const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const taskId = selectedTaskForAssign.value.id
+        const projectId = selectedProjectForAssign.value.project_id
+
+        const response = await fetch(`${baseUrl}/tasks/${taskId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            project_id: projectId
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `HTTP ${response.status}`)
+        }
+
+        const updatedTask = await response.json()
+
+        // Update the task in the local tasks array to reflect the assignment
+        const taskIndex = tasks.value.findIndex(t => t.id === taskId)
+        if (taskIndex !== -1) {
+          tasks.value[taskIndex] = {
+            ...tasks.value[taskIndex],
+            project_id: projectId,
+            project: selectedProjectForAssign.value.project_name
+          }
+        }
 
         notification.success({
           message: 'Task assigned successfully',
