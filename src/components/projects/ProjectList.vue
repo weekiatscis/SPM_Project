@@ -120,7 +120,7 @@
               <template #renderItem="{ item }">
                 <a-list-item
                   style="cursor: pointer; padding: 8px; border-radius: 4px; margin-bottom: 4px;"
-                  :style="selectedTaskForAssign?.id === item.id ? { background: '#e6f7ff', border: '1px solid #1890ff' } : {}"
+                  :style="isTaskSelected(item) ? { background: '#e6f7ff', border: '1px solid #1890ff' } : {}"
                   @click="selectTaskForAssign(item)"
                 >
                   <div style="width: 100%;">
@@ -143,12 +143,25 @@
         <!-- Right Side - Project Assignment (70%) -->
         <a-col :span="17">
           <div style="padding-left: 16px; height: 100%;">
-            <div v-if="selectedTaskForAssign" style="margin-bottom: 16px; font-size: 14px; color: #666;">
-              Selected Task: <strong>{{ selectedTaskForAssign.title }}</strong>
+            <div v-if="selectedTasksForAssign.length > 0" style="margin-bottom: 16px;">
+              <div style="font-size: 14px; color: #666; margin-bottom: 8px;">
+                Selected Tasks ({{ selectedTasksForAssign.length }}):
+              </div>
+              <div style="max-height: 60px; overflow-y: auto;">
+                <a-tag
+                  v-for="task in selectedTasksForAssign"
+                  :key="task.id"
+                  closable
+                  @close="selectTaskForAssign(task)"
+                  style="margin-bottom: 4px;"
+                >
+                  {{ task.title }}
+                </a-tag>
+              </div>
             </div>
 
-            <div v-if="!selectedTaskForAssign" style="text-align: center; padding: 50px;">
-              <a-empty description="Select a task from the left to assign it to a project" />
+            <div v-if="selectedTasksForAssign.length === 0" style="text-align: center; padding: 50px;">
+              <a-empty description="Select tasks from the left to assign them to a project" />
             </div>
 
             <div v-else>
@@ -201,7 +214,7 @@
                               @click.stop="assignTaskToProject"
                               :loading="isAssigning"
                             >
-                              Assign Task
+                              Assign {{ selectedTasksForAssign.length > 1 ? 'Tasks' : 'Task' }}
                             </a-button>
                           </div>
                         </div>
@@ -258,7 +271,7 @@ export default {
     const tasks = ref([])
     const isLoadingTasks = ref(false)
     const taskSortBy = ref('dueDate-asc')
-    const selectedTaskForAssign = ref(null)
+    const selectedTasksForAssign = ref([])
 
     // Project assignment state
     const projectSearchQuery = ref('')
@@ -414,9 +427,22 @@ export default {
       }
     }
 
-    // Task selection
+    // Task selection - toggle behavior for multiple selection
     const selectTaskForAssign = (task) => {
-      selectedTaskForAssign.value = task
+      const index = selectedTasksForAssign.value.findIndex(t => t.id === task.id)
+
+      if (index > -1) {
+        // Task is already selected, remove it (unselect)
+        selectedTasksForAssign.value.splice(index, 1)
+      } else {
+        // Task is not selected, add it (select)
+        selectedTasksForAssign.value.push(task)
+      }
+    }
+
+    // Helper function to check if a task is selected
+    const isTaskSelected = (task) => {
+      return selectedTasksForAssign.value.some(t => t.id === task.id)
     }
 
     // Helper functions
@@ -476,59 +502,85 @@ export default {
     }
 
     const assignTaskToProject = async () => {
-      if (!selectedTaskForAssign.value || !selectedProjectForAssign.value) return
+      if (selectedTasksForAssign.value.length === 0 || !selectedProjectForAssign.value) return
 
       isAssigning.value = true
+      let successCount = 0
+      let failureCount = 0
+
       try {
-        // Make API call to update task with project_id
         const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-        const taskId = selectedTaskForAssign.value.id
         const projectId = selectedProjectForAssign.value.project_id
 
-        const response = await fetch(`${baseUrl}/tasks/${taskId}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            project_id: projectId
-          })
-        })
+        // Process each selected task
+        for (const task of selectedTasksForAssign.value) {
+          try {
+            const response = await fetch(`${baseUrl}/tasks/${task.id}`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                project_id: projectId
+              })
+            })
 
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || `HTTP ${response.status}`)
-        }
+            if (!response.ok) {
+              const errorData = await response.json()
+              throw new Error(errorData.error || `HTTP ${response.status}`)
+            }
 
-        const updatedTask = await response.json()
+            // Update the task in the local tasks array to reflect the assignment
+            const taskIndex = tasks.value.findIndex(t => t.id === task.id)
+            if (taskIndex !== -1) {
+              tasks.value[taskIndex] = {
+                ...tasks.value[taskIndex],
+                project_id: projectId,
+                project: selectedProjectForAssign.value.project_name
+              }
+            }
 
-        // Update the task in the local tasks array to reflect the assignment
-        const taskIndex = tasks.value.findIndex(t => t.id === taskId)
-        if (taskIndex !== -1) {
-          tasks.value[taskIndex] = {
-            ...tasks.value[taskIndex],
-            project_id: projectId,
-            project: selectedProjectForAssign.value.project_name
+            successCount++
+          } catch (taskError) {
+            console.error(`Failed to assign task "${task.title}":`, taskError)
+            failureCount++
           }
         }
 
-        notification.success({
-          message: 'Task assigned successfully',
-          description: `"${selectedTaskForAssign.value.title}" has been assigned to project "${selectedProjectForAssign.value.project_name}".`,
-          placement: 'topRight',
-          duration: 3
-        })
+        // Show appropriate notification based on results
+        if (successCount > 0 && failureCount === 0) {
+          notification.success({
+            message: 'Tasks assigned successfully',
+            description: `${successCount} task(s) have been assigned to project "${selectedProjectForAssign.value.project_name}".`,
+            placement: 'topRight',
+            duration: 3
+          })
+        } else if (successCount > 0 && failureCount > 0) {
+          notification.warning({
+            message: 'Partial assignment completed',
+            description: `${successCount} task(s) assigned successfully, ${failureCount} failed.`,
+            placement: 'topRight',
+            duration: 4
+          })
+        } else if (failureCount > 0) {
+          notification.error({
+            message: 'Assignment failed',
+            description: `Failed to assign ${failureCount} task(s) to the project.`,
+            placement: 'topRight',
+            duration: 4
+          })
+        }
 
         // Reset selections
-        selectedTaskForAssign.value = null
+        selectedTasksForAssign.value = []
         selectedProjectForAssign.value = null
         projectSearchQuery.value = ''
 
       } catch (error) {
-        console.error('Failed to assign task:', error)
+        console.error('Failed to assign tasks:', error)
         notification.error({
-          message: 'Failed to assign task',
-          description: error.message || 'Unable to assign task to project. Please try again.',
+          message: 'Failed to assign tasks',
+          description: error.message || 'Unable to assign tasks to project. Please try again.',
           placement: 'topRight',
           duration: 4
         })
@@ -593,10 +645,11 @@ export default {
       allAvailableTasks,
       isLoadingTasks,
       taskSortBy,
-      selectedTaskForAssign,
+      selectedTasksForAssign,
       toggleTaskDueDateSort,
       toggleTaskStatusSort,
       selectTaskForAssign,
+      isTaskSelected,
       formatDate,
       getTaskStatusColor,
       // Project assignment related
