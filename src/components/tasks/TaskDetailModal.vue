@@ -49,7 +49,7 @@
             </div>
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-1">Priority</label>
-              <p class="text-gray-900 text-xs capitalize">{{ task.priority }}</p>
+              <p class="text-gray-900 text-xs capitalize">{{ task.priority || 'Medium' }}</p>
             </div>
           </div>
         </div>
