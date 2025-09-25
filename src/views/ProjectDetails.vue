@@ -52,14 +52,24 @@
           </a-col>
           <a-col :span="6" style="text-align: right;">
             <a-space direction="vertical" align="end">
-              <a-button type="primary" @click="handleEdit">
-                <template #icon>
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                  </svg>
-                </template>
-                Edit Project
-              </a-button>
+              <a-space>
+                <a-button type="default" @click="handleGenerateReport">
+                  <template #icon>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                  </template>
+                  Generate Report
+                </a-button>
+                <a-button type="primary" @click="handleEdit">
+                  <template #icon>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+                    </svg>
+                  </template>
+                  Edit Project
+                </a-button>
+              </a-space>
               <a-button danger @click="handleDelete">
                 <template #icon>
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -73,65 +83,79 @@
         </a-row>
       </a-card>
 
-      <!-- Project Information Grid -->
-      <a-row :gutter="24" style="margin-bottom: 24px;">
-        <!-- Project Metadata -->
-        <a-col :span="8">
+      <!-- Project Information - Full Width -->
+      <a-row style="margin-bottom: 24px;">
+        <a-col :span="24">
           <a-card title="Project Information" size="small">
-            <div class="space-y-4">
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
-                  Project ID
-                </label>
-                <p class="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-md font-mono">
-                  {{ project.project_id }}
-                </p>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
-                  Created By
-                </label>
-                <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
-                  {{ project.created_by || 'Unknown' }}
-                </p>
-              </div>
-              <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">
-                  Created Date
-                </label>
-                <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
-                  {{ formatFullDate(project.created_at) }}
-                </p>
-              </div>
-            </div>
-          </a-card>
-        </a-col>
-
-        <!-- Project Actions -->
-        <a-col :span="16">
-          <a-card title="Quick Actions" size="small">
-            <a-row :gutter="16">
-              <a-col :span="12">
-                <div class="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <div>
-                    <p class="text-base font-medium text-blue-900">View Tasks</p>
-                    <p class="text-sm text-blue-700">See all tasks in this project</p>
-                  </div>
-                  <a-button type="primary" @click="handleViewTasks">
-                    View Tasks
-                  </a-button>
+            <a-row :gutter="24">
+              <a-col :span="6">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Project ID
+                  </label>
+                  <p class="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-md font-mono">
+                    {{ project.project_id }}
+                  </p>
                 </div>
               </a-col>
-              <a-col :span="12">
-                <div class="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200">
-                  <div>
-                    <p class="text-base font-medium text-green-900">Generate Report</p>
-                    <p class="text-sm text-green-700">Export project progress report</p>
-                  </div>
-                  <a-button type="primary" style="background-color: #059669;" @click="handleGenerateReport">
-                    Export
-                  </a-button>
+              <a-col :span="6">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Created By
+                  </label>
+                  <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
+                    {{ project.created_by || 'Unknown' }}
+                  </p>
                 </div>
+              </a-col>
+              <a-col :span="6">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Created Date
+                  </label>
+                  <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
+                    {{ formatFullDate(project.created_at) }}
+                  </p>
+                </div>
+              </a-col>
+              <a-col :span="6">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Due Date
+                  </label>
+                  <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
+                    {{ formatFullDate(project.due_date) || 'No due date' }}
+                  </p>
+                </div>
+              </a-col>
+            </a-row>
+          </a-card>
+        </a-col>
+      </a-row>
+
+      <!-- Project Tasks -->
+      <a-row style="margin-bottom: 24px;">
+        <a-col :span="24">
+          <a-card title="Project Tasks" size="small">
+            <div v-if="isLoadingTasks" style="text-align: center; padding: 50px;">
+              <a-spin size="large" />
+              <p style="margin-top: 16px;">Loading tasks...</p>
+            </div>
+
+            <div v-else-if="projectTasks.length === 0" style="text-align: center; padding: 50px;">
+              <a-empty description="No tasks assigned to this project yet" />
+            </div>
+
+            <a-row v-else :gutter="[16, 16]">
+              <a-col
+                v-for="task in projectTasks"
+                :key="task.id"
+                :span="8"
+              >
+                <TaskCard
+                  :task="task"
+                  @view-details="handleTaskClick"
+                />
               </a-col>
             </a-row>
           </a-card>
@@ -148,6 +172,14 @@
       @close="showEditModal = false"
       @save="handleProjectUpdated"
     />
+
+    <!-- Task Detail Modal -->
+    <TaskDetailModal
+      v-if="selectedTask"
+      :task="selectedTask"
+      :isOpen="showTaskDetailModal"
+      @close="closeTaskDetailModal"
+    />
   </div>
 </template>
 
@@ -157,11 +189,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { notification } from 'ant-design-vue'
 import { useTheme } from '../composables/useTheme.js'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
+import TaskCard from '../components/tasks/TaskCard.vue'
+import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
 
 export default {
   name: 'ProjectDetails',
   components: {
-    ProjectFormModal
+    ProjectFormModal,
+    TaskCard,
+    TaskDetailModal
   },
   setup() {
     const route = useRoute()
@@ -172,6 +208,12 @@ export default {
     const isLoading = ref(true)
     const error = ref(null)
     const showEditModal = ref(false)
+
+    // Task-related state
+    const projectTasks = ref([])
+    const isLoadingTasks = ref(false)
+    const selectedTask = ref(null)
+    const showTaskDetailModal = ref(false)
 
     // Theme-aware styles
     const headerStyle = computed(() => {
@@ -221,6 +263,91 @@ export default {
       return status || 'Active'
     }
 
+    // Load tasks for this project
+    const loadProjectTasks = async () => {
+      if (!project.value?.project_id) return
+
+      isLoadingTasks.value = true
+      try {
+        const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const url = `${baseUrl}/tasks?project_id=${encodeURIComponent(project.value.project_id)}`
+
+        const response = await fetch(url)
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+        const payload = await response.json()
+        const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
+
+        // Filter tasks that are actually assigned to this project
+        const filteredTasks = apiTasks.filter(task =>
+          task.project_id === project.value.project_id
+        )
+
+        projectTasks.value = filteredTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          dueDate: t.dueDate || null,
+          status: t.status,
+          description: t.description || 'No description available',
+          priority: t.priority || 'Medium',
+          assignee: t.assignee || 'Unassigned',
+          project: t.project || project.value.project_name
+        }))
+      } catch (err) {
+        console.error('Failed to load project tasks:', err)
+        projectTasks.value = []
+      } finally {
+        isLoadingTasks.value = false
+      }
+    }
+
+    // Handle task click - same functionality as home page
+    const handleTaskClick = async (task) => {
+      try {
+        const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const url = `${baseUrl}/tasks?task_id=${encodeURIComponent(task.id)}`
+
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+
+        const payload = await response.json()
+        const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
+
+        if (apiTasks.length === 0) {
+          throw new Error('Task not found')
+        }
+
+        // Transform the API response to match TaskDetailModal expected format
+        const taskDetails = {
+          id: apiTasks[0].id,
+          title: apiTasks[0].title,
+          dueDate: apiTasks[0].dueDate,
+          status: apiTasks[0].status,
+          description: apiTasks[0].description || 'No description available',
+          priority: apiTasks[0].priority || 'Medium',
+          assignee: apiTasks[0].assignee || 'Unassigned',
+          project: apiTasks[0].project || project.value.project_name,
+          activities: apiTasks[0].activities || [],
+          comments: apiTasks[0].comments || []
+        }
+
+        // Show task detail modal
+        selectedTask.value = taskDetails
+        showTaskDetailModal.value = true
+
+      } catch (error) {
+        console.error('Failed to fetch task details:', error)
+        notification.error({
+          message: 'Failed to load task details',
+          description: error.message || 'Unable to fetch task information. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      }
+    }
+
     const loadProject = async () => {
       try {
         isLoading.value = true
@@ -255,9 +382,12 @@ export default {
           project_description: foundProject.project_description,
           created_at: foundProject.created_at,
           created_by: foundProject.created_by,
+          due_date: foundProject.due_date,
           status: 'Active' // Default status
         }
 
+        // Load tasks for this project
+        await loadProjectTasks()
 
       } catch (err) {
         console.error('Failed to load project:', err)
@@ -324,16 +454,6 @@ export default {
       })
     }
 
-    const handleViewTasks = () => {
-      // Navigate to tasks filtered by this project
-      notification.info({
-        message: 'Feature Coming Soon',
-        description: 'Project task filtering will be available soon.',
-        placement: 'topRight',
-        duration: 3
-      })
-    }
-
     const handleGenerateReport = () => {
       // Generate project report
       notification.info({
@@ -342,6 +462,12 @@ export default {
         placement: 'topRight',
         duration: 3
       })
+    }
+
+    // Handle task modal close
+    const closeTaskDetailModal = () => {
+      showTaskDetailModal.value = false
+      selectedTask.value = null
     }
 
     // Watch for route parameter changes
@@ -360,6 +486,10 @@ export default {
       isLoading,
       error,
       showEditModal,
+      projectTasks,
+      isLoadingTasks,
+      selectedTask,
+      showTaskDetailModal,
       headerStyle,
       titleStyle,
       subtitleStyle,
@@ -369,7 +499,8 @@ export default {
       handleEdit,
       handleDelete,
       handleProjectUpdated,
-      handleViewTasks,
+      handleTaskClick,
+      closeTaskDetailModal,
       handleGenerateReport
     }
   }
