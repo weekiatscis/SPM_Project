@@ -1,144 +1,193 @@
 <template>
-  <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 transition-colors duration-300">
-    <div class="flex items-center justify-between">
-      <!-- Left side: Mobile menu button + Search -->
-      <div class="flex items-center space-x-4">
-        <!-- Mobile menu button -->
-        <button
-          @click="$emit('toggle-mobile-sidebar')"
-          class="md:hidden p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
-        >
-          <MenuIcon size="lg" />
-        </button>
+  <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+    <!-- Left side: Mobile menu + Search -->
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <!-- Mobile menu button -->
+      <a-button
+        v-if="isMobile"
+        type="text"
+        @click="$emit('toggle-mobile-sidebar')"
+        style="font-size: 16px; width: 40px; height: 40px;"
+      >
+        <template #icon>
+          <MenuIcon />
+        </template>
+      </a-button>
 
-        <!-- Search bar -->
-        <div class="relative">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <SearchIcon size="sm" color="gray" />
-          </div>
-          <input
-            type="text"
-            placeholder="Search tasks, projects..."
-            class="pl-10 pr-4 py-2 w-64 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 transition-colors duration-200"
-            v-model="searchQuery"
-            @input="handleSearch"
-          />
-        </div>
-      </div>
+      <!-- Search bar -->
+      <a-input-search
+        v-model:value="searchQuery"
+        placeholder="Search tasks, projects..."
+        :style="{ width: isMobile ? '200px' : '300px' }"
+        @search="handleSearch"
+      >
+        <template #prefix>
+          <SearchIcon />
+        </template>
+      </a-input-search>
+    </div>
 
-      <!-- Right side: Theme Toggle + Notifications + Profile -->
-      <div class="flex items-center space-x-4">
-        <!-- Notifications -->
-        <button class="relative p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors duration-200">
-          <BellIcon size="lg" />
-          <!-- Notification badge -->
-          <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-        </button>
+    <!-- Right side: Notifications + Profile -->
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <!-- Notifications -->
+      <a-badge :count="3" size="small">
+        <a-button type="text" shape="circle" size="large">
+          <template #icon>
+            <BellIcon />
+          </template>
+        </a-button>
+      </a-badge>
 
-        <!-- Profile dropdown -->
-        <div class="relative" ref="profileDropdown">
-          <button
-            @click="toggleProfileMenu"
-            class="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
-          >
-            <div class="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center">
-              <span class="text-white text-sm font-medium">
-                {{ user?.name?.charAt(0).toUpperCase() || 'U' }}
-              </span>
-            </div>
-            <span class="hidden sm:block text-sm font-medium text-gray-700 dark:text-gray-300">
+      <!-- Theme Toggle -->
+      <a-button type="text" shape="circle" size="large" @click="toggleTheme">
+        <template #icon>
+          <component :is="isDark ? 'SunIcon' : 'MoonIcon'" />
+        </template>
+      </a-button>
+
+      <!-- User Profile Dropdown -->
+      <a-dropdown :trigger="['click']" placement="bottomRight">
+        <a-button type="text" style="height: 40px; padding: 4px 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <a-avatar :size="32" style="background-color: #1890ff;">
+              {{ user?.name?.charAt(0).toUpperCase() || 'U' }}
+            </a-avatar>
+            <span v-if="!isMobile" style="font-size: 14px; font-weight: 500;">
               {{ user?.name || 'Loading...' }}
             </span>
-            <ChevronDownIcon size="sm" color="gray" />
-          </button>
-
-          <!-- Dropdown menu -->
-          <div
-            v-if="isProfileMenuOpen"
-            class="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50 transition-colors duration-200"
-          >
-            <a href="#" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">
-              Profile Settings
-            </a>
-            <a href="#" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">
-              Preferences
-            </a>
-            <hr class="my-1 border-gray-200 dark:border-gray-700">
-            <button
-              @click="logout"
-              class="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
-            >
-              Sign out
-            </button>
+            <DownOutlined style="font-size: 12px;" />
           </div>
-        </div>
-      </div>
+        </a-button>
+        <template #overlay>
+          <a-menu>
+            <a-menu-item key="profile">
+              <UserOutlined style="margin-right: 8px;" />
+              Profile Settings
+            </a-menu-item>
+            <a-menu-item key="preferences">
+              <SettingOutlined style="margin-right: 8px;" />
+              Preferences
+            </a-menu-item>
+            <a-menu-divider />
+            <a-menu-item key="logout" @click="logout">
+              <LogoutOutlined style="margin-right: 8px;" />
+              Sign out
+            </a-menu-item>
+          </a-menu>
+        </template>
+      </a-dropdown>
     </div>
-  </header>
+  </div>
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
-import { MenuIcon, SearchIcon, BellIcon, ChevronDownIcon } from '../components/icons/index.js'
+import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { 
+  MenuFoldOutlined, 
+  MenuUnfoldOutlined, 
+  UserOutlined, 
+  SettingOutlined, 
+  LogoutOutlined,
+  DownOutlined 
+} from '@ant-design/icons-vue'
+import { MenuIcon, SearchIcon, BellIcon } from '../components/icons/index.js'
 import { useUser } from '../composables/useUser.js'
+import { useTheme } from '../composables/useTheme.js'
 
 export default {
   name: 'Topbar',
+  props: {
+    isSidebarCollapsed: {
+      type: Boolean,
+      default: false
+    }
+  },
   components: {
     MenuIcon,
     SearchIcon,
     BellIcon,
-    ChevronDownIcon,
+    MenuFoldOutlined,
+    MenuUnfoldOutlined,
+    UserOutlined,
+    SettingOutlined,
+    LogoutOutlined,
+    DownOutlined
   },
-  emits: ['toggle-mobile-sidebar'],
+  emits: ['toggle-mobile-sidebar', 'toggle-sidebar'],
   setup() {
     const searchQuery = ref('')
-    const isProfileMenuOpen = ref(false)
-    const profileDropdown = ref(null)
     
-    // Use the user composable to get user data
+    // Use composables
     const { user, loading, error } = useUser()
+    const { isDark, toggleTheme } = useTheme()
 
-    const toggleProfileMenu = () => {
-      isProfileMenuOpen.value = !isProfileMenuOpen.value
-    }
+    // Responsive check
+    const isMobile = ref(window.innerWidth < 768)
 
-    const handleSearch = () => {
-      // Implement search functionality
-      console.log('Searching for:', searchQuery.value)
+    const handleSearch = (value) => {
+      console.log('Searching for:', value)
+      // Implement search functionality here
     }
 
     const logout = () => {
       localStorage.removeItem('user')
-      // Router navigation will be implemented later
       console.log('User logged out')
+      // Add router navigation here when implemented
     }
 
-    // Close profile menu when clicking outside
-    const handleClickOutside = (event) => {
-      if (profileDropdown.value && !profileDropdown.value.contains(event.target)) {
-        isProfileMenuOpen.value = false
-      }
+    // Handle window resize for responsive behavior
+    const handleResize = () => {
+      isMobile.value = window.innerWidth < 768
     }
 
     onMounted(() => {
-      document.addEventListener('click', handleClickOutside)
+      window.addEventListener('resize', handleResize)
     })
 
     onUnmounted(() => {
-      document.removeEventListener('click', handleClickOutside)
+      window.removeEventListener('resize', handleResize)
     })
+
+    // Create icons for theme toggle
+    const SunIcon = () => h('svg', {
+      viewBox: '0 0 24 24',
+      width: '16',
+      height: '16',
+      fill: 'currentColor'
+    }, [
+      h('path', {
+        d: 'M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z'
+      })
+    ])
+
+    const MoonIcon = () => h('svg', {
+      viewBox: '0 0 24 24',
+      width: '16',
+      height: '16',
+      fill: 'currentColor'
+    }, [
+      h('path', {
+        'fill-rule': 'evenodd',
+        d: 'M9.528 1.718a.75.75 0 01.162.819A8.97 8.97 0 009 6a9 9 0 009 9 8.97 8.97 0 003.463-.69.75.75 0 01.981.98 10.503 10.503 0 01-9.694 6.46c-5.799 0-10.5-4.701-10.5-10.5 0-4.368 2.667-8.112 6.46-9.694a.75.75 0 01.818.162z',
+        'clip-rule': 'evenodd'
+      })
+    ])
 
     return {
       searchQuery,
-      isProfileMenuOpen,
-      profileDropdown,
       user,
       loading,
       error,
-      toggleProfileMenu,
+      isDark,
+      isMobile,
       handleSearch,
-      logout
+      logout,
+      toggleTheme,
+      h,
+      MenuFoldOutlined,
+      MenuUnfoldOutlined,
+      SunIcon,
+      MoonIcon
     }
   }
 }
