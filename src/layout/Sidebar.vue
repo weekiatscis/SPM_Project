@@ -46,7 +46,7 @@
       v-model:selectedKeys="selectedKeys"
       v-model:openKeys="openKeys"
       mode="inline"
-      :style="{ height: 'calc(100vh - 170px)', borderRight: 0 }"
+      :style="{ height: 'calc(100vh - 170px)', borderRight: 0 , paddingTop: '24px'  }"
       @click="handleMenuClick"
     >
       <!-- Home -->

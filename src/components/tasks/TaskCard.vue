@@ -79,11 +79,14 @@ export default {
       
       const dueDate = new Date(dueDateString)
       const now = new Date()
-      const timeDiff = dueDate.getTime() - now.getTime()
-      const hoursDiff = timeDiff / (1000 * 60 * 60) // Convert to hours
       
-      // Return true if due within next 24 hours (and not overdue)
-      return hoursDiff >= 0 && hoursDiff <= 24
+      // Reset time to compare dates only
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
+      const taskDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate())
+      
+      // Return true if due today or tomorrow
+      return taskDate.getTime() === today.getTime() || taskDate.getTime() === tomorrow.getTime()
     }
 
     return {

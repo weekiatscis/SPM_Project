@@ -1,5 +1,5 @@
 <template>
-  <div style="max-width: 1200px; margin: 0 auto; padding: 24px;">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 0px;">
     <!-- Loading State -->
     <div v-if="isLoading" style="text-align: center; padding: 50px;">
       <a-spin size="large" />
