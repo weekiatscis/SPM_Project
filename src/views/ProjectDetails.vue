@@ -152,7 +152,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { notification } from 'ant-design-vue'
 import { useTheme } from '../composables/useTheme.js'
@@ -343,6 +343,13 @@ export default {
         duration: 3
       })
     }
+
+    // Watch for route parameter changes
+    watch(() => route.params.id, (newId, oldId) => {
+      if (newId && newId !== oldId) {
+        loadProject()
+      }
+    }, { immediate: true })
 
     onMounted(() => {
       loadProject()
