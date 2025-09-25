@@ -87,7 +87,7 @@
               @click="handleNavigation(`/projects/${project.project_id}`)"
               :title="project.project_name"
             >
-              <span class="text-xs truncate">📁 {{ project.project_name }}</span>
+              <span class="text-xs truncate">{{ project.project_name }}</span>
             </button>
 
             <!-- No projects message -->
