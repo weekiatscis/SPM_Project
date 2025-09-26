@@ -17,7 +17,7 @@ services:
       timeout: 10s
       retries: 3
 
-  create-project:
+  project-service:
     build:
       context: .
       dockerfile: ./src/microservices/projects/Dockerfile
@@ -26,18 +26,9 @@ services:
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-    command: ["python","createProject.py"]
+      - PORT=8082
+    command: ["python", "project_service.py"]
 
-  get-project:
-    build:
-      context: .
-      dockerfile: ./src/microservices/projects/Dockerfile
-    ports:
-      - "8083:8083"
-    environment:
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
-    command: ["python","getProject.py"]
 
   user-service:
     build:

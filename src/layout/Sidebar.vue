@@ -250,7 +250,7 @@ export default {
 
       projectsLoading.value = true
       try {
-        const baseUrl = 'http://localhost:8083'
+        const baseUrl = 'http://localhost:8082'
         const response = await fetch(`${baseUrl}/projects?created_by=${encodeURIComponent(user.value.user_id)}`)
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`)

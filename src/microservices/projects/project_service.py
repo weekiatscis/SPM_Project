@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -59,6 +59,44 @@ def create_project():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
+def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "project_id": row.get("project_id"),
+        "project_name": row.get("project_name"),
+        "project_description": row.get("project_description"),
+        "created_at": row.get("created_at"),
+        "created_by": row.get("created_by")
+    }
+
+
+@app.get("/projects")
+def get_projects():
+    try:
+        limit_param = request.args.get("limit", default=None, type=int)
+        created_by = request.args.get("created_by", default=None, type=str)
+        project_id = request.args.get("project_id", default=None, type=str)
+
+        query = (
+            supabase
+            .table("project")
+            .select("project_id,project_name,project_description,created_at,created_by")
+            .order("created_at", desc=True)
+        )
+
+        if limit_param:
+            query = query.limit(limit_param)
+        if created_by:
+            query = query.eq("created_by", created_by)
+        if project_id:
+            query = query.eq("project_id", project_id)
+
+        response = query.execute()
+        rows: List[Dict[str, Any]] = response.data or []
+        projects = [map_db_row_to_api(r) for r in rows]
+        return jsonify({"projects": projects})
+
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8082))

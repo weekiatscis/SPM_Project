@@ -120,7 +120,7 @@ export default {
     // Load projects on mount for stats
     onMounted(async () => {
       try {
-        const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8083'
+        const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
         const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
         const url = ownerId
           ? `${baseUrl}/projects?created_by=${encodeURIComponent(ownerId)}`

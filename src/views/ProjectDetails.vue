@@ -354,7 +354,7 @@ export default {
         error.value = null
 
         const projectId = route.params.id
-        const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8083'
+        const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
         const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
 
         // Fetch all projects since there's no single project endpoint
@@ -407,7 +407,7 @@ export default {
       }
 
       try {
-        const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8083'
+        const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
         const response = await fetch(`${baseUrl}/projects/${project.value.project_id}`, {
           method: 'DELETE',
           headers: {
