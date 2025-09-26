@@ -102,14 +102,28 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
 def log_task_change(task_id: str, action: str, field: str, user_id: str,
                     old_value: Any, new_value: Any) -> Optional[Dict[str, Any]]:
     try:
+        # Ensure values are JSON-serializable for JSONB storage
+        def make_json_serializable(value):
+            if value is None:
+                return None
+            elif isinstance(value, (str, int, float, bool)):
+                return value
+            elif isinstance(value, (dict, list)):
+                return value
+            else:
+                return str(value)
+        
+        # Create proper JSON structure for JSONB columns
+        old_json = {field: make_json_serializable(old_value)} if not isinstance(old_value, (dict, list)) else old_value
+        new_json = {field: make_json_serializable(new_value)} if not isinstance(new_value, (dict, list)) else new_value
+        
         log_data = {
             "task_id": task_id,
             "action": action,
             "field": field,
             "user_id": user_id,
-            # send JSON objects, not strings, if the column is json/jsonb
-            "old_value": {field: old_value} if not isinstance(old_value, (dict, list)) else old_value,
-            "new_value": {field: new_value} if not isinstance(new_value, (dict, list)) else new_value,
+            "old_value": old_json,
+            "new_value": new_json,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         
@@ -281,12 +295,8 @@ def get_task_logs(task_id: str):
         ).eq("task_id", task_id).order("created_at", desc=False).execute()
         logs = response.data or []
 
-        # Format logs for frontend (stringify old/new if needed)
-        for log in logs:
-            # old_value and new_value are JSON, convert to string for display
-            log["old_value"] = str(log.get("old_value", ""))
-            log["new_value"] = str(log.get("new_value", ""))
-
+        # Keep logs as JSON objects for frontend processing - do not stringify
+        # The frontend will handle formatting the values appropriately
         return jsonify({"logs": logs, "count": len(logs)}), 200
     except Exception as exc:
         return jsonify({"error": f"Failed to retrieve logs: {str(exc)}"}), 500
@@ -448,6 +458,26 @@ def delete_task(task_id: str):
 def health_check():
     """Health check endpoint"""
     return jsonify({"status": "healthy", "service": "task-service"}), 200
+
+
+@app.route("/users/<user_id>", methods=["GET"])
+def get_user_by_id(user_id: str):
+    """Get user info by user_id from Supabase user table"""
+    try:
+        response = supabase.table("user").select("user_id, name, email").eq("user_id", user_id).execute()
+        
+        if response.data and len(response.data) > 0:
+            user_row = response.data[0]
+            return jsonify({"user": {
+                "user_id": user_row.get("user_id"),
+                "name": user_row.get("name"),
+                "email": user_row.get("email")
+            }}), 200
+        else:
+            return jsonify({"error": "User not found", "user_id": user_id}), 404
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to fetch user: {str(exc)}", "user_id": user_id}), 500
 
 
 # Error handlers

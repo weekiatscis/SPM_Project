@@ -52,6 +52,46 @@
               <p class="text-gray-900 text-xs capitalize">{{ task.priority || 'Medium' }}</p>
             </div>
           </div>
+
+          <!-- Audit Log Section -->
+          <div class="border-t border-gray-200 pt-6">
+            <div class="bg-gray-100 rounded-lg p-4">
+              <h3 class="text-sm font-medium text-gray-700 mb-4">Audit Log</h3>
+              <div class="h-24 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 pr-2">
+                <div v-if="isLoadingLogs" class="text-center py-4">
+                  <div class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                  <p class="text-xs text-gray-500 mt-1">Loading audit logs...</p>
+                </div>
+                
+                <div v-else-if="auditLogs.length === 0" class="text-center py-4">
+                  <p class="text-xs text-gray-500">No audit logs found.</p>
+                </div>
+                
+                <div v-else class="space-y-0.5">
+                  <div 
+                    v-for="log in auditLogs" 
+                    :key="log.log_id"
+                    class="flex items-start space-x-2 py-0.5 px-1 hover:bg-gray-50 rounded transition-colors duration-150"
+                  >
+                    <div class="flex-shrink-0">
+                      <div class="w-1.5 h-1.5 rounded-full mt-1" :class="{
+                        'bg-green-400': log.action === 'create',
+                        'bg-blue-400': log.action === 'update',
+                        'bg-red-400': log.action === 'delete'
+                      }"></div>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs text-gray-700 leading-tight">
+                        <span class="font-medium text-gray-500">{{ formatLogDate(log.created_at) }}</span>: 
+                        <span class="font-medium text-indigo-600">{{ getUserName(log.user_id) }}</span>
+                        {{ formatLogMessage(log) }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Footer with action buttons -->
@@ -94,7 +134,7 @@
 </template>
 
 <script>
-import { ref } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 // Icons will be inline SVG instead of components
 
 export default {
@@ -112,6 +152,62 @@ export default {
   emits: ['close', 'edit', 'delete'],
   setup(props, { emit }) {
     const isDeleting = ref(false)
+    const auditLogs = ref([])
+    const isLoadingLogs = ref(false)
+    const userCache = ref({})
+
+    // Fetch audit logs when modal opens or task changes
+    const fetchAuditLogs = async () => {
+      if (!props.task?.id) return
+      
+      isLoadingLogs.value = true
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}/logs`)
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        
+        const result = await response.json()
+        
+        // Sort logs by created_at descending (latest first)
+        auditLogs.value = (result.logs || []).sort((a, b) => 
+          new Date(b.created_at) - new Date(a.created_at)
+        )
+        
+        // Fetch user names for all unique user_ids
+        const userIds = [...new Set(auditLogs.value.map(log => log.user_id))]
+        await fetchUserNames(userIds)
+        
+      } catch (error) {
+        console.error('Failed to fetch audit logs:', error)
+        auditLogs.value = []
+      } finally {
+        isLoadingLogs.value = false
+      }
+    }
+
+    // Fetch logs when component mounts and modal is open
+    onMounted(() => {
+      if (props.isOpen && props.task?.id) {
+        nextTick(() => fetchAuditLogs())
+      }
+    })
+
+    // Watch for modal opening to fetch logs
+    watch(() => props.isOpen, (isOpen) => {
+      if (isOpen && props.task?.id) {
+        nextTick(() => fetchAuditLogs())
+      }
+    })
+
+    // Watch for task changes to refetch logs
+    watch(() => props.task?.id, (taskId) => {
+      if (props.isOpen && taskId) {
+        nextTick(() => fetchAuditLogs())
+      }
+    })
 
     const formatDate = (dateString) => {
       return new Date(dateString).toLocaleDateString('en-US', {
@@ -119,6 +215,123 @@ export default {
         month: 'long',
         day: 'numeric'
       })
+    }
+
+    const formatLogDate = (dateString) => {
+      return new Date(dateString).toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+
+    // Fetch user names from Supabase user table
+    const fetchUserNames = async (userIds) => {
+      for (const userId of userIds) {
+        if (!userId || userCache.value[userId]) continue
+        
+        try {
+          // Fetch user data directly from task service (it has Supabase access)
+          const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+          const url = `${taskServiceUrl}/users/${userId}`
+          
+          const response = await fetch(url)
+          
+          if (response.ok) {
+            const result = await response.json()
+            
+            if (result.user && result.user.name) {
+              userCache.value[userId] = result.user.name
+            } else {
+              // Fallback to short ID if no name found
+              const shortId = userId.slice(0, 8)
+              userCache.value[userId] = `User ${shortId}`
+            }
+          } else {
+            // Fallback for failed requests
+            const shortId = userId.slice(0, 8)
+            userCache.value[userId] = `User ${shortId}`
+          }
+        } catch (error) {
+          // Set a fallback name so we don't keep trying
+          const shortId = userId.slice(0, 8)
+          userCache.value[userId] = `User ${shortId}`
+        }
+      }
+    }
+
+    const getUserName = (userId) => {
+      if (!userId) return 'Unknown User'
+      
+      // Check if we have a cached name
+      if (userCache.value[userId]) {
+        return userCache.value[userId]
+      }
+      
+      // Create a user-friendly fallback name from the UUID
+      const shortId = userId.slice(0, 8)
+      const friendlyName = `User-${shortId}`
+      userCache.value[userId] = friendlyName
+      
+      return friendlyName
+    }
+
+    const formatLogMessage = (log) => {
+      if (log.action === 'create') {
+        return 'created task.'
+      } else if (log.action === 'update') {
+        const fieldName = log.field
+        
+        // Handle JSONB structure for old and new values
+        let oldValue = 'null'
+        let newValue = 'null'
+        
+        if (log.old_value && typeof log.old_value === 'object' && log.old_value[fieldName] !== undefined) {
+          oldValue = log.old_value[fieldName] === null ? 'null' : String(log.old_value[fieldName])
+        }
+        
+        if (log.new_value && typeof log.new_value === 'object' && log.new_value[fieldName] !== undefined) {
+          newValue = log.new_value[fieldName] === null ? 'null' : String(log.new_value[fieldName])
+        }
+        
+        // Format field names to be more readable
+        const readableFieldName = fieldName.replace(/_/g, ' ')
+        
+        return `updated ${readableFieldName} from "${oldValue}" to "${newValue}".`
+      } else if (log.action === 'delete') {
+        return 'deleted task.'
+      }
+      return `performed ${log.action} action.`
+    }
+
+    const formatValue = (field, valueObj) => {
+      if (!valueObj) return 'null'
+      
+      // Handle JSONB objects from the database
+      if (typeof valueObj === 'object') {
+        // For single field updates, the structure is: { "field_name": "value" }
+        if (valueObj[field] !== undefined) {
+          const value = valueObj[field]
+          return value === null ? 'null' : String(value)
+        }
+        
+        // For create actions, the structure contains all created fields
+        if (field === 'task' && typeof valueObj === 'object') {
+          // For create actions, show a summary of created fields
+          const fields = Object.keys(valueObj).filter(key => valueObj[key] !== null)
+          return `with ${fields.join(', ')}`
+        }
+        
+        // Fallback: try to extract any non-null value from the object
+        const nonNullValues = Object.entries(valueObj).filter(([_, value]) => value !== null)
+        if (nonNullValues.length > 0) {
+          return nonNullValues.map(([_, value]) => String(value)).join(', ')
+        }
+      }
+      
+      return valueObj === null ? 'null' : String(valueObj)
     }
 
     const formatActivityDate = (dateString) => {
@@ -194,11 +407,16 @@ export default {
 
     return {
       isDeleting,
+      auditLogs,
+      isLoadingLogs,
       formatDate,
+      formatLogDate,
       formatActivityDate,
       getStatusColor,
       getStatusText,
       getPriorityColor,
+      getUserName,
+      formatLogMessage,
       editTask,
       deleteTask
     }
