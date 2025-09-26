@@ -1,7 +1,13 @@
 <template>
   <ThemeProvider>
     <a-config-provider>
-      <a-layout style="min-height: 100vh;">
+      <!-- Show login page without any layout -->
+      <div v-if="isLoginPage">
+        <router-view />
+      </div>
+
+      <!-- Show main app layout for all other pages -->
+      <a-layout v-else style="min-height: 100vh;">
         <!-- Sidebar -->
         <Sidebar 
           v-model:is-collapsed="isSidebarCollapsed"
@@ -129,7 +135,7 @@ export default {
     // Initialize theme
     const { initializeTheme } = useTheme()
     const route = useRoute()
-    
+
     // Initialize theme on app mount
     onMounted(() => {
       initializeTheme()
@@ -137,6 +143,9 @@ export default {
     
     const isSidebarCollapsed = ref(false)
     const isMobileSidebarOpen = ref(false)
+
+    // Check if current route is login page
+    const isLoginPage = computed(() => route.name === 'Login')
 
     // Generate page title from route
     const currentPageTitle = computed(() => {
@@ -179,10 +188,11 @@ export default {
     return {
       isSidebarCollapsed,
       isMobileSidebarOpen,
+      isLoginPage,
       currentPageTitle,
       toggleSidebar,
       toggleMobileSidebar,
-      closeMobileSidebar
+      closeMobileSidebar,
     }
   }
 }
