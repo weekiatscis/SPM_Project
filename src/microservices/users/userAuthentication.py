@@ -1,7 +1,7 @@
 import os
 import hashlib
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -86,14 +86,14 @@ def reset_failed_attempts(user_id: str):
         "failed_attempts": 0,
         "is_locked": False,
         "locked_until": None,
-        "last_login": datetime.timezone.utc().isoformat()
+        "last_login": datetime.now(timezone.utc).isoformat()
     }).eq("user_id", user_id).execute()
 
 
 def create_session(user_id: str) -> str:
     """Create a new session for the user"""
     session_token = generate_session_token()
-    expires_at = datetime.timezone.utc() + SESSION_TIMEOUT
+    expires_at = datetime.now(timezone.utc) + SESSION_TIMEOUT
     
     # Clean up any existing sessions for this user (optional - allow multiple sessions)
     # supabase.table("user_sessions").delete().eq("user_id", user_id).execute()
@@ -103,7 +103,7 @@ def create_session(user_id: str) -> str:
         "user_id": user_id,
         "session_token": session_token,
         "expires_at": expires_at.isoformat(),
-        "last_activity": datetime.timezone.utc().isoformat()
+        "last_activity": datetime.now(timezone.utc).isoformat()
     }).execute()
     
     return session_token
@@ -136,7 +136,7 @@ def validate_session(session_token: str) -> Optional[Dict[str, Any]]:
         
         # Update last activity
         supabase.table("user_sessions").update({
-            "last_activity": datetime.timezone.utc().isoformat()
+            "last_activity": datetime.now(timezone.utc).isoformat()
         }).eq("session_token", session_token).execute()
         
         # Get user data
