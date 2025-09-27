@@ -151,6 +151,7 @@ def get_tasks():
     - task_id: Get specific task by ID
     - status: Filter by status
     - priority: Filter by priority
+    - project_id: Filter by project ID
     """
     try:
         # Parse query parameters
@@ -159,12 +160,13 @@ def get_tasks():
         task_id = request.args.get("task_id", default=None, type=str)
         status = request.args.get("status", default=None, type=str)
         priority = request.args.get("priority", default=None, type=str)
+        project_id = request.args.get("project_id", default=None, type=str)
 
         # Build query - only select fields that definitely exist in the database
         query = (
             supabase
             .table("task")
-            .select("task_id,title,due_date,status,priority,description,created_at,owner_id")
+            .select("task_id,title,due_date,status,priority,description,created_at,owner_id,project_id")
             .order("created_at", desc=True)
         )
 
@@ -179,6 +181,8 @@ def get_tasks():
             query = query.eq("status", status)
         if priority:
             query = query.eq("priority", priority)
+        if project_id:
+            query = query.eq("project_id", project_id)
 
         # Execute query
         response = query.execute()
