@@ -72,8 +72,10 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - PORT=8082
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
     command: ["python", "project_service.py"]
-
+    depends_on:
+      - rabbitmq
 
   user-service:
     build:
@@ -86,6 +88,7 @@ services:
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - VITE_TASK_OWNER_ID=${VITE_TASK_OWNER_ID}
       - PORT=8081
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
     command: ["python", "user_service.py"]
     restart: unless-stopped
     healthcheck:
@@ -93,6 +96,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    depends_on:
+      - rabbitmq
 
   auth-service:
     build:
