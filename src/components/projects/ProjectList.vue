@@ -246,6 +246,7 @@ import { useRouter } from 'vue-router'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { notification } from 'ant-design-vue'
 import { useTheme } from '../../composables/useTheme.js'
+import { useAuthStore } from '../../stores/auth'
 import ProjectFormModal from './ProjectFormModal.vue'
 import ProjectCard from './ProjectCard.vue'
 
@@ -263,6 +264,7 @@ export default {
     const isLoading = ref(false)
     const sortBy = ref('created_at-desc')
     const { isDarkMode } = useTheme()
+    const authStore = useAuthStore()
 
     // Tab state for switching between sections
     const activeTab = ref('projects')
@@ -354,7 +356,7 @@ export default {
       isLoadingTasks.value = true
       try {
         const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-        const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
+        const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
         const url = ownerId
           ? `${baseUrl}/tasks?owner_id=${encodeURIComponent(ownerId)}`
           : `${baseUrl}/tasks`
@@ -622,7 +624,7 @@ export default {
       isLoading.value = true
       try {
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8083'
-        const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
+        const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
         const url = ownerId
           ? `${baseUrl}/projects?created_by=${encodeURIComponent(ownerId)}`
           : `${baseUrl}/projects`

@@ -51,6 +51,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { useTheme } from '../composables/useTheme.js'
+import { useAuthStore } from '../stores/auth'
 import ProjectList from '../components/projects/ProjectList.vue'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 
@@ -60,12 +61,13 @@ export default {
     PlusOutlined,
     ProjectList,
     ProjectFormModal
-  },
+  },  
   setup() {
     const projects = ref([])
     const showCreateModal = ref(false)
     const { isDarkMode } = useTheme()
-
+    const authStore = useAuthStore()
+    
     const currentUser = computed(() => {
       const user = localStorage.getItem('user')
       return user ? JSON.parse(user) : null
@@ -121,7 +123,7 @@ export default {
     onMounted(async () => {
       try {
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8083'
-        const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
+        const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
         const url = ownerId
           ? `${baseUrl}/projects?created_by=${encodeURIComponent(ownerId)}`
           : `${baseUrl}/projects`

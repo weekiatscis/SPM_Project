@@ -183,7 +183,7 @@ import { computed, ref, onMounted, watch, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
 import { HomeIcon, TaskIcon, DashboardIcon, ProjectIcon, SettingsIcon, UserIcon, LogoutIcon } from '../components/icons/index.js'
-import { useUser } from '../composables/useUser.js'
+import { useAuthStore } from '../stores/auth.js'
 
 export default {
   name: 'Sidebar',
@@ -208,9 +208,10 @@ export default {
   setup(props, { emit }) {
     const router = useRouter()
     const route = useRoute()
+    const authStore = useAuthStore()
 
-    // Use the user composable to get user data
-    const { user, loading, error } = useUser()
+    // Get user data directly from auth store
+    const user = computed(() => authStore.user)
 
     // Ant Design menu state
     const selectedKeys = ref(['home'])
@@ -265,10 +266,13 @@ export default {
       }
     }
 
-    const logout = () => {
-      localStorage.removeItem('user')
-      // Router navigation will be implemented later
-      console.log('User logged out')
+    const logout = async () => {
+      try {
+        await authStore.logout()
+        await router.push('/login')
+      } catch (error) {
+        console.error('Logout error:', error)
+      }
     }
 
     // Update selected keys based on current route
@@ -306,8 +310,6 @@ export default {
 
     return {
       user,
-      loading,
-      error,
       selectedKeys,
       openKeys,
       collapsed,

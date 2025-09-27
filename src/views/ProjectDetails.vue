@@ -188,6 +188,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { notification } from 'ant-design-vue'
 import { useTheme } from '../composables/useTheme.js'
+import { useAuthStore } from '../stores/auth'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskCard from '../components/tasks/TaskCard.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
@@ -203,6 +204,7 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const { isDarkMode } = useTheme()
+    const authStore = useAuthStore()
 
     const project = ref(null)
     const isLoading = ref(true)
@@ -355,7 +357,7 @@ export default {
 
         const projectId = route.params.id
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8083'
-        const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
+        const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
 
         // Fetch all projects since there's no single project endpoint
         const url = ownerId

@@ -115,6 +115,7 @@
 
 <script>
 import { ref, watch } from 'vue'
+import { useAuthStore } from '../../stores/auth'
 
 export default {
   name: 'ProjectFormModal',
@@ -130,6 +131,7 @@ export default {
   },
   emits: ['close', 'save'],
   setup(props, { emit }) {
+    const authStore = useAuthStore()
     const form = ref({
       project_name: '',
       project_description: '',
@@ -213,7 +215,7 @@ export default {
           project_description: form.value.project_description?.trim() || '',
           due_date: form.value.due_date,
           created_by: form.value.created_by?.trim() || 'Unknown',
-          owner_id: import.meta.env.VITE_TASK_OWNER_ID
+          owner_id: authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID
         }
 
         const response = await fetch(`${createProjectUrl}/projects`, {

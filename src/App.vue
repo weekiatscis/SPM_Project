@@ -1,7 +1,7 @@
 <template>
   <ThemeProvider>
     <a-config-provider>
-      <!-- Show login page without any layout -->
+      <!-- Show auth pages (login/signup) without any layout -->
       <div v-if="isLoginPage">
         <router-view />
       </div>
@@ -144,8 +144,8 @@ export default {
     const isSidebarCollapsed = ref(false)
     const isMobileSidebarOpen = ref(false)
 
-    // Check if current route is login page
-    const isLoginPage = computed(() => route.name === 'Login')
+    // Check if current route is an auth page (login/signup) that doesn't need main layout
+    const isLoginPage = computed(() => route.name === 'Login' || route.name === 'Signup')
 
     // Generate page title from route
     const currentPageTitle = computed(() => {

@@ -40,7 +40,7 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import { useTheme } from '../composables/useTheme.js'
-import { useUser } from '../composables/useUser.js'
+import { useAuthStore } from '../stores/auth'
 import TaskList from '../components/tasks/TaskList.vue'
 
 export default {
@@ -51,9 +51,10 @@ export default {
   setup() {
     const tasks = ref([])
     const { isDarkMode } = useTheme()
+    const authStore = useAuthStore()
     
-    // Use the user composable to get user data from microservice
-    const { user: currentUser, loading, error } = useUser()
+    // Get user data directly from auth store
+    const currentUser = computed(() => authStore.user)
 
     const stats = computed(() => {
       const total = tasks.value.length
@@ -127,7 +128,7 @@ export default {
     onMounted(async () => {
       try {
         const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-        const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
+        const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
         const url = ownerId
           ? `${baseUrl}/tasks?owner_id=${encodeURIComponent(ownerId)}`
           : `${baseUrl}/tasks`
