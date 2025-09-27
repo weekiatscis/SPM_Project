@@ -54,8 +54,14 @@
       
       <div class="login-footer">
         <a-typography-text type="secondary">
-          Contact your administrator if you need assistance
+          Don't have an account? 
+          <router-link to="/signup" class="signup-link">Create one here</router-link>
         </a-typography-text>
+        <div style="margin-top: 12px;">
+          <a-typography-text type="secondary">
+            Contact your administrator if you need assistance
+          </a-typography-text>
+        </div>
       </div>
     </div>
   </div>
@@ -166,6 +172,17 @@ export default {
 
 .login-footer {
   text-align: center;
+}
+
+.signup-link {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.signup-link:hover {
+  color: #2563eb;
+  text-decoration: underline;
 }
 
 /* Mobile responsive */

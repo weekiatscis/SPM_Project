@@ -78,6 +78,7 @@ import { ref, computed, onMounted, h } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { notification } from 'ant-design-vue'
 import { useTheme } from '../../composables/useTheme.js'
+import { useAuthStore } from '../../stores/auth'
 import TaskFormModal from './TaskFormModal.vue'
 import TaskDetailModal from './TaskDetailModal.vue'
 import TaskCard from './TaskCard.vue'
@@ -98,6 +99,7 @@ export default {
     const isLoadingTaskDetails = ref(false)
     const sortBy = ref('dueDate-asc')
     const { isDarkMode } = useTheme()
+    const authStore = useAuthStore()
 
     // Modal state for creating task
     const showTaskModal = ref(false)
@@ -317,7 +319,7 @@ export default {
       isLoading.value = true
       try {
         const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-        const ownerId = import.meta.env.VITE_TASK_OWNER_ID || ''
+        const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
         const url = ownerId
           ? `${baseUrl}/tasks?owner_id=${encodeURIComponent(ownerId)}`
           : `${baseUrl}/tasks`

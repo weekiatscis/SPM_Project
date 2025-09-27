@@ -48,3 +48,21 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: ./src/microservices/users/Dockerfile
+    ports:
+      - "8086:8086"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - PORT=8086
+    command: ["python", "userAuthentication.py"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

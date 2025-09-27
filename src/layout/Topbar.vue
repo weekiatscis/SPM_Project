@@ -59,7 +59,7 @@
           </div>
         </a-button>
         <template #overlay>
-          <a-menu>
+          <a-menu @click="handleMenuClick">
             <a-menu-item key="profile">
               <UserOutlined style="margin-right: 8px;" />
               Profile Settings
@@ -69,7 +69,7 @@
               Preferences
             </a-menu-item>
             <a-menu-divider />
-            <a-menu-item key="logout" @click="logout">
+            <a-menu-item key="logout">
               <LogoutOutlined style="margin-right: 8px;" />
               Sign out
             </a-menu-item>
@@ -82,6 +82,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted, h } from 'vue'
+import { useRouter } from 'vue-router'
 import { 
   MenuFoldOutlined, 
   MenuUnfoldOutlined, 
@@ -91,8 +92,8 @@ import {
   DownOutlined 
 } from '@ant-design/icons-vue'
 import { MenuIcon, SearchIcon, BellIcon } from '../components/icons/index.js'
-import { useUser } from '../composables/useUser.js'
 import { useTheme } from '../composables/useTheme.js'
+import { useAuthStore } from '../stores/auth.js'
 
 export default {
   name: 'Topbar',
@@ -115,10 +116,12 @@ export default {
   },
   emits: ['toggle-mobile-sidebar', 'toggle-sidebar'],
   setup() {
+    const router = useRouter()
+    const authStore = useAuthStore()
     const searchQuery = ref('')
     
-    // Use composables
-    const { user, loading, error } = useUser()
+    // Get user data directly from auth store and use theme composable
+    const user = computed(() => authStore.user)
     const { isDark, toggleTheme } = useTheme()
 
     // Responsive check
@@ -129,10 +132,25 @@ export default {
       // Implement search functionality here
     }
 
-    const logout = () => {
-      localStorage.removeItem('user')
-      console.log('User logged out')
-      // Add router navigation here when implemented
+    const handleMenuClick = async ({ key }) => {
+      if (key === 'logout') {
+        await logout()
+      } else if (key === 'profile') {
+        // TODO: Navigate to profile settings page
+        console.log('Navigate to profile settings')
+      } else if (key === 'preferences') {
+        // TODO: Navigate to preferences page
+        console.log('Navigate to preferences')
+      }
+    }
+
+    const logout = async () => {
+      try {
+        await authStore.logout()
+        await router.push('/login')
+      } catch (error) {
+        console.error('Logout error:', error)
+      }
     }
 
     // Handle window resize for responsive behavior
@@ -176,11 +194,10 @@ export default {
     return {
       searchQuery,
       user,
-      loading,
-      error,
       isDark,
       isMobile,
       handleSearch,
+      handleMenuClick,
       logout,
       toggleTheme,
       h,

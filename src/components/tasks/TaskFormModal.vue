@@ -135,6 +135,7 @@
 
 <script>
 import { ref, watch } from 'vue'
+import { useAuthStore } from '../../stores/auth'
 
 export default {
   name: 'TaskFormModal',
@@ -150,6 +151,7 @@ export default {
   },
   emits: ['close', 'save'],
   setup(props, { emit }) {
+    const authStore = useAuthStore()
     const form = ref({
       title: '',
       description: '',
@@ -269,7 +271,7 @@ export default {
           due_date: form.value.dueDate,
           status: form.value.status,
           priority: form.value.priority,
-          owner_id: import.meta.env.VITE_TASK_OWNER_ID
+          owner_id: authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID
         }
 
         const response = await fetch(`${taskServiceUrl}/tasks`, {
