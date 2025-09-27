@@ -198,13 +198,37 @@ export default {
       isLoading.value = true
 
       try {
-        // If editing existing project, emit to parent (update functionality to be implemented)
+        // If editing existing project, call update API
         if (props.project?.project_id) {
-          const projectData = {
+          const updateProjectUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+          const payload = {
+            project_name: form.value.project_name.trim(),
+            project_description: form.value.project_description?.trim() || '',
+            due_date: form.value.due_date,
+            created_by: form.value.created_by?.trim() || 'Unknown'
+          }
+
+          const response = await fetch(`${updateProjectUrl}/projects/${props.project.project_id}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload)
+          })
+
+          if (!response.ok) {
+            const errorData = await response.json()
+            throw new Error(errorData.error || `HTTP ${response.status}`)
+          }
+
+          const result = await response.json()
+
+          // Emit success with the updated project data
+          const updatedProjectData = {
             ...form.value,
             project_id: props.project.project_id
           }
-          emit('save', projectData)
+          emit('save', updatedProjectData)
           return
         }
 

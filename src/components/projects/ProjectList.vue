@@ -292,6 +292,7 @@ export default {
         project_description: projectData.project_description,
         created_at: projectData.created_at,
         created_by: projectData.created_by,
+        due_date: projectData.due_date,
         status: 'Active' // Default status
       }
 

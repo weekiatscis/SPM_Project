@@ -442,18 +442,25 @@ export default {
     }
 
     const handleProjectUpdated = (updatedProject) => {
+      // Update the local project state with the new data
       project.value = {
         ...project.value,
         ...updatedProject
       }
+
+      // Close the modal
       showEditModal.value = false
 
+      // Show success notification
       notification.success({
         message: 'Project updated successfully',
         description: `"${updatedProject.project_name}" has been updated.`,
         placement: 'topRight',
         duration: 3
       })
+
+      // Optionally refresh the project data from the server to ensure consistency
+      loadProject()
     }
 
     const handleGenerateReport = () => {

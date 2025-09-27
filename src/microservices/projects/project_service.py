@@ -65,7 +65,8 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "project_name": row.get("project_name"),
         "project_description": row.get("project_description"),
         "created_at": row.get("created_at"),
-        "created_by": row.get("created_by")
+        "created_by": row.get("created_by"),
+        "due_date": row.get("due_date")
     }
 
 
@@ -79,7 +80,7 @@ def get_projects():
         query = (
             supabase
             .table("project")
-            .select("project_id,project_name,project_description,created_at,created_by")
+            .select("project_id,project_name,project_description,created_at,created_by,due_date")
             .order("created_at", desc=True)
         )
 
@@ -97,6 +98,61 @@ def get_projects():
 
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/projects/<project_id>", methods=["PUT"])
+def update_project(project_id):
+    try:
+        body = request.get_json(silent=True) or {}
+
+        # Validate required fields
+        if not body.get("project_name", "").strip():
+            return jsonify({"error": "project_name is required"}), 400
+
+        # Prepare update data
+        update_data = {}
+
+        if "project_name" in body:
+            update_data["project_name"] = body["project_name"].strip()
+
+        if "project_description" in body:
+            update_data["project_description"] = body["project_description"].strip()
+
+        if "due_date" in body:
+            update_data["due_date"] = body["due_date"]
+
+        if "created_by" in body:
+            update_data["created_by"] = body["created_by"].strip()
+
+        if not update_data:
+            return jsonify({"error": "No valid fields to update"}), 400
+
+        # Update the project in Supabase
+        response = supabase.table("project").update(update_data).eq("project_id", project_id).execute()
+
+        if not response.data:
+            return jsonify({"error": "Project not found or update failed"}), 404
+
+        return jsonify({"project": response.data[0]}), 200
+
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/projects/<project_id>", methods=["DELETE"])
+def delete_project(project_id):
+    try:
+        # Delete the project from Supabase
+        response = supabase.table("project").delete().eq("project_id", project_id).execute()
+
+        if not response.data:
+            return jsonify({"error": "Project not found"}), 404
+
+        return jsonify({"message": "Project deleted successfully"}), 200
+
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8082))
