@@ -1,5 +1,9 @@
 <template>
   <div style="max-width: 1600px; margin: 0 auto; padding: 0px;">
+
+    <!-- Temporary notification tester - remove after debugging -->
+    <!-- <NotificationTester /> -->
+
     <!-- Welcome Header -->
     <a-card :bordered="false" :style="headerStyle">
       <a-row :gutter="24" align="middle">
@@ -42,11 +46,13 @@ import { ref, computed, onMounted } from 'vue'
 import { useTheme } from '../composables/useTheme.js'
 import { useAuthStore } from '../stores/auth'
 import TaskList from '../components/tasks/TaskList.vue'
+import NotificationTester from '../components/NotificationTester.vue' // Add this import
 
 export default {
   name: 'Home',
   components: {
-    TaskList
+    TaskList,
+    NotificationTester // Add this component
   },
   setup() {
     const tasks = ref([])
@@ -164,5 +170,3 @@ export default {
   }
 }
 </script>
-
-

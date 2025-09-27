@@ -70,9 +70,13 @@
               required
               class="input-field"
               :class="{ 'border-red-500': errors.dueDate }"
+              :min="minDate"
             />
             <div v-if="errors.dueDate" class="mt-1 text-sm text-red-600">
               {{ errors.dueDate }}
+            </div>
+            <div v-if="daysUntilDue !== null" class="mt-1 text-sm" :class="dueDateColorClass">
+              {{ dueDateMessage }}
             </div>
           </div>
 
@@ -134,7 +138,7 @@
 </template>
 
 <script>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 
 export default {
@@ -166,6 +170,39 @@ export default {
     })
 
     const isLoading = ref(false)
+    
+    const minDate = computed(() => {
+      return new Date().toISOString().split('T')[0]
+    })
+
+    const daysUntilDue = computed(() => {
+      if (!form.value.dueDate) return null
+      
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const dueDate = new Date(form.value.dueDate)
+      dueDate.setHours(0, 0, 0, 0)
+      
+      return Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    })
+
+    const dueDateMessage = computed(() => {
+      if (daysUntilDue.value === null) return ''
+      
+      if (daysUntilDue.value === 0) return 'Due today'
+      if (daysUntilDue.value === 1) return 'Due tomorrow'
+      if (daysUntilDue.value <= 7) return `Due in ${daysUntilDue.value} days (you'll get reminders)`
+      return `Due in ${daysUntilDue.value} days`
+    })
+
+    const dueDateColorClass = computed(() => {
+      if (daysUntilDue.value === null) return 'text-gray-600'
+      
+      if (daysUntilDue.value <= 1) return 'text-red-600'
+      if (daysUntilDue.value <= 3) return 'text-orange-600'
+      if (daysUntilDue.value <= 7) return 'text-yellow-600'
+      return 'text-green-600'
+    })
 
     // Watch for task changes to populate form
     watch(() => props.task, (newTask) => {
@@ -322,6 +359,10 @@ export default {
       form,
       errors,
       isLoading,
+      minDate,
+      daysUntilDue,
+      dueDateMessage,
+      dueDateColorClass,
       saveTask
     }
   }

@@ -16,6 +16,7 @@
     "ant-design-vue": "^4.2.6",
     "echarts": "^5.4.3",
     "pinia": "^3.0.3",
+    "socket.io-client": "^4.8.1",
     "vue": "^3.4.0",
     "vue-echarts": "^6.6.1",
     "vue-router": "^4.2.5"

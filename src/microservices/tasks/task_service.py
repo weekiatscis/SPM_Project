@@ -3,6 +3,11 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone
 import json
 
+import pika
+import requests
+from datetime import timedelta
+
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from supabase import create_client, Client
@@ -14,6 +19,8 @@ SUPABASE_SERVICE_ROLE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_ROLE_KEY"
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+
+RABBITMQ_URL: Optional[str] = os.getenv("RABBITMQ_URL", "amqp://localhost")
 
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -47,6 +54,52 @@ class TaskUpdate(BaseModel):
 class RescheduleTask(BaseModel):
     actor_id: str
     new_due_date: str
+
+
+class NotificationPublisher:
+    def __init__(self):
+        self.connection = None
+        self.channel = None
+        self.connect()
+    
+    def connect(self):
+        try:
+            self.connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+            self.channel = self.connection.channel()
+            self.channel.exchange_declare(exchange='task_notifications', exchange_type='topic')
+            print("Connected to RabbitMQ for notifications")
+        except Exception as e:
+            print(f"Failed to connect to RabbitMQ: {e}")
+            self.connection = None
+            self.channel = None
+    
+    def publish_due_date_notification(self, task_data: dict, days_until_due: int):
+        if not self.channel:
+            self.connect()
+        
+        if self.channel:
+            try:
+                message = {
+                    "task_id": task_data.get("task_id"),
+                    "user_id": task_data.get("owner_id"),
+                    "title": f"Task Due in {days_until_due} Day{'s' if days_until_due != 1 else ''}",
+                    "message": f"Task '{task_data.get('title')}' is due in {days_until_due} day{'s' if days_until_due != 1 else ''}",
+                    "type": f"reminder_{days_until_due}_days",
+                    "due_date": task_data.get("due_date"),
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                self.channel.basic_publish(
+                    exchange='task_notifications',
+                    routing_key=f'task.reminder.{days_until_due}_days',
+                    body=json.dumps(message),
+                    properties=pika.BasicProperties(delivery_mode=2)
+                )
+                print(f"Published due date notification for task {task_data.get('task_id')}")
+            except Exception as e:
+                print(f"Failed to publish notification: {e}")
+
+notification_publisher = NotificationPublisher()
 
 # Helper functions
 def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -138,6 +191,76 @@ def log_task_change(task_id: str, action: str, field: str, user_id: str,
         print(f"ERROR: Failed to log task change for {task_id}: {exc}")
         return None
 
+def check_and_send_due_date_notifications(task_data: dict):
+    """Check if task needs due date notifications and send them"""
+    if not task_data.get("due_date") or not task_data.get("owner_id"):
+        return
+    
+    try:
+        # Handle different date formats
+        due_date_str = task_data["due_date"]
+        if isinstance(due_date_str, str):
+            # Handle both YYYY-MM-DD and full timestamp formats
+            due_date = datetime.strptime(due_date_str[:10], "%Y-%m-%d").date()
+        else:
+            due_date = due_date_str
+            
+        today = datetime.now(timezone.utc).date()
+        days_until_due = (due_date - today).days
+        
+        print(f"Task {task_data.get('task_id')}: Due date {due_date}, days until due: {days_until_due}")
+        
+        # Send notifications for 7, 3, 1 days if within range
+        reminder_days = [7, 3, 1]
+        for reminder_day in reminder_days:
+            if days_until_due == reminder_day:
+                print(f"Sending {reminder_day}-day reminder for task {task_data.get('task_id')}")
+
+                # Check if we already sent this reminder - FIXED: Check in notifications table
+                try:
+                    existing_check = supabase.table("notifications").select("id").eq("task_id", task_data["task_id"]).eq("type", f"reminder_{reminder_day}_days").execute()
+                    if existing_check.data:
+                        print(f"Reminder already sent for task {task_data.get('task_id')}")
+                        continue
+                except Exception as e:
+                    print(f"Error checking existing notifications: {e}")
+                
+                # Create notification directly in database first
+                notification_data = {
+                    "user_id": task_data["owner_id"],
+                    "title": f"Task Due in {reminder_day} Day{'s' if reminder_day != 1 else ''}",
+                    "message": f"Task '{task_data['title']}' is due in {reminder_day} day{'s' if reminder_day != 1 else ''}",
+                    "type": f"reminder_{reminder_day}_days",
+                    "task_id": task_data["task_id"],
+                    "due_date": task_data["due_date"],
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "is_read": False
+                }
+                
+                # Store in notifications table directly
+                try:
+                    response = supabase.table("notifications").insert(notification_data).execute()
+                    if response.data:
+                        print(f"Successfully stored {reminder_day}-day notification in database")
+                        
+                        # Publish to RabbitMQ for real-time delivery
+                        notification_publisher.publish_due_date_notification(task_data, reminder_day)
+                        
+                        # Also try to notify the notification service
+                        try:
+                            notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                            requests.post(f"{notification_service_url}/notifications/create", 
+                                        json=notification_data, timeout=5)
+                        except Exception as e:
+                            print(f"Failed to notify notification service: {e}")
+                            # Continue anyway since we stored in DB
+                    else:
+                        print(f"Failed to store notification in database")
+                except Exception as e:
+                    print(f"Error storing notification: {e}")
+    
+    except Exception as e:
+        print(f"Error checking due date notifications: {e}")
 
 # API Routes
 
@@ -279,6 +402,10 @@ def create_task():
 
         # Return created task
         created_task = map_db_row_to_api(created_task_data)
+
+        # Check and send due date notifications
+        check_and_send_due_date_notifications(created_task_data)
+
         return jsonify({"task": created_task, "message": "Task created successfully"}), 201
 
     except Exception as exc:
@@ -375,10 +502,16 @@ def update_task(task_id: str):
         
         if not response.data:
             return jsonify({"error": "Failed to update task"}), 500
+        
 
         # Get updated task
         updated_task = map_db_row_to_api(response.data[0])
-        
+
+        # Check and send due date notifications if due_date was changed
+        if "due_date" in update_data:
+            check_and_send_due_date_notifications(response.data[0])
+
+                
         # Log changes for audit trail - only log ACTUAL changes
         changes_made = False
         for field, new_value in update_data.items():
@@ -482,6 +615,100 @@ def get_user_by_id(user_id: str):
 
     except Exception as exc:
         return jsonify({"error": f"Failed to fetch user: {str(exc)}", "user_id": user_id}), 500
+    
+@app.route("/check-all-tasks-notifications", methods=["POST"])
+def check_all_tasks_notifications():
+    """Check all existing tasks for due date notifications"""
+    try:
+        # Get all tasks with due dates
+        response = supabase.table("task").select("*").not_.is_("due_date", "null").execute()
+        tasks = response.data or []
+        
+        notification_count = 0
+        for task in tasks:
+            check_and_send_due_date_notifications(task)
+            notification_count += 1
+        
+        return jsonify({
+            "message": f"Checked {len(tasks)} tasks for notifications",
+            "tasks_processed": notification_count
+        }), 200
+    
+    except Exception as e:
+        return jsonify({"error": f"Failed to check tasks: {str(e)}"}), 500
+    
+
+# ALSO ADD: Function to manually trigger notifications for existing tasks
+@app.route("/tasks/<task_id>/check-notifications", methods=["POST"])
+def check_task_notifications(task_id: str):
+    """Manually check and create notifications for a specific task"""
+    try:
+        task_data = get_task_by_id(task_id)
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+        
+        check_and_send_due_date_notifications(task_data)
+        
+        return jsonify({"message": "Notifications checked and created if needed"}), 200
+    
+    except Exception as e:
+        return jsonify({"error": f"Failed to check notifications: {str(e)}"}), 500
+    
+@app.route("/test-notifications/<user_id>", methods=["POST"])
+def test_create_notification(user_id: str):
+    """Test endpoint to create a sample notification"""
+    try:
+        notification_data = {
+            "user_id": user_id,
+            "title": "Test Notification",
+            "message": "This is a test notification to verify the system works",
+            "type": "test",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "is_read": False
+        }
+        
+        # Store directly in database
+        response = supabase.table("notifications").insert(notification_data).execute()
+        
+        if response.data:
+            print(f"Test notification created: {response.data[0]}")
+            
+            # Also try to send via notification service
+            try:
+                notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                resp = requests.post(f"{notification_service_url}/notifications/create", 
+                                   json=notification_data, timeout=5)
+                if resp.ok:
+                    print("Also sent via notification service")
+            except Exception as e:
+                print(f"Failed to send via notification service: {e}")
+            
+            return jsonify({
+                "notification": response.data[0], 
+                "message": "Test notification created"
+            }), 201
+        else:
+            return jsonify({"error": "Failed to create test notification"}), 500
+    
+    except Exception as e:
+        return jsonify({"error": f"Failed to create test notification: {str(e)}"}), 500
+
+@app.route("/notifications/debug/<user_id>", methods=["GET"])
+def debug_notifications(user_id: str):
+    """Debug endpoint to check notifications for a user"""
+    try:
+        response = supabase.table("notifications").select("*").eq("user_id", user_id).execute()
+        notifications = response.data or []
+        
+        return jsonify({
+            "user_id": user_id,
+            "total_notifications": len(notifications),
+            "notifications": notifications
+        }), 200
+    
+    except Exception as e:
+        return jsonify({"error": f"Failed to get notifications: {str(e)}"}), 500
+
 
 
 # Error handlers

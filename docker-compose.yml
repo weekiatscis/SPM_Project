@@ -1,4 +1,46 @@
 services:
+
+  # Message Queue for real-time notifications
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"    # AMQP port
+      - "15672:15672"  # Management UI
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin123
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Notification Service
+  notification-service:
+    build:
+      context: .
+      dockerfile: ./src/microservices/notifications/Dockerfile
+    ports:
+      - "8084:8084"
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
+      - PORT=8084
+    command: ["python", "notification_service.py"]
+    restart: unless-stopped
+    depends_on:
+      - rabbitmq
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
   task-service:
     build:
       context: .
@@ -8,7 +50,10 @@ services:
     environment:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672 
       - PORT=8080
+    depends_on:
+      - rabbitmq
     command: ["python", "task_service.py"]
     restart: unless-stopped
     healthcheck:
@@ -66,3 +111,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+volumes:
+  rabbitmq_data:

@@ -30,13 +30,7 @@
     <!-- Right side: Notifications + Profile -->
     <div style="display: flex; align-items: center; gap: 8px;">
       <!-- Notifications -->
-      <a-badge :count="3" size="small">
-        <a-button type="text" shape="circle" size="large">
-          <template #icon>
-            <BellIcon />
-          </template>
-        </a-button>
-      </a-badge>
+      <NotificationDropdown />
 
       <!-- Theme Toggle -->
       <a-button type="text" shape="circle" size="large" @click="toggleTheme">
@@ -94,6 +88,8 @@ import {
 import { MenuIcon, SearchIcon, BellIcon } from '../components/icons/index.js'
 import { useTheme } from '../composables/useTheme.js'
 import { useAuthStore } from '../stores/auth.js'
+import NotificationDropdown from '../components/notifications/NotificationDropdown.vue'
+
 
 export default {
   name: 'Topbar',
@@ -112,7 +108,8 @@ export default {
     UserOutlined,
     SettingOutlined,
     LogoutOutlined,
-    DownOutlined
+    DownOutlined,
+    NotificationDropdown
   },
   emits: ['toggle-mobile-sidebar', 'toggle-sidebar'],
   setup() {
