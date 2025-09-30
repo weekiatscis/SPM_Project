@@ -14,7 +14,7 @@
       borderBottom: '1px solid #f0f0f0',
       display: 'flex',
       alignItems: 'center',
-      justifyContent: collapsed ? 'center' : 'flex-start'
+      justifyContent: collapsed ? 'center' : 'center'
     }">
       <!-- Collapsed Logo -->
       <img 

@@ -245,7 +245,6 @@ import { ref, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { notification } from 'ant-design-vue'
-import { useTheme } from '../../composables/useTheme.js'
 import { useAuthStore } from '../../stores/auth'
 import ProjectFormModal from './ProjectFormModal.vue'
 import ProjectCard from './ProjectCard.vue'
@@ -263,7 +262,6 @@ export default {
     const projects = ref([])
     const isLoading = ref(false)
     const sortBy = ref('created_at-desc')
-    const { isDarkMode } = useTheme()
     const authStore = useAuthStore()
 
     // Tab state for switching between sections

@@ -187,7 +187,6 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { notification } from 'ant-design-vue'
-import { useTheme } from '../composables/useTheme.js'
 import { useAuthStore } from '../stores/auth'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskCard from '../components/tasks/TaskCard.vue'
@@ -203,7 +202,6 @@ export default {
   setup() {
     const route = useRoute()
     const router = useRouter()
-    const { isDarkMode } = useTheme()
     const authStore = useAuthStore()
 
     const project = ref(null)
@@ -217,22 +215,21 @@ export default {
     const selectedTask = ref(null)
     const showTaskDetailModal = ref(false)
 
-    // Theme-aware styles
+    // Light theme styles
     const headerStyle = computed(() => {
       const lightGradient = 'linear-gradient(135deg, #f3e8ff 0%, #e0e7ff 100%)'
-      const darkGradient = 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)'
 
       return {
-        background: isDarkMode.value ? darkGradient : lightGradient
+        background: lightGradient
       }
     })
 
     const titleStyle = computed(() => ({
-      color: isDarkMode.value ? 'white' : '#7c3aed'
+      color: '#7c3aed'
     }))
 
     const subtitleStyle = computed(() => ({
-      color: isDarkMode.value ? 'rgba(255,255,255,0.9)' : 'rgba(124,58,237,0.8)',
+      color: 'rgba(124,58,237,0.8)',
       fontSize: '16px'
     }))
 

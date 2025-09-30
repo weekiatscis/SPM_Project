@@ -50,7 +50,6 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
-import { useTheme } from '../composables/useTheme.js'
 import { useAuthStore } from '../stores/auth'
 import ProjectList from '../components/projects/ProjectList.vue'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
@@ -65,7 +64,6 @@ export default {
   setup() {
     const projects = ref([])
     const showCreateModal = ref(false)
-    const { isDarkMode } = useTheme()
     const authStore = useAuthStore()
     
     const currentUser = computed(() => {
@@ -80,36 +78,35 @@ export default {
       return { total, active, completed }
     })
 
-    // Theme-aware header style
+    // Light theme header style
     const headerStyle = computed(() => {
       const lightGradient = 'linear-gradient(135deg, #f3e8ff 0%, #e0e7ff 100%)'
-      const darkGradient = 'linear-gradient(135deg, #7c3aed 0%, #6366f1 100%)'
 
       return {
         marginBottom: '24px',
-        background: isDarkMode.value ? darkGradient : lightGradient
+        background: lightGradient
       }
     })
 
-    // Theme-aware text styles
+    // Light theme text styles
     const titleStyle = computed(() => ({
-      color: isDarkMode.value ? 'white' : '#7c3aed',
+      color: '#7c3aed',
       marginBottom: '8px'
     }))
 
     const subtitleStyle = computed(() => ({
-      color: isDarkMode.value ? 'rgba(255,255,255,0.9)' : 'rgba(124,58,237,0.8)',
+      color: 'rgba(124,58,237,0.8)',
       fontSize: '16px',
       marginBottom: '0'
     }))
 
     const statisticValueStyle = computed(() => ({
-      color: isDarkMode.value ? 'white' : '#7c3aed',
+      color: '#7c3aed',
       fontSize: '24px'
     }))
 
     const statisticTitleStyle = computed(() => ({
-      color: isDarkMode.value ? 'rgba(255,255,255,0.8)' : 'rgba(124,58,237,0.7)'
+      color: 'rgba(124,58,237,0.7)'
     }))
 
     // Handle project saved from modal

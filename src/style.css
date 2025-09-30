@@ -1,3 +1,5 @@
+
+
 /* Drag and drop group card highlight */
 .droppable-group-card.drag-over {
   border: 2px solid #1890ff !important;
@@ -5,54 +7,48 @@
   background: #e6f7ff !important;
   transition: box-shadow 0.2s, border-color 0.2s, background 0.2s;
 }
-
-.dark .droppable-group-card.drag-over {
-  border: 2px solid #38bdf8 !important;
-  box-shadow: 0 0 0 2px #0c4a6e !important;
-  background: #0c4a6e !important;
-}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+
+
 @layer base {
-  body {
-    font-family: 'Inter', system-ui, sans-serif;
-    @apply bg-gray-50 text-gray-900 transition-colors duration-300;
+  /* Ant Design translucent cards */
+  .ant-card {
+    background-color: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  }
+
+  /* Main content gradient background */
+  .gradient-content {
+    /* Subtle semicircular radial gradient from top-center - darker to lighter */
+    background: radial-gradient(ellipse 100% 80% at center top, 
+      rgba(14, 165, 233, 0.15) 0%,
+      rgba(56, 189, 248, 0.12) 20%,
+      rgba(125, 211, 252, 0.08) 40%,
+      rgba(186, 230, 253, 0.05) 60%,
+      rgba(240, 249, 255, 0.03) 80%,
+      rgba(255, 255, 255, 0.01) 100%) !important;
+    position: relative;
+  }
+
+  /* Ant Design layout transparency */
+  .ant-layout {
+    background: transparent !important;
   }
   
-  .dark body {
-    @apply bg-gray-900 text-gray-100;
+  .ant-layout-content {
+    background: transparent !important;
   }
   
-  /* Ant Design dark mode support */
-  .dark .ant-layout {
-    background: #141414;
-  }
-  
-  .dark .ant-layout-header {
-    background: #1f1f1f;
-    border-bottom: 1px solid #424242;
-  }
-  
-  .dark .ant-layout-sider {
-    background: #1f1f1f;
-  }
-  
-  .dark .ant-menu {
-    background: transparent;
-  }
-  
-  .dark .ant-menu-item {
-    color: #ffffff;
-  }
-  
-  .dark .ant-menu-item:hover {
-    background-color: #262626;
-  }
-  
-  .dark .ant-menu-item-selected {
-    background-color: #1890ff;
+  .ant-layout-header {
+    background: rgba(255, 255, 255, 0.7) !important;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(240, 240, 240, 0.3) !important;
   }
 }
 
@@ -61,48 +57,19 @@
     @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
   }
   
-  .dark .btn-primary {
-    @apply focus:ring-offset-gray-900;
-  }
-  
   .btn-secondary {
     @apply bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
-  }
-  
-  .dark .btn-secondary {
-    @apply bg-gray-700 hover:bg-gray-600 text-gray-200 focus:ring-offset-gray-900;
   }
   
   .input-field {
     @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-white text-gray-900;
   }
   
-  .dark .input-field {
-    @apply bg-gray-800 border-gray-600 text-gray-100 focus:ring-offset-gray-900;
-  }
-  
   .card {
-    @apply bg-white rounded-lg shadow-soft border border-gray-100 p-6 transition-colors duration-300;
-  }
-  
-  .dark .card {
-    @apply bg-gray-800 border-gray-700;
-  }
-  
-  .sidebar-item {
-    @apply flex items-center px-4 py-2 text-gray-700 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors duration-200 cursor-pointer;
-  }
-  
-  .dark .sidebar-item {
-    @apply text-gray-300 hover:bg-gray-700 hover:text-gray-100;
-  }
-  
-  .sidebar-item.active {
-    @apply bg-gray-100 text-gray-900 font-medium;
-  }
-  
-  .dark .sidebar-item.active {
-    @apply bg-gray-700 text-gray-100;
+    @apply rounded-lg shadow-soft border border-gray-100 p-6 transition-colors duration-300;
+    background-color: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 
   /* Override Vue Router default active link styles */

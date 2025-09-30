@@ -77,7 +77,6 @@
 import { ref, computed, onMounted, h } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { notification } from 'ant-design-vue'
-import { useTheme } from '../../composables/useTheme.js'
 import { useAuthStore } from '../../stores/auth'
 import TaskFormModal from './TaskFormModal.vue'
 import TaskDetailModal from './TaskDetailModal.vue'
@@ -98,7 +97,6 @@ export default {
     const showDetailModal = ref(false)
     const isLoadingTaskDetails = ref(false)
     const sortBy = ref('dueDate-asc')
-    const { isDarkMode } = useTheme()
     const authStore = useAuthStore()
 
     // Modal state for creating task

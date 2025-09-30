@@ -1,5 +1,4 @@
 <template>
-  <ThemeProvider>
     <a-config-provider>
       <!-- Show auth pages (login/signup) without any layout -->
       <div v-if="isLoginPage">
@@ -34,10 +33,12 @@
           <!-- Header -->
           <a-layout-header :style="{ 
             padding: '0 24px', 
-            background: '#fff', 
+            background: 'rgba(255, 255, 255, 0.7)', 
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
             display: 'flex', 
             alignItems: 'center',
-            borderBottom: '1px solid #f0f0f0',
+            borderBottom: '1px solid rgba(240, 240, 240, 0.3)',
             height: '64px'
           }">
             <Topbar 
@@ -48,10 +49,9 @@
           </a-layout-header>
           
           <!-- Content -->
-          <a-layout-content :style="{ 
-            margin: '12px 12px 0', 
+          <a-layout-content class="gradient-content" :style="{ 
+            margin: '0 0 0', 
             overflow: 'auto',
-            background: '#fff',
             borderRadius: '8px',
             minHeight: 'calc(100vh - 112px)',
             padding: '0px'
@@ -64,7 +64,7 @@
             
             <!-- Page Content -->
             <div :style="{ 
-              background: '#fff', 
+              background: 'transparent', 
               padding: '8px', 
               minHeight: '280px',
             }">
@@ -73,7 +73,7 @@
           </a-layout-content>
           
           <!-- Footer -->
-          <a-layout-footer :style="{ textAlign: 'center', background: '#fff', padding: '12px 24px' }">
+          <a-layout-footer :style="{ textAlign: 'center', background: 'transparent', padding: '12px 24px' }">
           </a-layout-footer>
         </a-layout>
 
@@ -82,10 +82,12 @@
           <!-- Mobile Header -->
           <a-layout-header :style="{ 
             padding: '0 16px', 
-            background: '#fff', 
+            background: 'rgba(255, 255, 255, 0.7)', 
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
             display: 'flex', 
             alignItems: 'center',
-            borderBottom: '1px solid #f0f0f0',
+            borderBottom: '1px solid rgba(240, 240, 240, 0.3)',
             height: '64px'
           }">
             <Topbar 
@@ -99,10 +101,10 @@
           <a-layout-content :style="{ 
             padding: '16px',
             overflow: 'auto',
-            background: '#f5f5f5'
+            background: 'transparent'
           }">
             <div :style="{ 
-              background: '#fff', 
+              background: 'transparent', 
               padding: '24px', 
               borderRadius: '8px',
               minHeight: 'calc(100vh - 96px)'
@@ -113,7 +115,6 @@
         </a-layout>
       </a-layout>
     </a-config-provider>
-  </ThemeProvider>
 </template>
 
 <script>
@@ -121,25 +122,15 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import Sidebar from './layout/Sidebar.vue'
 import Topbar from './layout/Topbar.vue'
-import ThemeProvider from './components/ThemeProvider.vue'
-import { useTheme } from './composables/useTheme'
 
 export default {
   name: 'App',
   components: {
     Sidebar,
-    Topbar,
-    ThemeProvider
+    Topbar
   },
   setup() {
-    // Initialize theme
-    const { initializeTheme } = useTheme()
     const route = useRoute()
-
-    // Initialize theme on app mount
-    onMounted(() => {
-      initializeTheme()
-    })
     
     const isSidebarCollapsed = ref(false)
     const isMobileSidebarOpen = ref(false)
