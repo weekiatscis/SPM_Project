@@ -5,17 +5,15 @@
       <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="$emit('close')"></div>
 
       <!-- Modal panel -->
-      <div class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+      <div
+        class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
         <!-- Header -->
         <div class="bg-white px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
             <h3 class="text-lg font-medium text-gray-900">
               {{ task?.id ? 'Edit Task' : (form.isSubtask ? 'Add New Subtask' : 'Add New Task') }}
             </h3>
-            <button
-              @click="$emit('close')"
-              class="text-gray-400 hover:text-gray-600"
-            >
+            <button @click="$emit('close')" class="text-gray-400 hover:text-gray-600">
               <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -32,21 +30,13 @@
             </label>
             <div class="flex items-center space-x-6">
               <label class="flex items-center">
-                <input
-                  type="radio"
-                  v-model="form.isSubtask"
-                  :value="false"
-                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                />
+                <input type="radio" v-model="form.isSubtask" :value="false"
+                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
                 <span class="ml-2 text-sm text-gray-700">Regular Task</span>
               </label>
               <label class="flex items-center">
-                <input
-                  type="radio"
-                  v-model="form.isSubtask"
-                  :value="true"
-                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
-                />
+                <input type="radio" v-model="form.isSubtask" :value="true"
+                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
                 <span class="ml-2 text-sm text-gray-700">Subtask</span>
               </label>
             </div>
@@ -57,20 +47,10 @@
             <label for="parentTask" class="block text-sm font-medium text-gray-700 mb-1">
               Parent Task *
             </label>
-            <select
-              id="parentTask"
-              v-model="form.parentTaskId"
-              required
-              class="input-field"
-              :class="{ 'border-red-500': errors.parentTaskId }"
-              :disabled="isLoadingUserTasks"
-            >
+            <select id="parentTask" v-model="form.parentTaskId" required class="input-field"
+              :class="{ 'border-red-500': errors.parentTaskId }" :disabled="isLoadingUserTasks">
               <option value="">Select parent task...</option>
-              <option 
-                v-for="task in userTasks" 
-                :key="task.id" 
-                :value="task.id"
-              >
+              <option v-for="task in userTasks" :key="task.id" :value="task.id">
                 {{ task.title }} ({{ task.status }})
               </option>
             </select>
@@ -90,15 +70,9 @@
             <label for="title" class="block text-sm font-medium text-gray-700 mb-1">
               Title *
             </label>
-            <input
-              id="title"
-              v-model="form.title"
-              type="text"
-              required
-              class="input-field"
+            <input id="title" v-model="form.title" type="text" required class="input-field"
               :class="{ 'border-red-500': errors.title }"
-              :placeholder="form.isSubtask ? 'Enter subtask title' : 'Enter task title'"
-            />
+              :placeholder="form.isSubtask ? 'Enter subtask title' : 'Enter task title'" />
             <div v-if="errors.title" class="mt-1 text-sm text-red-600">
               {{ errors.title }}
             </div>
@@ -109,13 +83,8 @@
             <label for="description" class="block text-sm font-medium text-gray-700 mb-1">
               Description
             </label>
-            <textarea
-              id="description"
-              v-model="form.description"
-              rows="3"
-              class="input-field"
-              placeholder="Enter task description"
-            ></textarea>
+            <textarea id="description" v-model="form.description" rows="3" class="input-field"
+              placeholder="Enter task description"></textarea>
           </div>
 
           <!-- Due Date -->
@@ -123,15 +92,8 @@
             <label for="dueDate" class="block text-sm font-medium text-gray-700 mb-1">
               Due Date *
             </label>
-            <input
-              id="dueDate"
-              v-model="form.dueDate"
-              type="date"
-              required
-              class="input-field"
-              :class="{ 'border-red-500': errors.dueDate }"
-              :min="minDate"
-            />
+            <input id="dueDate" v-model="form.dueDate" type="date" required class="input-field"
+              :class="{ 'border-red-500': errors.dueDate }" :min="minDate" />
             <div v-if="errors.dueDate" class="mt-1 text-sm text-red-600">
               {{ errors.dueDate }}
             </div>
@@ -145,11 +107,7 @@
             <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
               Status
             </label>
-            <select
-              id="status"
-              v-model="form.status"
-              class="input-field"
-            >
+            <select id="status" v-model="form.status" class="input-field">
               <!-- Staff users cannot create unassigned tasks -->
               <option v-if="!isStaffRole" value="Unassigned">Unassigned</option>
               <option value="Ongoing">Ongoing</option>
@@ -166,11 +124,7 @@
             <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
               Priority
             </label>
-            <select
-              id="priority"
-              v-model="form.priority"
-              class="input-field"
-            >
+            <select id="priority" v-model="form.priority" class="input-field">
               <option value="High">High</option>
               <option value="Medium">Medium</option>
               <option value="Low">Low</option>
@@ -183,45 +137,36 @@
             <label for="assignee" class="block text-sm font-medium text-gray-700 mb-1">
               Assignee *
             </label>
-            
+
             <!-- If user is Staff, show read-only field with their name -->
             <div v-if="isStaffRole" class="input-field bg-gray-50 cursor-not-allowed">
               {{ authStore.user?.name || 'Current User' }} (You)
             </div>
-            
+
             <!-- If user is Manager/Director, show dropdown with subordinates -->
-            <select
-              v-else-if="canAssignToOthers"
-              id="assignee"
-              v-model="form.assigneeId"
-              required
-              class="input-field"
-              :class="{ 'border-red-500': errors.assigneeId }"
-            >
+            <select v-else-if="canAssignToOthers" id="assignee" v-model="form.assigneeId" required class="input-field"
+              :class="{ 'border-red-500': errors.assigneeId }">
               <option value="">Select assignee...</option>
-              <option 
-                v-for="subordinate in subordinates" 
-                :key="subordinate.user_id" 
-                :value="subordinate.user_id"
-              >
+              <option v-for="subordinate in subordinates" :key="subordinate.user_id" :value="subordinate.user_id">
                 {{ subordinate.name }} ({{ subordinate.role }})
               </option>
             </select>
-            
+
             <!-- If no subordinates available, fallback to current user -->
             <div v-else class="input-field bg-gray-50 cursor-not-allowed">
               {{ authStore.user?.name || 'Current User' }} (You)
             </div>
-            
+
             <div v-if="errors.assigneeId" class="mt-1 text-sm text-red-600">
               {{ errors.assigneeId }}
             </div>
-            
+
             <div v-if="isLoadingSubordinates" class="mt-1 text-sm text-gray-600">
               Loading team members...
             </div>
-            
-            <div v-if="canAssignToOthers && subordinates.length === 0 && !isLoadingSubordinates" class="mt-1 text-sm text-gray-600">
+
+            <div v-if="canAssignToOthers && subordinates.length === 0 && !isLoadingSubordinates"
+              class="mt-1 text-sm text-gray-600">
               No team members found. Task will be assigned to you.
             </div>
           </div>
@@ -232,98 +177,78 @@
               Collaborators
             </label>
             <div class="relative">
-              <select
-                id="collaborators"
-                v-model="selectedCollaborator"
-                @change="addCollaborator"
-                class="input-field"
-                :disabled="isLoadingDepartmentMembers"
-              >
+              <select id="collaborators" v-model="selectedCollaborator" @change="addCollaborator" class="input-field"
+                :disabled="isLoadingDepartmentMembers">
                 <option value="">Add a collaborator...</option>
-                <option 
-                  v-for="member in availableDepartmentMembers" 
-                  :key="member.user_id" 
-                  :value="member.user_id"
-                >
+                <option v-for="member in availableDepartmentMembers" :key="member.user_id" :value="member.user_id">
                   {{ member.name }} ({{ member.role }})
                 </option>
               </select>
             </div>
-            
+
             <!-- Selected Collaborators -->
             <div v-if="form.collaborators.length > 0" class="mt-2 space-y-1">
-              <div 
-                v-for="collaborator in selectedCollaborators" 
-                :key="collaborator.user_id"
-                class="flex items-center justify-between bg-blue-50 px-3 py-2 rounded-md"
-              >
+              <div v-for="collaborator in selectedCollaborators" :key="collaborator.user_id"
+                class="flex items-center justify-between bg-blue-50 px-3 py-2 rounded-md">
                 <span class="text-sm font-medium text-blue-700">
                   {{ collaborator.name }} ({{ collaborator.role }})
                 </span>
-                <button
-                  type="button"
-                  @click="removeCollaborator(collaborator.user_id)"
-                  class="text-blue-400 hover:text-blue-600"
-                >
+                <button type="button" @click="removeCollaborator(collaborator.user_id)"
+                  class="text-blue-400 hover:text-blue-600">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
             </div>
-            
+
             <div v-if="isLoadingDepartmentMembers" class="mt-1 text-sm text-gray-600">
               Loading department members...
             </div>
-            
+
             <div class="mt-1 text-sm text-gray-500">
               Add members from your department to collaborate on this task
-          <!-- Reminder Customization -->
-          <div v-if="form.dueDate" class="border-t pt-4 mt-4">
-            <div class="flex items-center justify-between mb-2">
-              <label class="block text-sm font-medium text-gray-700">
-                Reminder Schedule
-              </label>
-              <button
-                type="button"
-                @click="toggleReminderCustomization"
-                class="text-sm text-blue-600 hover:text-blue-800"
-              >
-                {{ showReminderCustomization ? 'Use Default' : 'Customize' }}
-              </button>
-            </div>
+              <!-- Reminder Customization -->
+              <div v-if="form.dueDate" class="border-t pt-4 mt-4">
+                <div class="flex items-center justify-between mb-2">
+                  <label class="block text-sm font-medium text-gray-700">
+                    Reminder Schedule
+                  </label>
+                  <button type="button" @click="toggleReminderCustomization"
+                    class="text-sm text-blue-600 hover:text-blue-800">
+                    {{ showReminderCustomization ? 'Use Default' : 'Customize' }}
+                  </button>
+                </div>
 
-            <div v-if="!showReminderCustomization" class="text-sm text-gray-600">
-              You'll be reminded 7, 3, and 1 day(s) before the due date
-            </div>
+                <div v-if="!showReminderCustomization" class="text-sm text-gray-600">
+                  You'll be reminded 7, 3, and 1 day(s) before the due date
+                </div>
 
-            <div v-else class="space-y-3">
-              <div class="text-sm text-gray-600 mb-2">
-                Select when you want to receive reminders (up to 5, max 10 days before):
-              </div>
+                <div v-else class="space-y-3">
+                  <div class="text-sm text-gray-600 mb-2">
+                    Select when you want to receive reminders (up to 5, max 10 days before):
+                  </div>
 
-              <div class="grid grid-cols-5 gap-2">
-                <button
-                  v-for="day in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
-                  :key="day"
-                  type="button"
-                  @click="toggleReminderDay(day)"
-                  :disabled="!canAddMoreReminders && !form.reminderDays.includes(day)"
-                  class="px-3 py-2 text-sm rounded border transition-colors"
-                  :class="form.reminderDays.includes(day)
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed'"
-                >
-                  {{ day }}d
-                </button>
-              </div>
+                  <div class="grid grid-cols-5 gap-2">
+                    <button v-for="day in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]" :key="day" type="button"
+                      @click="toggleReminderDay(day)"
+                      :disabled="!canAddMoreReminders && !form.reminderDays.includes(day)"
+                      class="px-3 py-2 text-sm rounded border transition-colors"
+                      :class="form.reminderDays.includes(day)
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed'">
+                      {{ day }}d
+                    </button>
+                  </div>
 
-              <div class="text-xs text-gray-500">
-                Selected: {{ form.reminderDays.length > 0 ? form.reminderDays.sort((a, b) => b - a).join(', ') + ' day(s) before' : 'None' }}
-              </div>
+                  <div class="text-xs text-gray-500">
+                    Selected: {{form.reminderDays.length > 0 ? form.reminderDays.sort((a, b) => b - a).join(', ') + ' day(s) before' : 'None' }}
+                  </div>
 
-              <div v-if="form.reminderDays.length === 0" class="text-xs text-red-600">
-                ⚠️ No reminders selected. You won't receive any notifications.
+                  <div v-if="form.reminderDays.length === 0" class="text-xs text-red-600">
+                    ⚠️ No reminders selected. You won't receive any notifications.
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -331,18 +256,11 @@
 
         <!-- Footer -->
         <div class="bg-gray-50 px-6 py-3 flex justify-end space-x-3">
-          <button
-            type="button"
-            @click="$emit('close')"
-            class="btn-secondary"
-          >
+          <button type="button" @click="$emit('close')" class="btn-secondary">
             Cancel
           </button>
-          <button
-            @click="saveTask"
-            :disabled="isLoading"
-            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-          >
+          <button @click="saveTask" :disabled="isLoading"
+            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
             {{ isLoading ? 'Creating...' : (task?.id ? 'Update Task' : (form.isSubtask ? 'Create Subtask' : 'Create Task')) }}
           </button>
         </div>
@@ -381,7 +299,7 @@ export default {
       assigneeId: '',
       collaborators: [],
       isSubtask: false,
-      parentTaskId: ''
+      parentTaskId: '',
       reminderDays: [7, 3, 1]  // Default reminder days
     })
 
@@ -400,37 +318,37 @@ export default {
     const departmentMembers = ref([])
     const userTasks = ref([])
     const selectedCollaborator = ref('')
-    
+
     // Check if current user is Staff role
     const isStaffRole = computed(() => {
       return authStore.user?.role === 'Staff'
     })
-    
+
     // Check if user can assign tasks to others (Manager or Director)
     const canAssignToOthers = computed(() => {
       const role = authStore.user?.role
       return role === 'Manager' || role === 'Director'
     })
     const showReminderCustomization = ref(false)
-    
+
     const minDate = computed(() => {
       return new Date().toISOString().split('T')[0]
     })
 
     const daysUntilDue = computed(() => {
       if (!form.value.dueDate) return null
-      
+
       const today = new Date()
       today.setHours(0, 0, 0, 0)
       const dueDate = new Date(form.value.dueDate)
       dueDate.setHours(0, 0, 0, 0)
-      
+
       return Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     })
 
     const dueDateMessage = computed(() => {
       if (daysUntilDue.value === null) return ''
-      
+
       if (daysUntilDue.value === 0) return 'Due today'
       if (daysUntilDue.value === 1) return 'Due tomorrow'
       if (daysUntilDue.value <= 7) return `Due in ${daysUntilDue.value} days (you'll get reminders)`
@@ -476,7 +394,7 @@ export default {
       try {
         const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
         const response = await fetch(`${userServiceUrl}/users/${authStore.user.user_id}/subordinates`)
-        
+
         if (response.ok) {
           const data = await response.json()
           subordinates.value = data.subordinates || []
@@ -502,7 +420,7 @@ export default {
       try {
         const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
         const response = await fetch(`${userServiceUrl}/users/departments/${authStore.user.department}`)
-        
+
         if (response.ok) {
           const data = await response.json()
           departmentMembers.value = data.users || []
@@ -528,11 +446,11 @@ export default {
       try {
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const response = await fetch(`${taskServiceUrl}/tasks/user/${authStore.user.user_id}`)
-        
+
         if (response.ok) {
           const data = await response.json()
           // Only include tasks that are not completed and are not subtasks themselves
-          userTasks.value = (data.tasks || []).filter(task => 
+          userTasks.value = (data.tasks || []).filter(task =>
             task.status !== 'Completed' && !task.isSubtask
           )
         } else {
@@ -560,6 +478,9 @@ export default {
       const index = form.value.collaborators.indexOf(collaboratorId)
       if (index > -1) {
         form.value.collaborators.splice(index, 1)
+      }
+    }
+
     const canAddMoreReminders = computed(() => {
       return form.value.reminderDays.length < 5
     })
@@ -597,14 +518,13 @@ export default {
           assigneeId: newTask.owner_id || '',
           collaborators: newTask.collaborators || [],
           isSubtask: !!newTask.parent_task_id,
-          parentTaskId: newTask.parent_task_id || ''
-          status: newTask.status || 'Unassigned',
+          parentTaskId: newTask.parent_task_id || '',
           reminderDays: newTask.reminderDays || [7, 3, 1]
         }
       } else {
         // Reset form for new task
         const defaultAssigneeId = isStaffRole.value ? authStore.user?.user_id || '' : ''
-        
+
         form.value = {
           title: '',
           description: '',
@@ -658,12 +578,12 @@ export default {
 
       // Validate required fields
       let hasErrors = false
-      
+
       if (!form.value.title?.trim()) {
         errors.value.title = 'Title is required'
         hasErrors = true
       }
-      
+
       if (!form.value.dueDate) {
         errors.value.dueDate = 'Due Date is required'
         hasErrors = true
@@ -672,7 +592,7 @@ export default {
         const today = new Date()
         today.setHours(0, 0, 0, 0) // Reset time to start of day for comparison
         const selectedDate = new Date(form.value.dueDate)
-        
+
         if (selectedDate < today) {
           errors.value.dueDate = 'Please select a valid due date'
           hasErrors = true
@@ -687,7 +607,7 @@ export default {
 
       // Validate assignee
       let finalAssigneeId = form.value.assigneeId
-      
+
       if (isStaffRole.value) {
         // Staff always assigns to themselves
         finalAssigneeId = authStore.user?.user_id || ''
@@ -723,7 +643,7 @@ export default {
             owner_id: finalAssigneeId,
             collaborators: JSON.stringify(form.value.collaborators),
             isSubtask: form.value.isSubtask,
-            parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null
+            parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null,
             reminder_days: form.value.reminderDays
           }
 
@@ -765,7 +685,7 @@ export default {
           owner_id: finalAssigneeId, // The assignee becomes the owner of the task
           collaborators: JSON.stringify(form.value.collaborators),
           isSubtask: form.value.isSubtask,
-          parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null
+          parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null,
           reminder_days: form.value.reminderDays
         }
 
@@ -783,10 +703,10 @@ export default {
         }
 
         const result = await response.json()
-        
+
         // Reset form after successful creation
         const defaultAssigneeId = isStaffRole.value ? authStore.user?.user_id || '' : ''
-        
+
         form.value = {
           title: '',
           description: '',
@@ -796,11 +716,11 @@ export default {
           assigneeId: defaultAssigneeId,
           collaborators: [],
           isSubtask: false,
-          parentTaskId: ''
+          parentTaskId: '',
           reminderDays: [7, 3, 1]
         }
         showReminderCustomization.value = false
-        
+
         // Reset errors
         errors.value = {
           title: '',
@@ -808,7 +728,7 @@ export default {
           assigneeId: '',
           parentTaskId: ''
         }
-        
+
         // Refresh notifications immediately after creating task
         if (authStore.user?.user_id) {
           // Wait a moment for backend to process notifications
@@ -823,12 +743,12 @@ export default {
 
         // Show success message
         console.log('Task created successfully:', result.task)
-        
+
         // Show appropriate success message
         if (form.value.isSubtask) {
           console.log('Subtask created and linked to parent task:', form.value.parentTaskId)
         }
-        
+
       } catch (error) {
         console.error('Failed to create task:', error)
         alert(`Failed to create task: ${error.message}`)
