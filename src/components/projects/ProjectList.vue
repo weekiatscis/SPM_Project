@@ -281,26 +281,49 @@ export default {
     const selectedProjectForAssign = ref(null)
     const isAssigning = ref(false)
 
-    // Handle project saved from ProjectFormModal
-    const handleProjectSaved = (projectData) => {
+    // Method to add new project (can be called from parent component)
+    const addNewProject = async (projectData) => {
+      console.log('ProjectList.addNewProject called with:', projectData)
+
+      // Fetch the user name for the created_by user_id
+      const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+      let createdByName = projectData.created_by
+
+      try {
+        const userResponse = await fetch(`${taskServiceUrl}/users/${projectData.created_by}`)
+        if (userResponse.ok) {
+          const userData = await userResponse.json()
+          createdByName = userData.user?.name || projectData.created_by
+        }
+      } catch (err) {
+        console.error(`Failed to fetch user name for ${projectData.created_by}:`, err)
+      }
+
       // Transform the API response to match frontend format
       const mappedProject = {
         project_id: projectData.project_id || projectData.id,
         project_name: projectData.project_name,
         project_description: projectData.project_description,
         created_at: projectData.created_at,
-        created_by: projectData.created_by,
+        created_by: createdByName, // Use the fetched user name
+        created_by_id: projectData.created_by,
         due_date: projectData.due_date,
-        status: 'Active' // Default status
+        status: 'Active'
       }
 
       // Add the new project to the projects list
       projects.value.unshift(mappedProject)
+      console.log('Project added to ProjectList, total:', projects.value.length)
+    }
+
+    // Handle project saved from ProjectFormModal (for internal modal)
+    const handleProjectSaved = async (projectData) => {
+      await addNewProject(projectData)
 
       // Show success notification
       notification.success({
         message: 'Project created successfully',
-        description: `"${mappedProject.project_name}" has been added to your projects.`,
+        description: `"${projectData.project_name}" has been added to your projects.`,
         placement: 'topRight',
         duration: 3
       })
@@ -699,6 +722,7 @@ export default {
       toggleDateSort,
       toggleStatusSort,
       handleProjectSaved,
+      addNewProject, // Expose this method to parent
       handleProjectClick,
       // Task assignment related
       allAvailableTasks,

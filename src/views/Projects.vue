@@ -34,7 +34,10 @@
     <a-row :gutter="24" style="margin-bottom: 24px;">
       <!-- Projects Section -->
       <a-col :span="24">
-        <ProjectList @create-project="showCreateModal = true" />
+        <ProjectList
+          ref="projectListRef"
+          @create-project="showCreateModal = true"
+        />
       </a-col>
     </a-row>
 
@@ -65,7 +68,8 @@ export default {
     const projects = ref([])
     const showCreateModal = ref(false)
     const authStore = useAuthStore()
-    
+    const projectListRef = ref(null)
+
     const currentUser = computed(() => {
       const user = localStorage.getItem('user')
       return user ? JSON.parse(user) : null
@@ -110,9 +114,17 @@ export default {
     }))
 
     // Handle project saved from modal
-    const handleProjectSaved = (projectData) => {
-      // Add the new project to the projects list
+    const handleProjectSaved = async (projectData) => {
+      console.log('Projects.vue received new project:', projectData)
+
+      // Add to local stats array
       projects.value.unshift(projectData)
+
+      // Also notify ProjectList component to add the project
+      if (projectListRef.value && projectListRef.value.addNewProject) {
+        await projectListRef.value.addNewProject(projectData)
+      }
+
       showCreateModal.value = false
     }
 
@@ -179,6 +191,7 @@ export default {
       stats,
       showCreateModal,
       handleProjectSaved,
+      projectListRef,
       headerStyle,
       titleStyle,
       subtitleStyle,
