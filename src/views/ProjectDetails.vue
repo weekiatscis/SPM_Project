@@ -95,17 +95,7 @@
         <a-col :span="24">
           <a-card title="Project Information" size="small">
             <a-row :gutter="24">
-              <a-col :span="6">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">
-                    Project ID
-                  </label>
-                  <p class="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded-md font-mono">
-                    {{ project.project_id }}
-                  </p>
-                </div>
-              </a-col>
-              <a-col :span="6">
+              <a-col :span="8">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">
                     Created By
@@ -115,7 +105,7 @@
                   </p>
                 </div>
               </a-col>
-              <a-col :span="6">
+              <a-col :span="8">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">
                     Created Date
@@ -125,7 +115,7 @@
                   </p>
                 </div>
               </a-col>
-              <a-col :span="6">
+              <a-col :span="8">
                 <div>
                   <label class="block text-sm font-medium text-gray-700 mb-1">
                     Due Date
@@ -461,12 +451,27 @@ export default {
           throw new Error('Project not found')
         }
 
+        // Fetch the user name for the created_by user_id
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        let createdByName = foundProject.created_by
+
+        try {
+          const userResponse = await fetch(`${taskServiceUrl}/users/${foundProject.created_by}`)
+          if (userResponse.ok) {
+            const userData = await userResponse.json()
+            createdByName = userData.user?.name || foundProject.created_by
+          }
+        } catch (err) {
+          console.error(`Failed to fetch user name for ${foundProject.created_by}:`, err)
+        }
+
         project.value = {
           project_id: foundProject.project_id,
           project_name: foundProject.project_name,
           project_description: foundProject.project_description,
           created_at: foundProject.created_at,
-          created_by: foundProject.created_by,
+          created_by: createdByName,
+          created_by_id: foundProject.created_by,
           due_date: foundProject.due_date,
           status: 'Active' // Default status
         }

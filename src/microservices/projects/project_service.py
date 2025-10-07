@@ -40,12 +40,13 @@ def create_project():
             return jsonify({"error": "project_name is required"}), 400
 
         # Prepare project data according to your Supabase schema
-        # Fields: project_id (auto), created_at (auto), created_by, project_description, project_name
+        # Fields: project_id (auto), created_at (auto), created_by, project_description, project_name, due_date
         # Use owner_id as created_by to identify user ownership
         project_data = {
             "project_name": body.get("project_name").strip(),
             "project_description": body.get("project_description", "").strip(),
-            "created_by": body.get("owner_id") or body.get("created_by", "").strip() or "Unknown"
+            "created_by": body.get("owner_id") or body.get("created_by", "").strip() or "Unknown",
+            "due_date": body.get("due_date")
         }
 
         # Insert directly using Python Supabase client syntax
