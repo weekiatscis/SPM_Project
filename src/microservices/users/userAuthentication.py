@@ -200,7 +200,8 @@ def login():
             "email": user_data['email'],
             "name": user_data['name'],
             "role": user_data.get('role'),
-            "department": user_data.get('department')
+            "department": user_data.get('department'),
+            "superior": user_data.get('superior')
         }
         
         return jsonify({
@@ -255,7 +256,8 @@ def validate_session_endpoint():
             "email": user_data['email'],
             "name": user_data['name'],
             "role": user_data.get('role'),
-            "department": user_data.get('department')
+            "department": user_data.get('department'),
+            "superior": user_data.get('superior')
         }
         
         return jsonify({"user": user_info}), 200
@@ -293,6 +295,7 @@ def register():
             "name": data['name'],
             "role": data.get('role', 'user'),
             "department": data.get('department'),
+            "superior": data.get('superior'),
             "is_active": True
         }
         
@@ -306,12 +309,6 @@ def register():
     except Exception as e:
         print(f"Registration error: {e}")
         return jsonify({"error": "An error occurred during registration"}), 500
-
-
-@app.route("/health", methods=["GET"])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy"}), 200
 
 
 if __name__ == "__main__":
