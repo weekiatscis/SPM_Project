@@ -25,18 +25,16 @@
     <div v-else-if="project">
       <!-- Header -->
       <a-card :bordered="false" :style="headerStyle" style="margin-bottom: 24px;">
-        <a-row :gutter="24" align="middle">
-          <a-col :span="18">
-            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 8px;">
+        <a-row :gutter="[16, 16]" align="middle">
+          <a-col :xs="24" :sm="24" :md="16" :lg="18">
+            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 8px; flex-wrap: wrap;">
               <a-button
                 type="text"
                 @click="$router.push('/projects')"
                 style="padding: 4px;"
               >
                 <template #icon>
-                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
-                  </svg>
+                  <LeftOutlined />
                 </template>
               </a-button>
               <a-typography-title :level="2" :style="titleStyle" style="margin: 0;">
@@ -50,33 +48,42 @@
               {{ project.project_description || 'No description available' }}
             </a-typography-paragraph>
           </a-col>
-          <a-col :span="6" style="text-align: right;">
-            <a-space direction="vertical" align="end">
-              <a-space>
-                <a-button type="default" @click="handleGenerateReport">
-                  <template #icon>
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                    </svg>
-                  </template>
-                  Generate Report
-                </a-button>
-                <a-button type="primary" @click="handleEdit">
-                  <template #icon>
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                    </svg>
-                  </template>
-                  Edit Project
-                </a-button>
-              </a-space>
-              <a-button danger @click="handleDelete">
+          <a-col :xs="24" :sm="24" :md="8" :lg="6">
+            <a-space
+              direction="vertical"
+              :style="{ width: '100%' }"
+              :size="8"
+              class="action-buttons"
+            >
+              <a-button
+                type="default"
+                @click="handleGenerateReport"
+                block
+              >
                 <template #icon>
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                  </svg>
+                  <FileTextOutlined />
                 </template>
-                Delete Project
+                Report
+              </a-button>
+              <a-button
+                type="primary"
+                @click="handleEdit"
+                block
+              >
+                <template #icon>
+                  <EditOutlined />
+                </template>
+                Edit
+              </a-button>
+              <a-button
+                danger
+                @click="handleDelete"
+                block
+              >
+                <template #icon>
+                  <DeleteOutlined />
+                </template>
+                Delete
               </a-button>
             </a-space>
           </a-col>
@@ -180,6 +187,74 @@
       :isOpen="showTaskDetailModal"
       @close="closeTaskDetailModal"
     />
+
+    <!-- Delete Confirmation Modal -->
+    <a-modal
+      v-model:open="showDeleteModal"
+      title="Delete Project"
+      :closable="true"
+      :maskClosable="false"
+      @cancel="closeDeleteModal"
+      :footer="null"
+      width="500px"
+    >
+      <div style="padding: 16px 0;">
+        <!-- Warning Icon -->
+        <div style="text-align: center; margin-bottom: 16px;">
+          <ExclamationCircleOutlined style="font-size: 48px; color: #ff4d4f;" />
+        </div>
+
+        <!-- Warning Message -->
+        <a-typography-paragraph style="text-align: center; font-size: 16px; margin-bottom: 8px;">
+          <strong>Are you sure you want to delete this project?</strong>
+        </a-typography-paragraph>
+
+        <a-typography-paragraph style="text-align: center; color: #666; margin-bottom: 24px;">
+          This action cannot be undone. All data associated with "<strong>{{ project?.project_name }}</strong>" will be permanently deleted.
+        </a-typography-paragraph>
+
+        <!-- Confirmation Input -->
+        <div style="margin-bottom: 24px;">
+          <a-typography-text style="display: block; margin-bottom: 8px; color: #666;">
+            Type <strong style="color: #ff4d4f;">delete</strong> to confirm:
+          </a-typography-text>
+          <a-input
+            v-model:value="deleteConfirmText"
+            placeholder="Type 'delete' here"
+            size="large"
+            @pressEnter="confirmDelete"
+            :status="deleteConfirmText && deleteConfirmText !== 'delete' ? 'error' : ''"
+          />
+          <a-typography-text
+            v-if="deleteConfirmText && deleteConfirmText !== 'delete'"
+            type="danger"
+            style="font-size: 12px; display: block; margin-top: 4px;"
+          >
+            Please type exactly "delete" to confirm
+          </a-typography-text>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+          <a-button @click="closeDeleteModal" size="large">
+            Cancel
+          </a-button>
+          <a-button
+            type="primary"
+            danger
+            size="large"
+            @click="confirmDelete"
+            :disabled="deleteConfirmText !== 'delete'"
+            :loading="isDeletingProject"
+          >
+            <template #icon>
+              <DeleteOutlined />
+            </template>
+            Delete Project
+          </a-button>
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -187,6 +262,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { notification } from 'ant-design-vue'
+import { FileTextOutlined, EditOutlined, DeleteOutlined, LeftOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskCard from '../components/tasks/TaskCard.vue'
@@ -197,7 +273,12 @@ export default {
   components: {
     ProjectFormModal,
     TaskCard,
-    TaskDetailModal
+    TaskDetailModal,
+    FileTextOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    LeftOutlined,
+    ExclamationCircleOutlined
   },
   setup() {
     const route = useRoute()
@@ -214,6 +295,11 @@ export default {
     const isLoadingTasks = ref(false)
     const selectedTask = ref(null)
     const showTaskDetailModal = ref(false)
+
+    // Delete modal state
+    const showDeleteModal = ref(false)
+    const deleteConfirmText = ref('')
+    const isDeletingProject = ref(false)
 
     // Light theme styles
     const headerStyle = computed(() => {
@@ -400,10 +486,31 @@ export default {
       showEditModal.value = true
     }
 
-    const handleDelete = async () => {
-      if (!confirm(`Are you sure you want to delete "${project.value.project_name}"? This action cannot be undone.`)) {
+    const handleDelete = () => {
+      // Open the delete confirmation modal
+      showDeleteModal.value = true
+      deleteConfirmText.value = ''
+    }
+
+    const closeDeleteModal = () => {
+      showDeleteModal.value = false
+      deleteConfirmText.value = ''
+      isDeletingProject.value = false
+    }
+
+    const confirmDelete = async () => {
+      // Check if user typed "delete" correctly
+      if (deleteConfirmText.value !== 'delete') {
+        notification.warning({
+          message: 'Invalid confirmation',
+          description: 'Please type "delete" to confirm project deletion.',
+          placement: 'topRight',
+          duration: 3
+        })
         return
       }
+
+      isDeletingProject.value = true
 
       try {
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
@@ -426,6 +533,7 @@ export default {
           duration: 3
         })
 
+        closeDeleteModal()
         router.push('/projects')
       } catch (err) {
         console.error('Failed to delete project:', err)
@@ -435,6 +543,8 @@ export default {
           placement: 'topRight',
           duration: 4
         })
+      } finally {
+        isDeletingProject.value = false
       }
     }
 
@@ -496,6 +606,9 @@ export default {
       isLoadingTasks,
       selectedTask,
       showTaskDetailModal,
+      showDeleteModal,
+      deleteConfirmText,
+      isDeletingProject,
       headerStyle,
       titleStyle,
       subtitleStyle,
@@ -504,6 +617,8 @@ export default {
       getStatusText,
       handleEdit,
       handleDelete,
+      closeDeleteModal,
+      confirmDelete,
       handleProjectUpdated,
       handleTaskClick,
       closeTaskDetailModal,
@@ -516,5 +631,57 @@ export default {
 <style scoped>
 .space-y-4 > * + * {
   margin-top: 1rem;
+}
+
+/* Action buttons styling */
+.action-buttons {
+  width: 100%;
+}
+
+.action-buttons :deep(.ant-btn) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.action-buttons :deep(.ant-btn:hover) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .action-buttons {
+    margin-top: 16px;
+  }
+}
+
+@media (min-width: 769px) {
+  .action-buttons {
+    align-items: flex-end;
+  }
+}
+
+/* Delete modal styling */
+:deep(.ant-modal-header) {
+  border-bottom: 1px solid #f0f0f0;
+  padding: 16px 24px;
+}
+
+:deep(.ant-modal-body) {
+  padding: 0 24px;
+}
+
+:deep(.ant-input-status-error) {
+  border-color: #ff4d4f;
+}
+
+:deep(.ant-input-status-error:focus) {
+  border-color: #ff4d4f;
+  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.1);
 }
 </style>

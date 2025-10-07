@@ -131,13 +131,42 @@ export default {
         const payload = await response.json()
         const apiProjects = Array.isArray(payload?.projects) ? payload.projects : []
 
-        projects.value = apiProjects.map(p => ({
+        // Map projects and fetch user names
+        const projectsWithUserIds = apiProjects.map(p => ({
           project_id: p.project_id,
           project_name: p.project_name,
           project_description: p.project_description,
           created_at: p.created_at,
-          created_by: p.created_by,
+          created_by: p.created_by, // This is still user_id
+          created_by_id: p.created_by, // Store the original user_id
           status: 'Active' // Default status since not in DB yet
+        }))
+
+        // Fetch user names for all unique created_by user IDs
+        const uniqueUserIds = [...new Set(projectsWithUserIds.map(p => p.created_by).filter(Boolean))]
+        const userNameMap = {}
+
+        // Fetch user names from task service
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        for (const userId of uniqueUserIds) {
+          try {
+            const userResponse = await fetch(`${taskServiceUrl}/users/${userId}`)
+            if (userResponse.ok) {
+              const userData = await userResponse.json()
+              userNameMap[userId] = userData.user?.name || userId
+            } else {
+              userNameMap[userId] = userId // Fallback to user_id if fetch fails
+            }
+          } catch (err) {
+            console.error(`Failed to fetch user name for ${userId}:`, err)
+            userNameMap[userId] = userId // Fallback to user_id
+          }
+        }
+
+        // Replace user_id with user name
+        projects.value = projectsWithUserIds.map(p => ({
+          ...p,
+          created_by: userNameMap[p.created_by_id] || p.created_by_id || 'Unknown'
         }))
       } catch (error) {
         console.error('Failed to load projects for stats:', error)
