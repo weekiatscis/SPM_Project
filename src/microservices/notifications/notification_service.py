@@ -313,11 +313,6 @@ def create_notification_endpoint():
     except Exception as e:
         return jsonify({"error": f"Failed to create notification: {str(e)}"}), 500
 
-@app.route("/health", methods=["GET"])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy", "service": "notification-service"}), 200
-
 @app.route("/test-notifications/<user_id>", methods=["POST"])
 def test_notifications(user_id: str):
     """Test endpoint to create a sample notification"""

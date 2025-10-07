@@ -34,11 +34,6 @@ services:
     restart: unless-stopped
     depends_on:
       - rabbitmq
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 
   task-service:
@@ -56,11 +51,6 @@ services:
       - rabbitmq
     command: ["python", "task_service.py"]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   project-service:
     build:
@@ -91,11 +81,6 @@ services:
       - RABBITMQ_URL=amqp://admin:admin123@rabbitmq:5672
     command: ["python", "user_service.py"]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
     depends_on:
       - rabbitmq
 
@@ -111,11 +96,6 @@ services:
       - PORT=8086
     command: ["python", "userAuthentication.py"]
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
 volumes:
   rabbitmq_data:

@@ -38,6 +38,9 @@ class TaskCreate(BaseModel):
     priority: Optional[str] = None
     description: Optional[str] = None
     owner_id: Optional[str] = None
+    collaborators: Optional[str] = None
+    isSubtask: Optional[bool] = False
+    parent_task_id: Optional[str] = None
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -47,7 +50,9 @@ class TaskUpdate(BaseModel):
     description: Optional[str] = None
     collaborators: Optional[str] = None
     project_id: Optional[str] = None
-    subtasks: Optional[str] = None
+    owner_id: Optional[str] = None
+    isSubtask: Optional[bool] = None
+    parent_task_id: Optional[str] = None
 
 
 # Pydantic model for rescheduling a task
@@ -136,8 +141,16 @@ def to_yyyy_mm_dd(val):
     s = str(val)
     return s[:10]
 
-def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+def get_subtasks_count(task_id: str) -> int:
+    """Helper function to get subtasks count for a task"""
+    try:
+        response = supabase.table("task").select("task_id", count="exact").eq("parent_task_id", task_id).eq("isSubtask", True).execute()
+        return response.count if response.count is not None else 0
+    except:
+        return 0
+
+def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False) -> Dict[str, Any]:
+    task_data = {
         "id": row.get("task_id") or row.get("id"),
         "title": row.get("title"),
         "description": row.get("description", ""),
@@ -147,10 +160,17 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "owner_id": row.get("owner_id"),
         "project_id": row.get("project_id"),
         "collaborators": row.get("collaborators") or [],
-        "subtasks": row.get("subtasks") or [],
+        "isSubtask": row.get("isSubtask", False),
+        "parent_task_id": row.get("parent_task_id"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at")),
     }
+    
+    # Optionally include subtasks count for parent tasks
+    if include_subtasks_count and not task_data["isSubtask"]:
+        task_data["subtasks_count"] = get_subtasks_count(task_data["id"])
+    
+    return task_data
 
 def log_task_change(task_id: str, action: str, field: str, user_id: str,
                     old_value: Any, new_value: Any) -> Optional[Dict[str, Any]]:
@@ -340,10 +360,115 @@ def get_task(task_id: str):
         return jsonify({"error": f"Failed to retrieve task: {str(exc)}"}), 500
 
 
+@app.route("/tasks/<task_id>/subtasks/count", methods=["GET"])
+def get_task_subtasks_count(task_id: str):
+    """
+    GET /tasks/<task_id>/subtasks/count - Get the count of subtasks for a specific parent task
+    """
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        # Check if parent task exists
+        parent_task = get_task_by_id(task_id)
+        if not parent_task:
+            return jsonify({"error": "Task not found"}), 404
+
+        # Query for count of tasks that have this task as their parent
+        response = supabase.table("task").select("task_id", count="exact").eq("parent_task_id", task_id).eq("isSubtask", True).execute()
+        
+        count = response.count if response.count is not None else 0
+        
+        return jsonify({"task_id": task_id, "subtasks_count": count}), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to retrieve subtasks count: {str(exc)}"}), 500
+
+
+@app.route("/tasks/<task_id>/subtasks", methods=["GET"])
+def get_task_subtasks(task_id: str):
+    """
+    GET /tasks/<task_id>/subtasks - Get all subtasks for a specific parent task
+    """
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        # Check if parent task exists
+        parent_task = get_task_by_id(task_id)
+        if not parent_task:
+            return jsonify({"error": "Task not found"}), 404
+
+        # Query for all tasks that have this task as their parent
+        response = supabase.table("task").select("*").eq("parent_task_id", task_id).eq("isSubtask", True).execute()
+        
+        if not response.data:
+            return jsonify({"subtasks": [], "count": 0}), 200
+        
+        rows: List[Dict[str, Any]] = response.data or []
+        
+        # Map to API format
+        subtasks = [map_db_row_to_api(row) for row in rows]
+        
+        return jsonify({"subtasks": subtasks, "count": len(subtasks)}), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to retrieve subtasks: {str(exc)}"}), 500
+
+
+@app.route("/tasks/main", methods=["GET"])
+def get_main_tasks():
+    """
+    GET /tasks/main - Get all main tasks (excluding subtasks)
+    """
+    try:
+        # Query tasks where isSubtask is false or null
+        response = supabase.table("task").select("*").or_("isSubtask.is.null,isSubtask.eq.false").execute()
+        
+        if not response.data:
+            return jsonify({"tasks": [], "count": 0}), 200
+        
+        rows: List[Dict[str, Any]] = response.data or []
+        
+        # Map to API format with subtasks count
+        tasks = [map_db_row_to_api(row, include_subtasks_count=True) for row in rows]
+        
+        return jsonify({"tasks": tasks, "count": len(tasks)}), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to retrieve main tasks: {str(exc)}"}), 500
+
+
+@app.route("/tasks/user/<user_id>", methods=["GET"])
+def get_tasks_by_user(user_id: str):
+    """
+    GET /tasks/user/<user_id> - Get all tasks owned by a specific user
+    """
+    try:
+        if not user_id or user_id.strip() == "":
+            return jsonify({"error": "Invalid user ID"}), 400
+
+        # Query tasks owned by the user
+        response = supabase.table("task").select("*").eq("owner_id", user_id).execute()
+        
+        if not response.data:
+            return jsonify({"tasks": [], "count": 0}), 200
+        
+        rows: List[Dict[str, Any]] = response.data or []
+        
+        # Map to API format
+        tasks = [map_db_row_to_api(row) for row in rows]
+        
+        return jsonify({"tasks": tasks, "count": len(tasks)}), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to retrieve user tasks: {str(exc)}"}), 500
+
+
 @app.route("/tasks", methods=["POST"])
 def create_task():
     """
-    POST /tasks - Create a new task
+    POST /tasks - Create a new task or subtask
     """
     try:
         body = request.get_json(silent=True) or {}
@@ -358,6 +483,16 @@ def create_task():
         db_data = task_data.dict()
         db_data["created_at"] = datetime.utcnow().isoformat()
 
+        # If this is a subtask, validate that the parent task exists
+        if db_data.get("isSubtask") and db_data.get("parent_task_id"):
+            parent_task = get_task_by_id(db_data["parent_task_id"])
+            if not parent_task:
+                return jsonify({"error": "Parent task not found"}), 404
+            
+            # Ensure parent task is not itself a subtask
+            if parent_task.get("isSubtask"):
+                return jsonify({"error": "Cannot create subtask of another subtask"}), 400
+
         # Insert into database
         response = supabase.table("task").insert(db_data).execute()
         
@@ -370,7 +505,7 @@ def create_task():
         # Log task creation for audit trail - single log entry with all created fields
         # Define all possible task fields for logging
         task_fields = ["title", "due_date", "status", "priority", "description", 
-                      "collaborators", "project_id", "subtasks", "owner_id"]
+                      "collaborators", "project_id", "owner_id", "isSubtask", "parent_task_id"]
         
         # Get owner_id for logging (could be from request or default)
         actor_id = db_data.get("owner_id", "system")
@@ -565,10 +700,10 @@ def update_task(task_id: str):
     except Exception as exc:
         return jsonify({"error": f"Failed to update task: {str(exc)}"}), 500
 
-@app.route("/tasks/<task_id>", methods=["DELETE"])
-def delete_task(task_id: str):
+@app.route("/tasks/<task_id>/delete-preview", methods=["GET"])
+def get_delete_preview(task_id: str):
     """
-    DELETE /tasks/<task_id> - Delete a task
+    GET /tasks/<task_id>/delete-preview - Preview what tasks will be deleted
     """
     try:
         if not validate_task_id(task_id):
@@ -579,22 +714,126 @@ def delete_task(task_id: str):
         if not existing_task:
             return jsonify({"error": "Task not found"}), 404
 
-        # Delete from database
+        tasks_to_delete = []
+        
+        # Add the main task
+        tasks_to_delete.append({
+            "task_id": task_id,
+            "title": existing_task.get("title", "Unknown"),
+            "type": "subtask" if existing_task.get("isSubtask") else "main_task",
+            "description": existing_task.get("description", ""),
+            "status": existing_task.get("status", ""),
+            "due_date": existing_task.get("due_date", "")
+        })
+        
+        # If this is not a subtask, get all subtasks that will be deleted
+        if not existing_task.get("isSubtask"):
+            try:
+                subtasks_response = supabase.table("task").select("task_id, title, description, status, due_date").eq("parent_task_id", task_id).eq("isSubtask", True).execute()
+                
+                if subtasks_response.data:
+                    for subtask in subtasks_response.data:
+                        tasks_to_delete.append({
+                            "task_id": subtask["task_id"],
+                            "title": subtask.get("title", "Unknown"),
+                            "type": "subtask",
+                            "description": subtask.get("description", ""),
+                            "status": subtask.get("status", ""),
+                            "due_date": subtask.get("due_date", "")
+                        })
+                        
+            except Exception as e:
+                print(f"Warning: Failed to fetch subtasks for preview: {e}")
+        
+        return jsonify({
+            "task_id": task_id,
+            "tasks_to_delete": tasks_to_delete,
+            "total_count": len(tasks_to_delete),
+            "has_subtasks": len(tasks_to_delete) > 1,
+            "subtasks_count": len(tasks_to_delete) - 1
+        }), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to get delete preview: {str(exc)}"}), 500
+
+
+@app.route("/tasks/<task_id>", methods=["DELETE"])
+def delete_task(task_id: str):
+    """
+    DELETE /tasks/<task_id> - Delete a task and all its subtasks (cascading delete)
+    """
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        # Check if task exists
+        existing_task = get_task_by_id(task_id)
+        if not existing_task:
+            return jsonify({"error": "Task not found"}), 404
+
+        deleted_tasks = []
+        
+        # If this is not a subtask, check for and delete all subtasks first
+        if not existing_task.get("isSubtask"):
+            try:
+                # Get all subtasks for this parent task
+                subtasks_response = supabase.table("task").select("task_id, title").eq("parent_task_id", task_id).eq("isSubtask", True).execute()
+                
+                if subtasks_response.data:
+                    subtask_ids = [subtask["task_id"] for subtask in subtasks_response.data]
+                    
+                    # Delete all subtasks
+                    if subtask_ids:
+                        delete_subtasks_response = supabase.table("task").delete().in_("task_id", subtask_ids).execute()
+                        
+                        if delete_subtasks_response.data:
+                            deleted_tasks.extend([{
+                                "task_id": subtask["task_id"], 
+                                "title": subtask["title"],
+                                "type": "subtask"
+                            } for subtask in subtasks_response.data])
+                            
+                            print(f"Deleted {len(subtask_ids)} subtasks for parent task {task_id}")
+                        
+            except Exception as e:
+                print(f"Warning: Failed to delete subtasks for task {task_id}: {e}")
+                # Continue with parent deletion even if subtask deletion fails
+        
+        # Delete the main task
         response = supabase.table("task").delete().eq("task_id", task_id).execute()
         
         if not response.data:
             return jsonify({"error": "Failed to delete task"}), 500
-
-        return jsonify({"message": "Task deleted successfully", "task_id": task_id}), 200
+        
+        # Add the main task to deleted tasks list
+        deleted_tasks.append({
+            "task_id": task_id,
+            "title": existing_task.get("title", "Unknown"),
+            "type": "subtask" if existing_task.get("isSubtask") else "main_task"
+        })
+        
+        # Log the deletion for audit trail
+        try:
+            log_task_change(
+                task_id=task_id,
+                action="delete",
+                field="task",
+                user_id=existing_task.get("owner_id", "system"),
+                old_value=existing_task,
+                new_value=None
+            )
+        except Exception as e:
+            print(f"Warning: Failed to log task deletion: {e}")
+        
+        return jsonify({
+            "message": "Task deleted successfully",
+            "task_id": task_id,
+            "deleted_tasks": deleted_tasks,
+            "total_deleted": len(deleted_tasks)
+        }), 200
 
     except Exception as exc:
         return jsonify({"error": f"Failed to delete task: {str(exc)}"}), 500
-
-
-@app.route("/health", methods=["GET"])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy", "service": "task-service"}), 200
 
 
 @app.route("/users/<user_id>", methods=["GET"])
