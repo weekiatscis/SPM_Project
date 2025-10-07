@@ -278,6 +278,53 @@
             
             <div class="mt-1 text-sm text-gray-500">
               Add members from your department to collaborate on this task
+          <!-- Reminder Customization -->
+          <div v-if="form.dueDate" class="border-t pt-4 mt-4">
+            <div class="flex items-center justify-between mb-2">
+              <label class="block text-sm font-medium text-gray-700">
+                Reminder Schedule
+              </label>
+              <button
+                type="button"
+                @click="toggleReminderCustomization"
+                class="text-sm text-blue-600 hover:text-blue-800"
+              >
+                {{ showReminderCustomization ? 'Use Default' : 'Customize' }}
+              </button>
+            </div>
+
+            <div v-if="!showReminderCustomization" class="text-sm text-gray-600">
+              You'll be reminded 7, 3, and 1 day(s) before the due date
+            </div>
+
+            <div v-else class="space-y-3">
+              <div class="text-sm text-gray-600 mb-2">
+                Select when you want to receive reminders (up to 5, max 10 days before):
+              </div>
+
+              <div class="grid grid-cols-5 gap-2">
+                <button
+                  v-for="day in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
+                  :key="day"
+                  type="button"
+                  @click="toggleReminderDay(day)"
+                  :disabled="!canAddMoreReminders && !form.reminderDays.includes(day)"
+                  class="px-3 py-2 text-sm rounded border transition-colors"
+                  :class="form.reminderDays.includes(day)
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed'"
+                >
+                  {{ day }}d
+                </button>
+              </div>
+
+              <div class="text-xs text-gray-500">
+                Selected: {{ form.reminderDays.length > 0 ? form.reminderDays.sort((a, b) => b - a).join(', ') + ' day(s) before' : 'None' }}
+              </div>
+
+              <div v-if="form.reminderDays.length === 0" class="text-xs text-red-600">
+                ⚠️ No reminders selected. You won't receive any notifications.
+              </div>
             </div>
           </div>
         </form>
@@ -307,6 +354,7 @@
 <script>
 import { ref, watch, computed } from 'vue'
 import { useAuthStore } from '../../stores/auth'
+import { useNotificationStore } from '../../stores/notifications'
 
 export default {
   name: 'TaskFormModal',
@@ -323,6 +371,7 @@ export default {
   emits: ['close', 'save'],
   setup(props, { emit }) {
     const authStore = useAuthStore()
+    const notificationStore = useNotificationStore()
     const form = ref({
       title: '',
       description: '',
@@ -333,6 +382,7 @@ export default {
       collaborators: [],
       isSubtask: false,
       parentTaskId: ''
+      reminderDays: [7, 3, 1]  // Default reminder days
     })
 
     const errors = ref({
@@ -361,6 +411,7 @@ export default {
       const role = authStore.user?.role
       return role === 'Manager' || role === 'Director'
     })
+    const showReminderCustomization = ref(false)
     
     const minDate = computed(() => {
       return new Date().toISOString().split('T')[0]
@@ -388,7 +439,7 @@ export default {
 
     const dueDateColorClass = computed(() => {
       if (daysUntilDue.value === null) return 'text-gray-600'
-      
+
       if (daysUntilDue.value <= 1) return 'text-red-600'
       if (daysUntilDue.value <= 3) return 'text-orange-600'
       if (daysUntilDue.value <= 7) return 'text-yellow-600'
@@ -509,6 +560,28 @@ export default {
       const index = form.value.collaborators.indexOf(collaboratorId)
       if (index > -1) {
         form.value.collaborators.splice(index, 1)
+    const canAddMoreReminders = computed(() => {
+      return form.value.reminderDays.length < 5
+    })
+
+    const toggleReminderCustomization = () => {
+      showReminderCustomization.value = !showReminderCustomization.value
+      if (!showReminderCustomization.value) {
+        // Reset to default when switching back
+        form.value.reminderDays = [7, 3, 1]
+      }
+    }
+
+    const toggleReminderDay = (day) => {
+      const index = form.value.reminderDays.indexOf(day)
+      if (index > -1) {
+        // Remove the day
+        form.value.reminderDays.splice(index, 1)
+      } else {
+        // Add the day if under limit
+        if (form.value.reminderDays.length < 5) {
+          form.value.reminderDays.push(day)
+        }
       }
     }
 
@@ -525,6 +598,8 @@ export default {
           collaborators: newTask.collaborators || [],
           isSubtask: !!newTask.parent_task_id,
           parentTaskId: newTask.parent_task_id || ''
+          status: newTask.status || 'Unassigned',
+          reminderDays: newTask.reminderDays || [7, 3, 1]
         }
       } else {
         // Reset form for new task
@@ -539,7 +614,8 @@ export default {
           assigneeId: defaultAssigneeId,
           collaborators: [],
           isSubtask: false,
-          parentTaskId: ''
+          parentTaskId: '',
+          reminderDays: [7, 3, 1]
         }
         // Reset errors
         errors.value = {
@@ -548,6 +624,7 @@ export default {
           assigneeId: '',
           parentTaskId: ''
         }
+        showReminderCustomization.value = false
       }
     }, { immediate: true })
 
@@ -647,6 +724,7 @@ export default {
             collaborators: JSON.stringify(form.value.collaborators),
             isSubtask: form.value.isSubtask,
             parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null
+            reminder_days: form.value.reminderDays
           }
 
           const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}`, {
@@ -663,7 +741,13 @@ export default {
           }
 
           const result = await response.json()
-          
+
+          // Refresh notifications after updating task (in case due date changed)
+          if (authStore.user?.user_id) {
+            await notificationStore.fetchNotifications(authStore.user.user_id)
+            console.log('Notifications refreshed after task update')
+          }
+
           // Emit success with the updated task data
           emit('save', result.task)
           console.log('Task updated successfully:', result.task)
@@ -682,6 +766,7 @@ export default {
           collaborators: JSON.stringify(form.value.collaborators),
           isSubtask: form.value.isSubtask,
           parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null
+          reminder_days: form.value.reminderDays
         }
 
         const response = await fetch(`${taskServiceUrl}/tasks`, {
@@ -712,7 +797,9 @@ export default {
           collaborators: [],
           isSubtask: false,
           parentTaskId: ''
+          reminderDays: [7, 3, 1]
         }
+        showReminderCustomization.value = false
         
         // Reset errors
         errors.value = {
@@ -722,9 +809,18 @@ export default {
           parentTaskId: ''
         }
         
+        // Refresh notifications immediately after creating task
+        if (authStore.user?.user_id) {
+          // Wait a moment for backend to process notifications
+          setTimeout(async () => {
+            await notificationStore.fetchNotifications(authStore.user.user_id)
+            console.log('Notifications refreshed after task creation')
+          }, 500)
+        }
+
         // Emit success with the created task data
         emit('save', result.task)
-        
+
         // Show success message
         console.log('Task created successfully:', result.task)
         
@@ -763,6 +859,10 @@ export default {
       dueDateColorClass,
       addCollaborator,
       removeCollaborator,
+      showReminderCustomization,
+      canAddMoreReminders,
+      toggleReminderCustomization,
+      toggleReminderDay,
       saveTask
     }
   }
