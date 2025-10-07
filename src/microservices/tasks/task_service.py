@@ -38,6 +38,7 @@ class TaskCreate(BaseModel):
     priority: Optional[str] = None
     description: Optional[str] = None
     owner_id: Optional[str] = None
+    reminder_days: Optional[List[int]] = None  # Custom reminder days (e.g., [7, 3, 1])
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -48,6 +49,7 @@ class TaskUpdate(BaseModel):
     collaborators: Optional[str] = None
     project_id: Optional[str] = None
     subtasks: Optional[str] = None
+    reminder_days: Optional[List[int]] = None  # Custom reminder days
 
 
 # Pydantic model for rescheduling a task
@@ -191,11 +193,53 @@ def log_task_change(task_id: str, action: str, field: str, user_id: str,
         print(f"ERROR: Failed to log task change for {task_id}: {exc}")
         return None
 
+def validate_reminder_days(reminder_days: List[int]) -> bool:
+    """Validate reminder days: must be between 1-10, max 5 reminders"""
+    if not reminder_days or len(reminder_days) > 5:
+        return False
+    return all(1 <= day <= 10 for day in reminder_days)
+
+def save_reminder_preferences(task_id: str, reminder_days: List[int]):
+    """Save custom reminder preferences for a task"""
+    try:
+        if not validate_reminder_days(reminder_days):
+            print(f"Invalid reminder days: {reminder_days}")
+            return False
+
+        # Check if preferences already exist
+        existing = supabase.table("task_reminder_preferences").select("task_id").eq("task_id", task_id).execute()
+
+        if existing.data:
+            # Update existing preferences
+            response = supabase.table("task_reminder_preferences").update({
+                "reminder_days": reminder_days,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }).eq("task_id", task_id).execute()
+        else:
+            # Insert new preferences
+            response = supabase.table("task_reminder_preferences").insert({
+                "task_id": task_id,
+                "reminder_days": reminder_days
+            }).execute()
+
+        return bool(response.data)
+    except Exception as e:
+        print(f"Failed to save reminder preferences: {e}")
+        return False
+
+def delete_old_notifications(task_id: str):
+    """Delete old reminder notifications for a task (when due date changes)"""
+    try:
+        supabase.table("notifications").delete().eq("task_id", task_id).like("type", "reminder_%").execute()
+        print(f"Deleted old notifications for task {task_id}")
+    except Exception as e:
+        print(f"Failed to delete old notifications: {e}")
+
 def check_and_send_due_date_notifications(task_data: dict):
     """Check if task needs due date notifications and send them"""
     if not task_data.get("due_date") or not task_data.get("owner_id"):
         return
-    
+
     try:
         # Handle different date formats
         due_date_str = task_data["due_date"]
@@ -204,14 +248,22 @@ def check_and_send_due_date_notifications(task_data: dict):
             due_date = datetime.strptime(due_date_str[:10], "%Y-%m-%d").date()
         else:
             due_date = due_date_str
-            
+
         today = datetime.now(timezone.utc).date()
         days_until_due = (due_date - today).days
-        
+
         print(f"Task {task_data.get('task_id')}: Due date {due_date}, days until due: {days_until_due}")
-        
-        # Send notifications for 7, 3, 1 days if within range
-        reminder_days = [7, 3, 1]
+
+        # Get custom reminder days from task_reminder_preferences or use default [7, 3, 1]
+        reminder_days = [7, 3, 1]  # Default
+        try:
+            prefs_response = supabase.table("task_reminder_preferences").select("reminder_days").eq("task_id", task_data["task_id"]).execute()
+            if prefs_response.data and len(prefs_response.data) > 0:
+                reminder_days = prefs_response.data[0].get("reminder_days", [7, 3, 1])
+                print(f"Using custom reminder days for task {task_data.get('task_id')}: {reminder_days}")
+        except Exception as e:
+            print(f"Failed to fetch custom reminder days, using default: {e}")
+
         for reminder_day in reminder_days:
             if days_until_due == reminder_day:
                 print(f"Sending {reminder_day}-day reminder for task {task_data.get('task_id')}")
@@ -246,12 +298,20 @@ def check_and_send_due_date_notifications(task_data: dict):
                         # Publish to RabbitMQ for real-time delivery
                         notification_publisher.publish_due_date_notification(task_data, reminder_day)
                         
-                        # Also try to notify the notification service
+                        # Also try to notify the notification service for real-time delivery
                         try:
                             notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                            requests.post(f"{notification_service_url}/notifications/create", 
-                                        json=notification_data, timeout=5)
-                        except Exception as e:
+                            notif_response = requests.post(
+                                f"{notification_service_url}/notifications/create",
+                                json=notification_data,
+                                timeout=5,
+                                headers={'Content-Type': 'application/json'}
+                            )
+                            if notif_response.ok:
+                                print(f"Successfully notified notification service via HTTP")
+                            else:
+                                print(f"Notification service returned status {notif_response.status_code}")
+                        except requests.exceptions.RequestException as e:
                             print(f"Failed to notify notification service: {e}")
                             # Continue anyway since we stored in DB
                     else:
@@ -355,7 +415,7 @@ def create_task():
             return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
         # Prepare data for database
-        db_data = task_data.dict()
+        db_data = task_data.dict(exclude={"reminder_days"})  # Exclude reminder_days from task table
         db_data["created_at"] = datetime.utcnow().isoformat()
 
         # Insert into database
@@ -366,7 +426,14 @@ def create_task():
 
         created_task_data = response.data[0]
         task_id = created_task_data.get("task_id")
-        
+
+        # Save custom reminder preferences if provided
+        if task_data.reminder_days and task_data.due_date:
+            save_reminder_preferences(task_id, task_data.reminder_days)
+        elif task_data.due_date:
+            # Save default reminder days [7, 3, 1] if due date is set but no custom reminders
+            save_reminder_preferences(task_id, [7, 3, 1])
+
         # Log task creation for audit trail - single log entry with all created fields
         # Define all possible task fields for logging
         task_fields = ["title", "due_date", "status", "priority", "description", 
@@ -483,9 +550,12 @@ def update_task(task_id: str):
             except ValidationError as e:
                 return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
-            # Prepare update data (only include non-None values)
-            update_data = {k: v for k, v in task_data.dict().items() if v is not None}
+            # Prepare update data (only include non-None values, exclude reminder_days)
+            update_data = {k: v for k, v in task_data.dict(exclude={"reminder_days"}).items() if v is not None}
             actor_id = existing_task.get("owner_id", "system")
+
+            # Handle reminder_days separately
+            reminder_days_update = task_data.reminder_days
         
         if not update_data:
             return jsonify({"error": "No valid fields to update"}), 400
@@ -507,8 +577,14 @@ def update_task(task_id: str):
         # Get updated task
         updated_task = map_db_row_to_api(response.data[0])
 
+        # Update reminder preferences if provided
+        if reminder_days_update and "due_date" in update_data:
+            save_reminder_preferences(task_id, reminder_days_update)
+
         # Check and send due date notifications if due_date was changed
         if "due_date" in update_data:
+            # Delete old notifications when due date changes
+            delete_old_notifications(task_id)
             check_and_send_due_date_notifications(response.data[0])
 
                 

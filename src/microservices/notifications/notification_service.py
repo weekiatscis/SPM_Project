@@ -162,52 +162,75 @@ def check_due_date_reminders():
     """Check for tasks that need reminders and send notifications"""
     try:
         now = datetime.now(timezone.utc)
-        reminder_days = [1, 3, 7]
-        
-        for days in reminder_days:
-            target_date = (now + timedelta(days=days)).date()
-            
-            # Get tasks due on target date
-            response = supabase.table("task").select("*").eq("due_date", target_date.isoformat()).execute()
-            tasks = response.data or []
-            
-            for task in tasks:
-                # Check if we already sent this reminder
-                existing_notification = supabase.table("notifications").select("id").eq("task_id", task["task_id"]).eq("type", f"reminder_{days}_days").execute()
-                
-                if not existing_notification.data:
-                    # Create notification
-                    notification_data = {
-                        "user_id": task["owner_id"],
-                        "title": f"Task Due in {days} Day{'s' if days > 1 else ''}",
-                        "message": f"Task '{task['title']}' is due on {target_date.strftime('%B %d, %Y')}",
-                        "type": f"reminder_{days}_days",
-                        "task_id": task["task_id"],
-                        "due_date": task["due_date"]
-                    }
-                    
-                    # Store in database
-                    stored_notification = create_notification(notification_data)
-                    
-                    if stored_notification:
-                        # Send real-time notification via WebSocket
-                        send_realtime_notification(task["owner_id"], stored_notification)
-                        
-                        # Publish to RabbitMQ for real-time delivery
-                        rabbitmq.publish_notification(
-                            f"task.reminder.{days}_days",
-                            {
-                                "notification_id": stored_notification["id"],
+        today = now.date()
+
+        # Get all tasks with due dates
+        response = supabase.table("task").select("*").not_.is_("due_date", "null").execute()
+        tasks = response.data or []
+
+        for task in tasks:
+            # Get custom reminder preferences for this task
+            try:
+                prefs_response = supabase.table("task_reminder_preferences").select("reminder_days").eq("task_id", task["task_id"]).execute()
+                if prefs_response.data and len(prefs_response.data) > 0:
+                    reminder_days = prefs_response.data[0].get("reminder_days", [7, 3, 1])
+                else:
+                    reminder_days = [7, 3, 1]  # Default
+            except Exception as e:
+                print(f"Failed to fetch reminder preferences for task {task['task_id']}: {e}")
+                reminder_days = [7, 3, 1]  # Default
+
+            # Calculate days until due
+            try:
+                due_date_str = task["due_date"]
+                if isinstance(due_date_str, str):
+                    due_date = datetime.strptime(due_date_str[:10], "%Y-%m-%d").date()
+                else:
+                    due_date = due_date_str
+
+                days_until_due = (due_date - today).days
+
+                # Check if we should send a reminder today
+                for days in reminder_days:
+                    if days_until_due == days:
+                        # Check if we already sent this reminder
+                        existing_notification = supabase.table("notifications").select("id").eq("task_id", task["task_id"]).eq("type", f"reminder_{days}_days").execute()
+
+                        if not existing_notification.data:
+                            # Create notification
+                            notification_data = {
                                 "user_id": task["owner_id"],
+                                "title": f"Task Due in {days} Day{'s' if days > 1 else ''}",
+                                "message": f"Task '{task['title']}' is due on {due_date.strftime('%B %d, %Y')}",
+                                "type": f"reminder_{days}_days",
                                 "task_id": task["task_id"],
-                                "title": notification_data["title"],
-                                "message": notification_data["message"],
-                                "type": notification_data["type"],
-                                "created_at": stored_notification["created_at"]
+                                "due_date": task["due_date"]
                             }
-                        )
-                        
-                        print(f"Sent {days}-day reminder for task {task['task_id']}")
+
+                            # Store in database
+                            stored_notification = create_notification(notification_data)
+
+                            if stored_notification:
+                                # Send real-time notification via WebSocket
+                                send_realtime_notification(task["owner_id"], stored_notification)
+
+                                # Publish to RabbitMQ for real-time delivery
+                                rabbitmq.publish_notification(
+                                    f"task.reminder.{days}_days",
+                                    {
+                                        "notification_id": stored_notification["id"],
+                                        "user_id": task["owner_id"],
+                                        "task_id": task["task_id"],
+                                        "title": notification_data["title"],
+                                        "message": notification_data["message"],
+                                        "type": notification_data["type"],
+                                        "created_at": stored_notification["created_at"]
+                                    }
+                                )
+
+                                print(f"Sent {days}-day reminder for task {task['task_id']}")
+            except Exception as e:
+                print(f"Error processing task {task.get('task_id', 'unknown')}: {e}")
     
     except Exception as e:
         print(f"Error checking due date reminders: {e}")

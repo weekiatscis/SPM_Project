@@ -20,17 +20,36 @@ export const useNotificationStore = defineStore('notifications', () => {
 
     isLoading.value = true
     try {
-      // Fetch from task service where notifications are actually stored
-      const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-      const response = await fetch(`${taskServiceUrl}/notifications/debug/${userId}`)
-      
+      // Fetch from notification service first, fallback to task service
+      const notificationServiceUrl = import.meta.env.VITE_NOTIFICATION_SERVICE_URL || 'http://localhost:8084'
+      const response = await fetch(`${notificationServiceUrl}/notifications?user_id=${userId}&limit=50`)
+
       if (response.ok) {
         const data = await response.json()
-        notifications.value = data.notifications || []
-        console.log('Fetched notifications from task service:', data.notifications)
+        // Sort by created_at DESC (latest first)
+        const sortedNotifications = (data.notifications || []).sort((a, b) => {
+          return new Date(b.created_at) - new Date(a.created_at)
+        })
+        notifications.value = sortedNotifications
+        console.log('Fetched notifications from notification service:', sortedNotifications.length, 'notifications')
       } else {
         console.error('Failed to fetch notifications:', response.status)
-        notifications.value = []
+        // Fallback to task service
+        try {
+          const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+          const fallbackResponse = await fetch(`${taskServiceUrl}/notifications/debug/${userId}`)
+          if (fallbackResponse.ok) {
+            const fallbackData = await fallbackResponse.json()
+            const sortedNotifications = (fallbackData.notifications || []).sort((a, b) => {
+              return new Date(b.created_at) - new Date(a.created_at)
+            })
+            notifications.value = sortedNotifications
+            console.log('Fetched notifications from task service (fallback):', sortedNotifications.length)
+          }
+        } catch (fallbackError) {
+          console.error('Fallback fetch also failed:', fallbackError)
+          notifications.value = []
+        }
       }
     } catch (error) {
       console.error('Failed to fetch notifications:', error)
@@ -108,7 +127,12 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   const addNotification = (notification) => {
+    // Add new notification to the beginning and re-sort to ensure correct order
     notifications.value.unshift(notification)
+    notifications.value.sort((a, b) => {
+      return new Date(b.created_at) - new Date(a.created_at)
+    })
+    console.log('Added new notification:', notification.title, 'Total:', notifications.value.length)
   }
 
   // Method to refresh notifications (useful for testing)

@@ -33,29 +33,34 @@ export function useRealtimeNotifications() {
     })
 
     socket.value.on('new_notification', (notification) => {
-      console.log('Received new notification:', notification)
-      
-      // Add to store
+      console.log('🔔 WebSocket received new notification:', notification)
+
+      // Add to store - this should update the UI immediately
       notificationStore.addNotification(notification)
-      
+      console.log('✅ Notification added to store, total notifications:', notificationStore.notifications.length)
+
       // Show browser notification if permission granted
       if (Notification.permission === 'granted') {
-        const browserNotification = new Notification(notification.title, {
-          body: notification.message,
-          icon: '/icons/task.png',
-          badge: '/icons/task.png',
-          tag: notification.id
-        })
+        try {
+          const browserNotification = new Notification(notification.title, {
+            body: notification.message,
+            icon: '/icons/task.png',
+            badge: '/icons/task.png',
+            tag: notification.id
+          })
 
-        // Auto-close after 5 seconds
-        setTimeout(() => {
-          browserNotification.close()
-        }, 5000)
+          // Auto-close after 5 seconds
+          setTimeout(() => {
+            browserNotification.close()
+          }, 5000)
 
-        // Handle click to focus window
-        browserNotification.onclick = () => {
-          window.focus()
-          browserNotification.close()
+          // Handle click to focus window
+          browserNotification.onclick = () => {
+            window.focus()
+            browserNotification.close()
+          }
+        } catch (err) {
+          console.error('Failed to show browser notification:', err)
         }
       }
     })
