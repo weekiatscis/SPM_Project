@@ -148,6 +148,15 @@
             </div>
           </div>
 
+          <!-- Comments Section -->
+          <div class="mb-6">
+            <TaskComments 
+              :task-id="task.id" 
+              :task="task"
+              @comments-updated="handleCommentsUpdated"
+            />
+          </div>
+
           <!-- Audit Log Section -->
           <div class="border-t border-gray-200 pt-6">
             <div class="bg-gray-100 rounded-lg p-4">
@@ -231,10 +240,14 @@
 
 <script>
 import { ref, onMounted, watch, nextTick } from 'vue'
+import TaskComments from './TaskComments.vue'
 // Icons will be inline SVG instead of components
 
 export default {
   name: 'TaskDetailModal',
+  components: {
+    TaskComments
+  },
   props: {
     task: {
       type: Object,
@@ -675,6 +688,11 @@ export default {
       }
     }
 
+    const handleCommentsUpdated = (commentCount) => {
+      // This method can be used to update comment count in the UI if needed
+      console.log(`Task ${props.task.id} now has ${commentCount} comments`)
+    }
+
     return {
       isDeleting,
       auditLogs,
@@ -697,7 +715,8 @@ export default {
       getDeleteButtonText,
       formatLogMessage,
       editTask,
-      deleteTask
+      deleteTask,
+      handleCommentsUpdated
     }
   }
 }

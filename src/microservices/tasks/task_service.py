@@ -1,17 +1,24 @@
 import os
-from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
 import json
+import traceback
+import logging
+from typing import Optional, Dict, Any, List
+from datetime import datetime, timezone, timedelta
 
 import pika
 import requests
-from datetime import timedelta
-
-
+from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from supabase import create_client, Client
 from pydantic import BaseModel, ValidationError
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 # Environment variables
 SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
@@ -64,6 +71,11 @@ class RescheduleTask(BaseModel):
     new_due_date: str
 
 
+# Pydantic models for comments
+class CommentCreate(BaseModel):
+    comment_text: str
+
+
 class NotificationPublisher:
     def __init__(self):
         self.connection = None
@@ -75,9 +87,9 @@ class NotificationPublisher:
             self.connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
             self.channel = self.connection.channel()
             self.channel.exchange_declare(exchange='task_notifications', exchange_type='topic')
-            print("Connected to RabbitMQ for notifications")
+            logger.info("Connected to RabbitMQ for notifications")
         except Exception as e:
-            print(f"Failed to connect to RabbitMQ: {e}")
+            logger.error(f"Failed to connect to RabbitMQ: {e}")
             self.connection = None
             self.channel = None
     
@@ -1021,10 +1033,162 @@ def debug_notifications(user_id: str):
             "total_notifications": len(notifications),
             "notifications": notifications
         }), 200
-    
+        
     except Exception as e:
-        return jsonify({"error": f"Failed to get notifications: {str(e)}"}), 500
+        print(f"ERROR: Failed to fetch notifications for user {user_id}: {e}")
+        return jsonify({"error": "Failed to fetch notifications"}), 500
 
+
+# Comments API Routes
+
+@app.route("/tasks/<task_id>/comments", methods=["GET"])
+def get_task_comments(task_id: str):
+    """Get all comments for a specific task"""
+    
+    if not validate_task_id(task_id):
+        return jsonify({"error": "Invalid task ID"}), 400
+    
+    try:
+        # Query task_comments table
+        response = supabase.table("task_comments")\
+            .select("comment_id, comment_text, user_id, created_at, updated_at")\
+            .eq("task_id", task_id)\
+            .order("created_at", desc=False)\
+            .execute()
+        
+        if not response.data:
+            return jsonify({
+                "success": True,
+                "comments": []
+            }), 200
+        
+        comments = []
+        for comment in response.data:
+            # Get user info for each comment
+            user_name = "Unknown User"
+            try:
+                user_response = supabase.table("user")\
+                    .select("first_name, last_name")\
+                    .eq("user_id", comment["user_id"])\
+                    .execute()
+                
+                if user_response.data:
+                    user = user_response.data[0]
+                    user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+                    if not user_name:
+                        user_name = f"User-{comment['user_id'][:8]}"
+                else:
+                    user_name = f"User-{comment['user_id'][:8]}"
+            except Exception:
+                user_name = f"User-{comment['user_id'][:8]}"
+            
+            comments.append({
+                "comment_id": comment["comment_id"],
+                "comment_text": comment["comment_text"],
+                "user_id": comment["user_id"],
+                "user_name": user_name,
+                "created_at": comment["created_at"],
+                "updated_at": comment.get("updated_at")
+            })
+        
+        return jsonify({
+            "success": True,
+            "comments": comments
+        }), 200
+        
+    except Exception as e:
+        print(f"Exception in get_task_comments: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to fetch comments: {str(e)}"}), 500
+
+
+@app.route("/tasks/<task_id>/comments", methods=["POST"])
+def add_task_comment(task_id: str):
+    """Add a new comment to a task"""
+    if not validate_task_id(task_id):
+        return jsonify({"error": "Invalid task ID"}), 400
+    
+    try:
+        # Validate request data
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        comment_data = CommentCreate(**data)
+        
+        # Get user_id from request body (adjust based on your auth setup)
+        user_id = data.get("user_id")
+        if not user_id:
+            return jsonify({"error": "User ID is required"}), 400
+        
+        # Verify the task exists and user has access
+        task_response = supabase.table("task").select("task_id, owner_id, collaborators").eq("task_id", task_id).execute()
+        if not task_response.data:
+            return jsonify({"error": "Task not found"}), 404
+        
+        task = task_response.data[0]
+        collaborators = task.get("collaborators", [])
+        
+        # Check if user has permission to comment (owner or collaborator)
+        if task["owner_id"] != user_id and user_id not in collaborators:
+            return jsonify({"error": "You don't have permission to comment on this task"}), 403
+        
+        # Insert the comment
+        comment_insert_data = {
+            "task_id": task_id,
+            "user_id": user_id,
+            "comment_text": comment_data.comment_text,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        response = supabase.table("task_comments").insert(comment_insert_data).execute()
+        
+        if not response.data:
+            return jsonify({"error": "Failed to create comment"}), 500
+        
+        comment = response.data[0]
+        
+        # Get user information for the response
+        user_response = supabase.table("user").select("first_name, last_name").eq("user_id", user_id).execute()
+        user_name = "Unknown User"
+        if user_response.data:
+            user = user_response.data[0]
+            user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+            if not user_name:  # If the name is empty after stripping
+                user_name = "Unknown User"
+        
+        # Log the comment activity
+        try:
+            log_task_change(
+                task_id=task_id,
+                action="comment",
+                field="comments",
+                user_id=user_id,
+                old_value=None,
+                new_value=comment_data.comment_text
+            )
+        except Exception as log_error:
+            # Don't fail the entire request if logging fails
+            pass
+        
+        response_data = {
+            "success": True,
+            "comment": {
+                "comment_id": comment["comment_id"],
+                "comment_text": comment["comment_text"],
+                "user_id": comment["user_id"],
+                "user_name": user_name,
+                "created_at": comment["created_at"],
+                "updated_at": comment.get("updated_at")
+            }
+        }
+        
+        return jsonify(response_data), 201
+        
+    except ValidationError as e:
+        return jsonify({"error": "Invalid data", "details": e.errors()}), 400
+    except Exception as e:
+        return jsonify({"error": "Failed to add comment"}), 500
 
 
 # Error handlers
