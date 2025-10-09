@@ -127,6 +127,7 @@
       :task="selectedTask"
       :isOpen="isTaskDetailModalOpen"
       @close="closeTaskDetailModal"
+      @edit="handleEditTask"
     />
   </div>
 </template>
@@ -261,7 +262,25 @@
         isTaskDetailModalOpen.value = false
         selectedTask.value = null
       }
-  
+
+      const handleEditTask = (task) => {
+        console.log('Edit task requested:', task)
+        // Close the detail modal
+        closeTaskDetailModal()
+        // Emit event to parent or open edit modal
+        // You can either:
+        // 1. Navigate to edit page
+        // 2. Open TaskFormModal in edit mode
+        // 3. Emit to parent component
+
+        // For now, let's emit to parent so it can handle the edit
+        // The parent component (Home or wherever NotificationDropdown is used)
+        // should have a TaskFormModal and open it in edit mode
+
+        // Since we're in a dropdown, let's dispatch a custom event
+        window.dispatchEvent(new CustomEvent('open-task-edit', { detail: task }))
+      }
+
       const markAllAsRead = async () => {
         if (!user.value?.user_id) return
         
@@ -324,6 +343,7 @@
         handleNotificationClick,
         handleViewTask,
         closeTaskDetailModal,
+        handleEditTask,
         markAllAsRead,
         refreshNotifications,
         viewAllNotifications

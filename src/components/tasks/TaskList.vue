@@ -74,7 +74,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { notification } from 'ant-design-vue'
 import { useAuthStore } from '../../stores/auth'
@@ -313,7 +313,20 @@ export default {
       return user ? JSON.parse(user) : null
     })
 
+    // Event listener for opening task edit from notifications
+    const handleOpenTaskEdit = (event) => {
+      const task = event.detail
+      if (task) {
+        console.log('Opening task for edit from notification:', task)
+        editingTask.value = task
+        showEditModal.value = true
+      }
+    }
+
     onMounted(async () => {
+      // Listen for custom event from NotificationDropdown
+      window.addEventListener('open-task-edit', handleOpenTaskEdit)
+
       isLoading.value = true
       try {
         const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
@@ -337,6 +350,11 @@ export default {
       } finally {
         isLoading.value = false
       }
+    })
+
+    onUnmounted(() => {
+      // Clean up event listener
+      window.removeEventListener('open-task-edit', handleOpenTaskEdit)
     })
 
     return {
