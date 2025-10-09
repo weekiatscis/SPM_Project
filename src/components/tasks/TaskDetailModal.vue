@@ -1,13 +1,14 @@
 
 <template>
-  <div v-if="isOpen" class="fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <!-- Background overlay -->
-      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="$emit('close')"></div>
+  <teleport to="body">
+    <div v-if="isOpen" class="fixed inset-0 overflow-y-auto" style="z-index: 10000;">
+      <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <!-- Background overlay -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" style="z-index: 10000;" @click="$emit('close')"></div>
 
-      <!-- Modal panel -->
-      <div
-        class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <!-- Modal panel -->
+        <div
+          class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full relative" style="z-index: 10001;">
         <!-- Header -->
         <div class="bg-white px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between min-h-[2.5rem]">
@@ -233,9 +234,10 @@
             Close
           </button>
         </div>
+        </div>
       </div>
     </div>
-  </div>
+  </teleport>
 </template>
 
 <script>

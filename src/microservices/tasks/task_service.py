@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import traceback
 import logging
@@ -8,6 +9,16 @@ from datetime import datetime, timezone, timedelta
 import pika
 import requests
 from dotenv import load_dotenv
+
+# Add the notifications microservice to the path to import email_service
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../notifications'))
+try:
+    from email_service import send_notification_email
+    EMAIL_SERVICE_AVAILABLE = True
+except ImportError:
+    print("Warning: email_service not available. Email notifications will be disabled.")
+    EMAIL_SERVICE_AVAILABLE = False
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from supabase import create_client, Client
@@ -49,6 +60,8 @@ class TaskCreate(BaseModel):
     isSubtask: Optional[bool] = False
     parent_task_id: Optional[str] = None
     reminder_days: Optional[List[int]] = None  # Custom reminder days (e.g., [7, 3, 1])
+    email_enabled: Optional[bool] = True  # Email notifications enabled
+    in_app_enabled: Optional[bool] = True  # In-app notifications enabled
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -63,6 +76,8 @@ class TaskUpdate(BaseModel):
     parent_task_id: Optional[str] = None
     subtasks: Optional[str] = None
     reminder_days: Optional[List[int]] = None  # Custom reminder days
+    email_enabled: Optional[bool] = None  # Email notifications enabled
+    in_app_enabled: Optional[bool] = None  # In-app notifications enabled
 
 
 # Pydantic model for rescheduling a task
@@ -268,9 +283,134 @@ def delete_old_notifications(task_id: str):
     except Exception as e:
         print(f"Failed to delete old notifications: {e}")
 
+def get_user_email(user_id: str) -> Optional[str]:
+    """Get user email from database"""
+    try:
+        response = supabase.table("user").select("email").eq("user_id", user_id).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0].get("email")
+        return None
+    except Exception as e:
+        print(f"Failed to get user email: {e}")
+        return None
+
+def get_notification_preferences(user_id: str, task_id: str) -> dict:
+    """Get notification preferences for a user and task"""
+    try:
+        response = supabase.table("notification_preferences").select("*").eq("user_id", user_id).eq("task_id", task_id).execute()
+        if response.data and len(response.data) > 0:
+            prefs = response.data[0]
+            print(f"✅ Found notification preferences for user {user_id}, task {task_id}: email={prefs.get('email_enabled')}, in_app={prefs.get('in_app_enabled')}")
+            return prefs
+        # Default: both email and in-app enabled (only when preferences don't exist)
+        print(f"⚠️ No notification preferences found for user {user_id}, task {task_id}, using defaults")
+        return {"email_enabled": True, "in_app_enabled": True}
+    except Exception as e:
+        print(f"❌ Failed to get notification preferences: {e}")
+        return {"email_enabled": True, "in_app_enabled": True}
+
+def save_notification_preferences(user_id: str, task_id: str, email_enabled: bool, in_app_enabled: bool):
+    """Save notification preferences for a user and task"""
+    try:
+        existing = supabase.table("notification_preferences").select("user_id").eq("user_id", user_id).eq("task_id", task_id).execute()
+
+        prefs_data = {
+            "user_id": user_id,
+            "task_id": task_id,
+            "email_enabled": email_enabled,
+            "in_app_enabled": in_app_enabled,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        if existing.data:
+            print(f"📝 Updating notification preferences for user {user_id}, task {task_id}: email={email_enabled}, in_app={in_app_enabled}")
+            response = supabase.table("notification_preferences").update(prefs_data).eq("user_id", user_id).eq("task_id", task_id).execute()
+        else:
+            print(f"➕ Creating notification preferences for user {user_id}, task {task_id}: email={email_enabled}, in_app={in_app_enabled}")
+            response = supabase.table("notification_preferences").insert(prefs_data).execute()
+
+        if response.data:
+            print(f"✅ Successfully saved notification preferences")
+            return True
+        else:
+            print(f"❌ Failed to save notification preferences - no data returned")
+            return False
+    except Exception as e:
+        print(f"❌ Failed to save notification preferences: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new_due_date: str):
+    """Send notification to collaborators when due date changes"""
+    try:
+        collaborators = task_data.get("collaborators", [])
+        if not collaborators or not isinstance(collaborators, list):
+            return
+
+        for collaborator_id in collaborators:
+            if collaborator_id == task_data.get("owner_id"):
+                continue  # Skip owner, they already get reminders
+
+            notification_data = {
+                "user_id": collaborator_id,
+                "title": "Task Due Date Changed",
+                "message": f"The due date for task '{task_data['title']}' has been changed from {old_due_date} to {new_due_date}",
+                "type": "due_date_change",
+                "task_id": task_data["task_id"],
+                "due_date": new_due_date,
+                "priority": task_data.get("priority", "Medium"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "is_read": False
+            }
+
+            # Store notification
+            response = supabase.table("notifications").insert(notification_data).execute()
+            if response.data:
+                print(f"Sent due date change notification to collaborator {collaborator_id}")
+
+                # Try to send via notification service for real-time
+                try:
+                    notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                    requests.post(
+                        f"{notification_service_url}/notifications/create",
+                        json=notification_data,
+                        timeout=5,
+                        headers={'Content-Type': 'application/json'}
+                    )
+                except Exception as e:
+                    print(f"Failed to notify collaborator via notification service: {e}")
+
+                # Send email if enabled
+                prefs = get_notification_preferences(collaborator_id, task_data["task_id"])
+                if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
+                    user_email = get_user_email(collaborator_id)
+                    if user_email:
+                        try:
+                            send_notification_email(
+                                user_email=user_email,
+                                notification_type="due_date_change",
+                                task_title=task_data["title"],
+                                due_date=new_due_date,
+                                priority=task_data.get("priority", "Medium"),
+                                task_id=task_data["task_id"],
+                                old_due_date=old_due_date,
+                                new_due_date=new_due_date
+                            )
+                            print(f"Email notification sent to collaborator {user_email}")
+                        except Exception as e:
+                            print(f"Failed to send email to collaborator: {e}")
+    except Exception as e:
+        print(f"Failed to notify collaborators: {e}")
+
 def check_and_send_due_date_notifications(task_data: dict):
     """Check if task needs due date notifications and send them"""
     if not task_data.get("due_date") or not task_data.get("owner_id"):
+        return
+
+    # Don't send reminders for completed tasks
+    if task_data.get("status") == "Completed":
+        print(f"Task {task_data.get('task_id')} is completed, skipping reminders")
         return
 
     try:
@@ -309,48 +449,83 @@ def check_and_send_due_date_notifications(task_data: dict):
                         continue
                 except Exception as e:
                     print(f"Error checking existing notifications: {e}")
-                
-                # Create notification directly in database first
-                notification_data = {
-                    "user_id": task_data["owner_id"],
-                    "title": f"Task Due in {reminder_day} Day{'s' if reminder_day != 1 else ''}",
-                    "message": f"Task '{task_data['title']}' is due in {reminder_day} day{'s' if reminder_day != 1 else ''}",
-                    "type": f"reminder_{reminder_day}_days",
-                    "task_id": task_data["task_id"],
-                    "due_date": task_data["due_date"],
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "is_read": False
-                }
-                
-                # Store in notifications table directly
-                try:
-                    response = supabase.table("notifications").insert(notification_data).execute()
-                    if response.data:
-                        print(f"Successfully stored {reminder_day}-day notification in database")
-                        
-                        # Publish to RabbitMQ for real-time delivery
-                        notification_publisher.publish_due_date_notification(task_data, reminder_day)
-                        
-                        # Also try to notify the notification service for real-time delivery
-                        try:
-                            notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                            notif_response = requests.post(
-                                f"{notification_service_url}/notifications/create",
-                                json=notification_data,
-                                timeout=5,
-                                headers={'Content-Type': 'application/json'}
-                            )
-                            if notif_response.ok:
-                                print(f"Successfully notified notification service via HTTP")
-                            else:
-                                print(f"Notification service returned status {notif_response.status_code}")
-                        except requests.exceptions.RequestException as e:
-                            print(f"Failed to notify notification service: {e}")
-                            # Continue anyway since we stored in DB
+
+                # Check notification preferences
+                prefs = get_notification_preferences(task_data["owner_id"], task_data["task_id"])
+                print(f"Notification preferences for task {task_data.get('task_id')}: {prefs}")
+
+                # Create notification directly in database first (only if in-app enabled)
+                if prefs.get("in_app_enabled", True):
+                    notification_data = {
+                        "user_id": task_data["owner_id"],
+                        "title": f"Task Due in {reminder_day} Day{'s' if reminder_day != 1 else ''}",
+                        "message": f"Task '{task_data['title']}' is due on {due_date.strftime('%B %d, %Y')}",
+                        "type": f"reminder_{reminder_day}_days",
+                        "task_id": task_data["task_id"],
+                        "due_date": task_data["due_date"],
+                        "priority": task_data.get("priority", "Medium"),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "is_read": False
+                    }
+
+                    # Store in notifications table directly
+                    try:
+                        response = supabase.table("notifications").insert(notification_data).execute()
+                        if response.data:
+                            print(f"Successfully stored {reminder_day}-day notification in database (in-app)")
+
+                            # Publish to RabbitMQ for real-time delivery
+                            notification_publisher.publish_due_date_notification(task_data, reminder_day)
+
+                            # Also try to notify the notification service for real-time delivery
+                            try:
+                                notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                                notif_response = requests.post(
+                                    f"{notification_service_url}/notifications/create",
+                                    json=notification_data,
+                                    timeout=5,
+                                    headers={'Content-Type': 'application/json'}
+                                )
+                                if notif_response.ok:
+                                    print(f"Successfully notified notification service via HTTP")
+                                else:
+                                    print(f"Notification service returned status {notif_response.status_code}")
+                            except requests.exceptions.RequestException as e:
+                                print(f"Failed to notify notification service: {e}")
+                                # Continue anyway since we stored in DB
+                        else:
+                            print(f"Failed to store in-app notification in database")
+                    except Exception as e:
+                        print(f"Error storing in-app notification: {e}")
+                else:
+                    print(f"In-app notifications disabled for this task")
+
+                # Send email if enabled (separate from in-app)
+                if prefs.get("email_enabled", True):
+                    if not EMAIL_SERVICE_AVAILABLE:
+                        print(f"Email service not available, skipping email for task {task_data.get('task_id')}")
                     else:
-                        print(f"Failed to store notification in database")
-                except Exception as e:
-                    print(f"Error storing notification: {e}")
+                        user_email = get_user_email(task_data["owner_id"])
+                        if user_email:
+                            try:
+                                print(f"Sending email notification to {user_email} for {reminder_day}-day reminder")
+                                send_notification_email(
+                                    user_email=user_email,
+                                    notification_type=f"reminder_{reminder_day}_days",
+                                    task_title=task_data["title"],
+                                    due_date=due_date.strftime('%B %d, %Y'),
+                                    priority=task_data.get("priority", "Medium"),
+                                    task_id=task_data["task_id"]
+                                )
+                                print(f"✅ Email notification sent successfully to {user_email}")
+                            except Exception as e:
+                                print(f"❌ Failed to send email notification: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        else:
+                            print(f"No email found for user {task_data['owner_id']}")
+                else:
+                    print(f"Email notifications disabled for task {task_data.get('task_id')}")
     
     except Exception as e:
         print(f"Error checking due date notifications: {e}")
@@ -552,8 +727,8 @@ def create_task():
         except ValidationError as e:
             return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
-        # Prepare data for database
-        db_data = task_data.dict(exclude={"reminder_days"})  # Exclude reminder_days from task table
+        # Prepare data for database (exclude reminder_days, email_enabled, in_app_enabled from task table)
+        db_data = task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled"})
         db_data["created_at"] = datetime.utcnow().isoformat()
 
         # If this is a subtask, validate that the parent task exists
@@ -574,6 +749,19 @@ def create_task():
 
         created_task_data = response.data[0]
         task_id = created_task_data.get("task_id")
+
+        # Save notification preferences FIRST (email/in-app toggles)
+        if task_data.due_date and task_data.owner_id:
+            email_enabled = task_data.email_enabled if task_data.email_enabled is not None else True
+            in_app_enabled = task_data.in_app_enabled if task_data.in_app_enabled is not None else True
+
+            print(f"Saving notification preferences for task {task_id}: email={email_enabled}, in_app={in_app_enabled}")
+            save_notification_preferences(
+                task_data.owner_id,
+                task_id,
+                email_enabled,
+                in_app_enabled
+            )
 
         # Save custom reminder preferences if provided
         if task_data.reminder_days and task_data.due_date:
@@ -618,7 +806,7 @@ def create_task():
         # Return created task
         created_task = map_db_row_to_api(created_task_data)
 
-        # Check and send due date notifications
+        # Check and send due date notifications AFTER preferences are saved
         check_and_send_due_date_notifications(created_task_data)
 
         return jsonify({"task": created_task, "message": "Task created successfully"}), 201
@@ -698,12 +886,14 @@ def update_task(task_id: str):
             except ValidationError as e:
                 return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
-            # Prepare update data (only include non-None values, exclude reminder_days)
-            update_data = {k: v for k, v in task_data.dict(exclude={"reminder_days"}).items() if v is not None}
+            # Prepare update data (only include non-None values, exclude reminder_days, email_enabled, in_app_enabled)
+            update_data = {k: v for k, v in task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled"}).items() if v is not None}
             actor_id = existing_task.get("owner_id", "system")
 
-            # Handle reminder_days separately
+            # Handle notification preferences separately
             reminder_days_update = task_data.reminder_days
+            email_enabled_update = task_data.email_enabled
+            in_app_enabled_update = task_data.in_app_enabled
         
         if not update_data:
             return jsonify({"error": "No valid fields to update"}), 400
@@ -729,8 +919,26 @@ def update_task(task_id: str):
         if reminder_days_update and "due_date" in update_data:
             save_reminder_preferences(task_id, reminder_days_update)
 
+        # Update notification preferences if provided
+        owner_id = updated_task.get("owner_id") or existing_task.get("owner_id")
+        if (email_enabled_update is not None or in_app_enabled_update is not None) and owner_id:
+            current_prefs = get_notification_preferences(owner_id, task_id)
+            save_notification_preferences(
+                owner_id,
+                task_id,
+                email_enabled_update if email_enabled_update is not None else current_prefs.get("email_enabled", True),
+                in_app_enabled_update if in_app_enabled_update is not None else current_prefs.get("in_app_enabled", True)
+            )
+
         # Check and send due date notifications if due_date was changed
         if "due_date" in update_data:
+            old_due_date = complete_existing_task.get("due_date")
+            new_due_date = update_data.get("due_date")
+
+            # Notify collaborators about due date change
+            if old_due_date and old_due_date != new_due_date:
+                notify_collaborators_due_date_change(response.data[0], old_due_date, new_due_date)
+
             # Delete old notifications when due date changes
             delete_old_notifications(task_id)
             check_and_send_due_date_notifications(response.data[0])
@@ -1190,6 +1398,33 @@ def add_task_comment(task_id: str):
     except Exception as e:
         return jsonify({"error": "Failed to add comment"}), 500
 
+
+@app.route("/tasks/<task_id>/notification-preferences", methods=["GET"])
+def get_task_notification_preferences(task_id: str):
+    """Get notification preferences for a specific task and user"""
+    try:
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+
+        prefs = get_notification_preferences(user_id, task_id)
+        return jsonify(prefs), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to get notification preferences: {str(e)}"}), 500
+
+@app.route("/tasks/<task_id>/reminder-preferences", methods=["GET"])
+def get_task_reminder_preferences(task_id: str):
+    """Get reminder days for a specific task"""
+    try:
+        response = supabase.table("task_reminder_preferences").select("reminder_days").eq("task_id", task_id).execute()
+
+        if response.data and len(response.data) > 0:
+            return jsonify({"reminder_days": response.data[0].get("reminder_days", [7, 3, 1])}), 200
+        else:
+            # Return defaults
+            return jsonify({"reminder_days": [7, 3, 1]}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to get reminder preferences: {str(e)}"}), 500
 
 # Error handlers
 @app.errorhandler(404)

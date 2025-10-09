@@ -210,6 +210,34 @@
               Add members from your department to collaborate on this task
               <!-- Reminder Customization -->
               <div v-if="form.dueDate" class="border-t pt-4 mt-4">
+                <!-- Notification Channels -->
+                <div class="mb-4">
+                  <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Send notifications via:
+                  </label>
+                  <div class="flex gap-4">
+                    <label class="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        v-model="form.inAppEnabled"
+                        class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span class="text-sm text-gray-700">In-App Notifications</span>
+                    </label>
+                    <label class="flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        v-model="form.emailEnabled"
+                        class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span class="text-sm text-gray-700">Email Notifications</span>
+                    </label>
+                  </div>
+                  <div v-if="!form.inAppEnabled && !form.emailEnabled" class="mt-2 text-xs text-red-600">
+                    ⚠️ You won't receive any notifications for this task
+                  </div>
+                </div>
+
                 <div class="flex items-center justify-between mb-2">
                   <label class="block text-sm font-medium text-gray-700">
                     Reminder Schedule
@@ -300,7 +328,9 @@ export default {
       collaborators: [],
       isSubtask: false,
       parentTaskId: '',
-      reminderDays: [7, 3, 1]  // Default reminder days
+      reminderDays: [7, 3, 1],  // Default reminder days
+      emailEnabled: true,  // Default: email notifications enabled
+      inAppEnabled: true  // Default: in-app notifications enabled
     })
 
     const errors = ref({
@@ -506,8 +536,47 @@ export default {
       }
     }
 
+    // Fetch notification preferences for existing task
+    const fetchNotificationPreferences = async (taskId) => {
+      if (!taskId || !authStore.user?.user_id) return
+
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/tasks/${taskId}/notification-preferences?user_id=${authStore.user.user_id}`)
+
+        if (response.ok) {
+          const data = await response.json()
+          form.value.emailEnabled = data.email_enabled ?? true
+          form.value.inAppEnabled = data.in_app_enabled ?? true
+          console.log('Loaded notification preferences:', data)
+        }
+      } catch (error) {
+        console.error('Failed to fetch notification preferences:', error)
+        // Keep defaults
+      }
+    }
+
+    // Fetch reminder days for existing task
+    const fetchReminderDays = async (taskId) => {
+      if (!taskId) return
+
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/tasks/${taskId}/reminder-preferences`)
+
+        if (response.ok) {
+          const data = await response.json()
+          form.value.reminderDays = data.reminder_days || [7, 3, 1]
+          console.log('Loaded reminder days:', data.reminder_days)
+        }
+      } catch (error) {
+        console.error('Failed to fetch reminder days:', error)
+        // Keep defaults
+      }
+    }
+
     // Watch for task changes to populate form
-    watch(() => props.task, (newTask) => {
+    watch(() => props.task, async (newTask) => {
       if (newTask) {
         form.value = {
           title: newTask.title || '',
@@ -519,7 +588,15 @@ export default {
           collaborators: newTask.collaborators || [],
           isSubtask: !!newTask.parent_task_id,
           parentTaskId: newTask.parent_task_id || '',
-          reminderDays: newTask.reminderDays || [7, 3, 1]
+          reminderDays: [7, 3, 1],  // Will be updated by fetchReminderDays
+          emailEnabled: true,  // Will be updated by fetchNotificationPreferences
+          inAppEnabled: true   // Will be updated by fetchNotificationPreferences
+        }
+
+        // Fetch notification preferences and reminder days for existing task
+        if (newTask.id) {
+          await fetchNotificationPreferences(newTask.id)
+          await fetchReminderDays(newTask.id)
         }
       } else {
         // Reset form for new task
@@ -535,7 +612,9 @@ export default {
           collaborators: [],
           isSubtask: false,
           parentTaskId: '',
-          reminderDays: [7, 3, 1]
+          reminderDays: [7, 3, 1],
+          emailEnabled: true,
+          inAppEnabled: true
         }
         // Reset errors
         errors.value = {
@@ -644,7 +723,9 @@ export default {
             collaborators: JSON.stringify(form.value.collaborators),
             isSubtask: form.value.isSubtask,
             parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null,
-            reminder_days: form.value.reminderDays
+            reminder_days: form.value.reminderDays,
+            email_enabled: form.value.emailEnabled,
+            in_app_enabled: form.value.inAppEnabled
           }
 
           const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}`, {
@@ -686,7 +767,9 @@ export default {
           collaborators: JSON.stringify(form.value.collaborators),
           isSubtask: form.value.isSubtask,
           parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null,
-          reminder_days: form.value.reminderDays
+          reminder_days: form.value.reminderDays,
+          email_enabled: form.value.emailEnabled,
+          in_app_enabled: form.value.inAppEnabled
         }
 
         const response = await fetch(`${taskServiceUrl}/tasks`, {
@@ -717,7 +800,9 @@ export default {
           collaborators: [],
           isSubtask: false,
           parentTaskId: '',
-          reminderDays: [7, 3, 1]
+          reminderDays: [7, 3, 1],
+          emailEnabled: true,
+          inAppEnabled: true
         }
         showReminderCustomization.value = false
 

@@ -1,14 +1,15 @@
 <template>
-    <a-dropdown 
-      :trigger="['click']" 
+  <div>
+    <a-dropdown
+      :trigger="['click']"
       placement="bottomRight"
       :overlay-style="{ width: '350px', maxHeight: '400px' }"
     >
       <!-- Bell Icon with Badge -->
       <a-badge :count="unreadCount" size="small" :offset="[-2, 2]">
-        <a-button 
-          type="text" 
-          shape="circle" 
+        <a-button
+          type="text"
+          shape="circle"
           size="large"
           :style="{ position: 'relative' }"
         >
@@ -71,25 +72,39 @@
                 </a-button>
               </div>
   
-              <div 
-                v-for="notification in recentNotifications" 
+              <div
+                v-for="notification in recentNotifications"
                 :key="notification.id"
                 class="notification-item"
                 :class="{ 'unread': !notification.is_read }"
-                @click="handleNotificationClick(notification)"
               >
                 <div class="notification-content">
-                  <div class="notification-title">
-                    {{ notification.title }}
+                  <div class="notification-header">
+                    <div class="notification-title">
+                      {{ notification.title }}
+                    </div>
+                    <span
+                      v-if="notification.priority"
+                      class="priority-badge"
+                      :class="`priority-${notification.priority?.toLowerCase()}`"
+                    >
+                      {{ notification.priority }}
+                    </span>
                   </div>
                   <div class="notification-message">
                     {{ notification.message }}
                   </div>
-                  <div class="notification-time">
-                    {{ formatNotificationTime(notification.created_at) }}
-                  </div>
-                  <div style="font-size: 10px; color: #999;">
-                    ID: {{ notification.id.slice(0, 8) }} | Read: {{ notification.is_read }}
+                  <div class="notification-footer-content">
+                    <div class="notification-time">
+                      {{ formatNotificationTime(notification.created_at) }}
+                    </div>
+                    <button
+                      v-if="notification.task_id"
+                      @click="handleViewTask(notification)"
+                      class="view-task-btn"
+                    >
+                      View Task →
+                    </button>
                   </div>
                 </div>
                 <div v-if="!notification.is_read" class="unread-indicator"></div>
@@ -106,7 +121,15 @@
         </div>
       </template>
     </a-dropdown>
-  </template>
+
+    <!-- Task Detail Modal -->
+    <TaskDetailModal
+      :task="selectedTask"
+      :isOpen="isTaskDetailModalOpen"
+      @close="closeTaskDetailModal"
+    />
+  </div>
+</template>
   
   <script>
   import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -116,11 +139,13 @@
   import { useAuthStore } from '../../stores/auth'
   import { useRealtimeNotifications } from '../../composables/useRealtimeNotifications'
   import { BellIcon } from '../icons/index.js'
-  
+  import TaskDetailModal from '../tasks/TaskDetailModal.vue'
+
   export default {
     name: 'NotificationDropdown',
     components: {
-      BellIcon
+      BellIcon,
+      TaskDetailModal
     },
     setup() {
       const router = useRouter()
@@ -130,7 +155,10 @@
       
       const isMarkingAllRead = ref(false)
       const isRefreshing = ref(false)
-  
+      const isTaskDetailModalOpen = ref(false)
+      const selectedTask = ref(null)
+      const isLoadingTask = ref(false)
+
       const user = computed(() => authStore.user)
       
       // Use storeToRefs to maintain reactivity when destructuring
@@ -191,16 +219,47 @@
   
       const handleNotificationClick = async (notification) => {
         console.log('Notification clicked:', notification)
-        
+
         // Mark as read if unread
         if (!notification.is_read && user.value?.user_id) {
           await markAsRead(notification.id, user.value.user_id)
         }
-  
-        // Navigate to task if it's a task-related notification
-        if (notification.task_id) {
-          console.log('Navigate to task:', notification.task_id)
+      }
+
+      const handleViewTask = async (notification) => {
+        console.log('View task clicked:', notification.task_id)
+
+        // Mark as read if unread
+        if (!notification.is_read && user.value?.user_id) {
+          await markAsRead(notification.id, user.value.user_id)
         }
+
+        // Fetch task details and open modal
+        isLoadingTask.value = true
+        try {
+          const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+          const response = await fetch(`${taskServiceUrl}/tasks/${notification.task_id}`)
+
+          if (response.ok) {
+            const data = await response.json()
+            selectedTask.value = data.task
+            isTaskDetailModalOpen.value = true
+            console.log('Task details loaded:', data.task)
+          } else {
+            console.error('Failed to fetch task details')
+            alert('Failed to load task details')
+          }
+        } catch (error) {
+          console.error('Error fetching task:', error)
+          alert('Error loading task details')
+        } finally {
+          isLoadingTask.value = false
+        }
+      }
+
+      const closeTaskDetailModal = () => {
+        isTaskDetailModalOpen.value = false
+        selectedTask.value = null
       }
   
       const markAllAsRead = async () => {
@@ -258,8 +317,13 @@
         hasUnread,
         isMarkingAllRead,
         isRefreshing,
+        isTaskDetailModalOpen,
+        selectedTask,
+        isLoadingTask,
         formatNotificationTime,
         handleNotificationClick,
+        handleViewTask,
+        closeTaskDetailModal,
         markAllAsRead,
         refreshNotifications,
         viewAllNotifications
@@ -393,5 +457,73 @@
   
   .notification-list::-webkit-scrollbar-thumb:hover {
     background: #a8a8a8;
+  }
+
+  /* Notification header with priority */
+  .notification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+
+  /* Priority badges */
+  .priority-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .priority-high {
+    background-color: #fff2f0;
+    color: #cf1322;
+  }
+
+  .priority-medium {
+    background-color: #fff7e6;
+    color: #d46b08;
+  }
+
+  .priority-low {
+    background-color: #f6ffed;
+    color: #389e0d;
+  }
+
+  .priority-lowest {
+    background-color: #f0f5ff;
+    color: #1d39c4;
+  }
+
+  /* Notification footer with time and button */
+  .notification-footer-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+  }
+
+  /* View Task button */
+  .view-task-btn {
+    background: none;
+    border: none;
+    color: #1890ff;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+
+  .view-task-btn:hover {
+    background-color: #e6f7ff;
+    color: #096dd9;
+  }
+
+  .view-task-btn:active {
+    transform: scale(0.95);
   }
   </style>
