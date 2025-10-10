@@ -162,6 +162,18 @@
         </a-col>
       </a-row>
 
+      <!-- Project Comments -->
+      <a-row style="margin-bottom: 24px;">
+        <a-col :span="24">
+          <a-card title="Project Comments" size="small">
+            <ProjectComments
+              v-if="project"
+              :projectId="project.project_id"
+            />
+          </a-card>
+        </a-col>
+      </a-row>
+
     </div>
 
     <!-- Edit Project Modal -->
@@ -191,13 +203,15 @@ import { useAuthStore } from '../stores/auth'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskCard from '../components/tasks/TaskCard.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
+import ProjectComments from '../components/projects/ProjectComments.vue'
 
 export default {
   name: 'ProjectDetails',
   components: {
     ProjectFormModal,
     TaskCard,
-    TaskDetailModal
+    TaskDetailModal,
+    ProjectComments
   },
   setup() {
     const route = useRoute()
