@@ -145,20 +145,16 @@ export default {
       return 'Me'
     })
 
-    // Check if current user can comment (owner or collaborator)
+    // Check if current user can comment (owner or collaborator, including creators/managers)
     const canComment = computed(() => {
-      if (!currentUserId.value) return false
-      
-      // If owner_id is available, check if user is owner or collaborator
-      if (props.task.owner_id) {
-        return props.task.owner_id === currentUserId.value || 
-               (props.task.collaborators && props.task.collaborators.includes(currentUserId.value))
+      // If access_info is available, use it
+      if (props.task.access_info) {
+        return props.task.access_info.can_comment
       }
       
-      // Fallback: if owner_id is not available, assume user can comment
-      // This happens when the task object doesn't include ownership info
-      // In this case, we assume the user has permission since they can view the task
-      return true
+      // Fallback to original logic (owner or collaborator)
+      return props.task.owner_id === currentUserId.value || 
+             (props.task.collaborators && props.task.collaborators.includes(currentUserId.value))
     })
 
     const getInitials = (name) => {

@@ -160,6 +160,25 @@ export default {
           throw new Error('Task not found')
         }
         
+        // Check user access to this task
+        let accessInfo = { can_view: true, can_comment: true, can_edit: true, access_type: 'owner' }
+        try {
+          const currentUserId = authStore.user?.user_id
+          if (currentUserId) {
+            const accessUrl = `${baseUrl}/tasks/${encodeURIComponent(taskId)}/access?user_id=${encodeURIComponent(currentUserId)}`
+            console.log('DEBUG: Checking access at URL:', accessUrl)
+            const accessResponse = await fetch(accessUrl)
+            if (accessResponse.ok) {
+              accessInfo = await accessResponse.json()
+              console.log('DEBUG: Access info:', accessInfo)
+            } else {
+              console.warn('DEBUG: Access check failed with status:', accessResponse.status)
+            }
+          }
+        } catch (error) {
+          console.warn('Failed to fetch access info, using defaults:', error)
+        }
+        
         // Transform the API response to match TaskDetailModal expected format
         const taskDetails = {
           id: apiTasks[0].id,
@@ -170,8 +189,15 @@ export default {
           priority: apiTasks[0].priority || 'Medium', // Default to Medium for consistency
           assignee: apiTasks[0].assignee || 'Unassigned',
           project: apiTasks[0].project || 'Default Project',
+          owner_id: apiTasks[0].owner_id, // Add owner_id
+          // Parse collaborators if it's a JSON string
+          collaborators: typeof apiTasks[0].collaborators === 'string' 
+            ? JSON.parse(apiTasks[0].collaborators || '[]') 
+            : (apiTasks[0].collaborators || []),
           activities: apiTasks[0].activities || [],
-          comments: apiTasks[0].comments || []
+          comments: apiTasks[0].comments || [],
+          // Add access information
+          access_info: accessInfo
         }
         
         return taskDetails
@@ -331,13 +357,25 @@ export default {
       try {
         const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
+        
+        console.log('DEBUG: Loading tasks for user:', ownerId)
+        
+        // Use the new accessible-tasks endpoint to get all tasks user can access
         const url = ownerId
-          ? `${baseUrl}/tasks?owner_id=${encodeURIComponent(ownerId)}`
+          ? `${baseUrl}/users/${encodeURIComponent(ownerId)}/accessible-tasks`
           : `${baseUrl}/tasks`
+          
+        console.log('DEBUG: Fetching from URL:', url)
+          
         const response = await fetch(url)
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const payload = await response.json()
+        
+        console.log('DEBUG: API response:', payload)
+        
         const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
+        console.log('DEBUG: Processed tasks:', apiTasks)
+        
         tasks.value = apiTasks.map(t => ({
           id: t.id,
           title: t.title,

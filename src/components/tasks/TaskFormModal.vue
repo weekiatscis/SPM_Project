@@ -720,13 +720,18 @@ export default {
             status: form.value.status,
             priority: form.value.priority,
             owner_id: finalAssigneeId,
-            collaborators: JSON.stringify(form.value.collaborators),
             isSubtask: form.value.isSubtask,
             parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null,
             reminder_days: form.value.reminderDays,
             email_enabled: form.value.emailEnabled,
             in_app_enabled: form.value.inAppEnabled
           }
+
+          // Only include collaborators if user has permission to manage them (Manager/Director)
+          if (canAssignToOthers.value) {
+            updatePayload.collaborators = JSON.stringify(form.value.collaborators)
+          }
+          // Staff members should not be able to modify collaborators, so we don't send this field
 
           const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}`, {
             method: 'PUT',
@@ -769,7 +774,8 @@ export default {
           parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null,
           reminder_days: form.value.reminderDays,
           email_enabled: form.value.emailEnabled,
-          in_app_enabled: form.value.inAppEnabled
+          in_app_enabled: form.value.inAppEnabled,
+          created_by: authStore.user?.user_id // Add who is creating the task
         }
 
         const response = await fetch(`${taskServiceUrl}/tasks`, {

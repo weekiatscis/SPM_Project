@@ -499,6 +499,17 @@ export default {
     const formatLogMessage = (log) => {
       if (log.action === 'create') {
         return 'created task.'
+      } else if (log.action === 'assign_task') {
+        // Handle task assignment: "assigned task to [User Name]"
+        const assigneeId = log.new_value?.assignee
+        if (assigneeId) {
+          const assigneeName = getUserName(assigneeId)
+          return `assigned task to ${assigneeName}.`
+        }
+        return 'assigned task.'
+      } else if (log.action === 'auto_add_collaborator') {
+        // Handle auto-collaboration: "is added as collaborator automatically"
+        return 'is added as collaborator automatically.'
       } else if (log.action === 'update') {
         const fieldName = log.field
         

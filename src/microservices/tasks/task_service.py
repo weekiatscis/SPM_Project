@@ -62,6 +62,7 @@ class TaskCreate(BaseModel):
     reminder_days: Optional[List[int]] = None  # Custom reminder days (e.g., [7, 3, 1])
     email_enabled: Optional[bool] = True  # Email notifications enabled
     in_app_enabled: Optional[bool] = True  # In-app notifications enabled
+    created_by: Optional[str] = None  # NEW: Track who actually created the task (for manager assignments)
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -78,6 +79,7 @@ class TaskUpdate(BaseModel):
     reminder_days: Optional[List[int]] = None  # Custom reminder days
     email_enabled: Optional[bool] = None  # Email notifications enabled
     in_app_enabled: Optional[bool] = None  # In-app notifications enabled
+    updated_by: Optional[str] = None  # Track who is making the update
 
 
 # Pydantic model for rescheduling a task
@@ -163,6 +165,55 @@ def get_task_by_id(task_id: str) -> Optional[Dict[str, Any]]:
         return None
     except Exception:
         return None
+
+def is_task_creator(task_id: str, user_id: str) -> bool:
+    """Check if user is the creator of the task by looking at audit logs"""
+    try:
+        response = supabase.table("task_log").select("user_id").eq("task_id", task_id).eq("action", "create").execute()
+        print(f"DEBUG is_task_creator: task_id={task_id}, user_id={user_id}")
+        print(f"DEBUG is_task_creator: create logs={response.data}")
+        if response.data and len(response.data) > 0:
+            creator_id = response.data[0].get("user_id")
+            is_creator = creator_id == user_id
+            print(f"DEBUG is_task_creator: creator_id={creator_id}, is_creator={is_creator}")
+            return is_creator
+        print(f"DEBUG is_task_creator: no create logs found")
+        return False
+    except Exception as e:
+        print(f"DEBUG is_task_creator: exception={e}")
+        return False
+
+def can_user_access_task(user_id: str, task_data: dict) -> dict:
+    """Check what level of access a user has to a task"""
+    if not user_id or not task_data:
+        return {"can_view": False, "can_comment": False, "can_edit": False, "access_type": "none"}
+    
+    task_id = task_data.get("task_id")
+    owner_id = task_data.get("owner_id")
+    collaborators = task_data.get("collaborators", [])
+    
+    # Parse collaborators if it's a JSON string
+    if isinstance(collaborators, str):
+        try:
+            collaborators = json.loads(collaborators)
+        except:
+            collaborators = []
+    
+    # Check if user is owner
+    if user_id == owner_id:
+        return {"can_view": True, "can_comment": True, "can_edit": True, "access_type": "owner"}
+    
+    # Check if user is collaborator (includes managers who created the task)
+    if user_id in collaborators:
+        # Check if this collaborator is also the creator (manager)
+        is_creator = is_task_creator(task_id, user_id)
+        if is_creator:
+            return {"can_view": True, "can_comment": True, "can_edit": False, "access_type": "creator"}
+        else:
+            return {"can_view": True, "can_comment": True, "can_edit": False, "access_type": "collaborator"}
+    
+    # No access
+    return {"can_view": False, "can_comment": False, "can_edit": False, "access_type": "none"}
 
 def to_yyyy_mm_dd(val):
     if val is None: return None
@@ -588,6 +639,57 @@ def get_tasks():
         return jsonify({"error": f"Failed to retrieve tasks: {str(exc)}"}), 500
 
 
+@app.route("/debug/task/<task_id>", methods=["GET"])
+def debug_task(task_id: str):
+    """Debug endpoint to check task data"""
+    try:
+        task_data = get_task_by_id(task_id)
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+        
+        # Get audit logs for this task
+        logs_response = supabase.table("task_log").select("*").eq("task_id", task_id).execute()
+        logs = logs_response.data or []
+        
+        return jsonify({
+            "task_data": task_data,
+            "audit_logs": logs
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/tasks/<task_id>/access", methods=["GET"])
+def check_task_access(task_id: str):
+    """
+    GET /tasks/<task_id>/access - Check user's access level to a specific task
+    Query parameters:
+    - user_id: User ID to check access for
+    """
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        user_id = request.args.get("user_id")
+        if not user_id:
+            return jsonify({"error": "user_id parameter is required"}), 400
+
+        task_data = get_task_by_id(task_id)
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+
+        print(f"DEBUG: Checking access for user {user_id} to task {task_id}")
+        print(f"DEBUG: Task data: owner_id={task_data.get('owner_id')}, collaborators={task_data.get('collaborators')}")
+
+        access_info = can_user_access_task(user_id, task_data)
+        print(f"DEBUG: Access result: {access_info}")
+        
+        return jsonify({"task_id": task_id, "user_id": user_id, **access_info}), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to check task access: {str(exc)}"}), 500
+
+
 @app.route("/tasks/<task_id>", methods=["GET"])
 def get_task(task_id: str):
     """
@@ -687,6 +789,91 @@ def get_main_tasks():
         return jsonify({"error": f"Failed to retrieve main tasks: {str(exc)}"}), 500
 
 
+@app.route("/users/<user_id>/accessible-tasks", methods=["GET"])
+def get_user_accessible_tasks(user_id: str):
+    """
+    GET /users/<user_id>/accessible-tasks - Get all tasks accessible to a user
+    (owned, collaborated, or created by the user)
+    """
+    try:
+        if not user_id or user_id.strip() == "":
+            return jsonify({"error": "Invalid user ID"}), 400
+
+        # Get tasks owned by the user
+        owned_response = supabase.table("task").select("*").eq("owner_id", user_id).execute()
+        owned_tasks = owned_response.data or []
+
+        # Get tasks where user is a collaborator
+        try:
+            # Try multiple JSONB query approaches
+            collaborated_tasks = []
+            
+            # Approach 1: Use @> (contains) operator for JSONB arrays
+            try:
+                collaborated_response = supabase.table("task").select("*").filter("collaborators", "cs", f'["{user_id}"]').execute()
+                collaborated_tasks = collaborated_response.data or []
+            except Exception as e:
+                pass
+            
+            # Approach 2: If first approach didn't work, try contains operator
+            if not collaborated_tasks:
+                try:
+                    collaborated_response = supabase.table("task").select("*").contains("collaborators", [user_id]).execute()
+                    collaborated_tasks = collaborated_response.data or []
+                except Exception as e:
+                    pass
+            
+            # Approach 3: Manual filtering as fallback
+            if not collaborated_tasks:
+                all_tasks_response = supabase.table("task").select("*").execute()
+                all_tasks = all_tasks_response.data or []
+                
+                for task in all_tasks:
+                    try:
+                        collaborators = task.get("collaborators", [])
+                        
+                        # Parse collaborators if it's a JSON string
+                        if isinstance(collaborators, str):
+                            try:
+                                collaborators = json.loads(collaborators)
+                            except:
+                                collaborators = []
+                        elif collaborators is None:
+                            collaborators = []
+                        
+                        # Check if user is in collaborators list
+                        if user_id in collaborators:
+                            collaborated_tasks.append(task)
+                    except Exception as e:
+                        continue
+        except Exception as e:
+            collaborated_tasks = []
+
+        # Get tasks created by the user (from audit logs)
+        created_logs_response = supabase.table("task_log").select("task_id").eq("user_id", user_id).eq("action", "create").execute()
+        created_task_ids = [log["task_id"] for log in (created_logs_response.data or [])]
+        
+        created_tasks = []
+        if created_task_ids:
+            created_response = supabase.table("task").select("*").in_("task_id", created_task_ids).execute()
+            created_tasks = created_response.data or []
+
+        # Combine all tasks and remove duplicates
+        all_tasks = {}
+        for task in owned_tasks + collaborated_tasks + created_tasks:
+            task_id = task.get("task_id")
+            if task_id not in all_tasks:
+                all_tasks[task_id] = task
+
+        # Map to API format
+        tasks = [map_db_row_to_api(task) for task in all_tasks.values()]
+        
+        return jsonify({"tasks": tasks, "count": len(tasks)}), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to retrieve accessible tasks: {str(exc)}"}), 500
+
+
 @app.route("/tasks/user/<user_id>", methods=["GET"])
 def get_tasks_by_user(user_id: str):
     """
@@ -727,9 +914,33 @@ def create_task():
         except ValidationError as e:
             return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
-        # Prepare data for database (exclude reminder_days, email_enabled, in_app_enabled from task table)
-        db_data = task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled"})
+        # Prepare data for database (exclude reminder_days, email_enabled, in_app_enabled, created_by from task table)
+        db_data = task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled", "created_by"})
         db_data["created_at"] = datetime.utcnow().isoformat()
+
+        # Handle automatic collaborator assignment when manager creates task for staff
+        creator_id = task_data.created_by
+        task_owner_id = db_data.get("owner_id")
+        
+        if creator_id and task_owner_id and creator_id != task_owner_id:
+            # Manager is creating task for someone else - add manager as collaborator
+            existing_collaborators = db_data.get("collaborators", [])
+            
+            # Parse existing collaborators if it's a JSON string
+            if isinstance(existing_collaborators, str):
+                try:
+                    existing_collaborators = json.loads(existing_collaborators)
+                except:
+                    existing_collaborators = []
+            elif existing_collaborators is None:
+                existing_collaborators = []
+            
+            # Add creator as collaborator if not already in the list
+            if creator_id not in existing_collaborators:
+                existing_collaborators.append(creator_id)
+                db_data["collaborators"] = json.dumps(existing_collaborators)
+            else:
+                pass
 
         # If this is a subtask, validate that the parent task exists
         if db_data.get("isSubtask") and db_data.get("parent_task_id"):
@@ -755,7 +966,6 @@ def create_task():
             email_enabled = task_data.email_enabled if task_data.email_enabled is not None else True
             in_app_enabled = task_data.in_app_enabled if task_data.in_app_enabled is not None else True
 
-            print(f"Saving notification preferences for task {task_id}: email={email_enabled}, in_app={in_app_enabled}")
             save_notification_preferences(
                 task_data.owner_id,
                 task_id,
@@ -770,15 +980,15 @@ def create_task():
             # Save default reminder days [7, 3, 1] if due date is set but no custom reminders
             save_reminder_preferences(task_id, [7, 3, 1])
 
-        # Log task creation for audit trail - single log entry with all created fields
-        # Define all possible task fields for logging
+        # Log task creation for audit trail
+        # Get the actual creator ID (who created the task) vs owner_id (who owns/is assigned the task)
+        creator_id = task_data.created_by or db_data.get("owner_id", "system")
+        task_owner_id = db_data.get("owner_id")
+        
+        # First log entry: Task creation
         task_fields = ["title", "due_date", "status", "priority", "description", 
-                      "collaborators", "project_id", "owner_id", "isSubtask", "parent_task_id"]
+                      "collaborators", "project_id", "isSubtask", "parent_task_id"]
         
-        # Get owner_id for logging (could be from request or default)
-        actor_id = db_data.get("owner_id", "system")
-        
-        # Collect all created field values into single log entry
         old_values = {}
         new_values = {}
         
@@ -792,15 +1002,36 @@ def create_task():
                 old_values[field] = None  # No old value for creation
                 new_values[field] = new_value
         
-        # Create single log entry for task creation
-        if new_values:  # Only log if there are values to log
+        # Log task creation (without owner_id)
+        if new_values:
             log_task_change(
                 task_id=task_id,
                 action="create",
-                field="task",  # Use generic field name for creation
-                user_id=actor_id,
+                field="task",
+                user_id=creator_id,
                 old_value=old_values,
                 new_value=new_values
+            )
+
+        # Second log entry: Assignment (if creator is different from owner)
+        if creator_id != task_owner_id and task_owner_id:
+            log_task_change(
+                task_id=task_id,
+                action="assign_task",
+                field="assignment",
+                user_id=creator_id,  # Who did the assignment
+                old_value={"assignee": None},
+                new_value={"assignee": task_owner_id, "assigner": creator_id}  # Who was assigned and who assigned
+            )
+            
+            # Third log entry: Auto-collaborate (manager added as collaborator)
+            log_task_change(
+                task_id=task_id,
+                action="auto_add_collaborator",
+                field="auto_collaboration",
+                user_id=creator_id,  # Who was added as collaborator
+                old_value={"collaborator": None},
+                new_value={"collaborator": creator_id}  # The creator ID that was added
             )
 
         # Return created task
@@ -886,9 +1117,40 @@ def update_task(task_id: str):
             except ValidationError as e:
                 return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
-            # Prepare update data (only include non-None values, exclude reminder_days, email_enabled, in_app_enabled)
-            update_data = {k: v for k, v in task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled"}).items() if v is not None}
-            actor_id = existing_task.get("owner_id", "system")
+            # Prepare update data (only include non-None values, exclude reminder_days, email_enabled, in_app_enabled, updated_by)
+            update_data = {k: v for k, v in task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled", "updated_by"}).items() if v is not None}
+            actor_id = task_data.updated_by or existing_task.get("owner_id", "system")
+            
+            # IMPORTANT: Preserve collaborators unless explicitly being managed by someone with permission
+            # If collaborators field is being updated, check if it should be preserved
+            if "collaborators" in update_data:
+                submitted_collaborators = update_data["collaborators"]
+                existing_collaborators = existing_task.get("collaborators", [])
+                
+                # Parse both for comparison
+                if isinstance(submitted_collaborators, str):
+                    try:
+                        submitted_collaborators = json.loads(submitted_collaborators)
+                    except:
+                        submitted_collaborators = []
+                elif submitted_collaborators is None:
+                    submitted_collaborators = []
+                    
+                if isinstance(existing_collaborators, str):
+                    try:
+                        existing_collaborators = json.loads(existing_collaborators)
+                    except:
+                        existing_collaborators = []
+                elif existing_collaborators is None:
+                    existing_collaborators = []
+                
+                # If submitted collaborators are empty but existing ones exist, preserve existing
+                # This prevents accidental removal of collaborators by staff edits
+                if not submitted_collaborators and existing_collaborators:
+                    update_data["collaborators"] = json.dumps(existing_collaborators)
+                else:
+                    # Convert to JSON string for database storage
+                    update_data["collaborators"] = json.dumps(submitted_collaborators)
 
             # Handle notification preferences separately
             reminder_days_update = task_data.reminder_days
@@ -1337,7 +1599,15 @@ def add_task_comment(task_id: str):
         task = task_response.data[0]
         collaborators = task.get("collaborators", [])
         
-        # Check if user has permission to comment (owner or collaborator)
+        # Parse collaborators if it's a JSON string
+        if isinstance(collaborators, str):
+            try:
+                collaborators = json.loads(collaborators)
+            except:
+                collaborators = []
+        
+        # Check if user has permission to comment (owner or collaborator, including creators)
+        # Creators (managers) are automatically added as collaborators, so they can comment
         if task["owner_id"] != user_id and user_id not in collaborators:
             return jsonify({"error": "You don't have permission to comment on this task"}), 403
         
