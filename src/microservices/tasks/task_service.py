@@ -580,8 +580,8 @@ def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new
         traceback.print_exc()
 
 def check_and_send_due_date_notifications(task_data: dict):
-    """Check if task needs due date notifications and send them"""
-    if not task_data.get("due_date") or not task_data.get("owner_id"):
+    """Check if task needs due date notifications and send them to ALL stakeholders"""
+    if not task_data.get("due_date"):
         return
 
     # Don't send reminders for completed tasks
@@ -603,6 +603,14 @@ def check_and_send_due_date_notifications(task_data: dict):
 
         print(f"Task {task_data.get('task_id')}: Due date {due_date}, days until due: {days_until_due}")
 
+        # Get ALL stakeholders (owner + collaborators)
+        stakeholders = get_task_stakeholders(task_data)
+        if not stakeholders:
+            print(f"No stakeholders found for task {task_data.get('task_id')}")
+            return
+
+        print(f"Will send reminders to {len(stakeholders)} stakeholder(s): {stakeholders}")
+
         # Get custom reminder days from task_reminder_preferences or use default [7, 3, 1]
         reminder_days = [7, 3, 1]  # Default
         try:
@@ -617,91 +625,93 @@ def check_and_send_due_date_notifications(task_data: dict):
             if days_until_due == reminder_day:
                 print(f"Sending {reminder_day}-day reminder for task {task_data.get('task_id')}")
 
-                # Check if we already sent this reminder - FIXED: Check in notifications table
-                try:
-                    existing_check = supabase.table("notifications").select("id").eq("task_id", task_data["task_id"]).eq("type", f"reminder_{reminder_day}_days").execute()
-                    if existing_check.data:
-                        print(f"Reminder already sent for task {task_data.get('task_id')}")
-                        continue
-                except Exception as e:
-                    print(f"Error checking existing notifications: {e}")
-
-                # Check notification preferences
-                prefs = get_notification_preferences(task_data["owner_id"], task_data["task_id"])
-                print(f"Notification preferences for task {task_data.get('task_id')}: {prefs}")
-
-                # Create notification directly in database first (only if in-app enabled)
-                if prefs.get("in_app_enabled", True):
-                    notification_data = {
-                        "user_id": task_data["owner_id"],
-                        "title": f"Task Due in {reminder_day} Day{'s' if reminder_day != 1 else ''}",
-                        "message": f"Task '{task_data['title']}' is due on {due_date.strftime('%B %d, %Y')}",
-                        "type": f"reminder_{reminder_day}_days",
-                        "task_id": task_data["task_id"],
-                        "due_date": task_data["due_date"],
-                        "priority": task_data.get("priority", "Medium"),
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                        "is_read": False
-                    }
-
-                    # Store in notifications table directly
+                # Send reminder to EACH stakeholder
+                for stakeholder_id in stakeholders:
+                    # Check if we already sent this reminder to this specific user
                     try:
-                        response = supabase.table("notifications").insert(notification_data).execute()
-                        if response.data:
-                            print(f"Successfully stored {reminder_day}-day notification in database (in-app)")
-
-                            # Publish to RabbitMQ for real-time delivery
-                            notification_publisher.publish_due_date_notification(task_data, reminder_day)
-
-                            # Also try to notify the notification service for real-time delivery
-                            try:
-                                notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                                notif_response = requests.post(
-                                    f"{notification_service_url}/notifications/create",
-                                    json=notification_data,
-                                    timeout=5,
-                                    headers={'Content-Type': 'application/json'}
-                                )
-                                if notif_response.ok:
-                                    print(f"Successfully notified notification service via HTTP")
-                                else:
-                                    print(f"Notification service returned status {notif_response.status_code}")
-                            except requests.exceptions.RequestException as e:
-                                print(f"Failed to notify notification service: {e}")
-                                # Continue anyway since we stored in DB
-                        else:
-                            print(f"Failed to store in-app notification in database")
+                        existing_check = supabase.table("notifications").select("id").eq("task_id", task_data["task_id"]).eq("user_id", stakeholder_id).eq("type", f"reminder_{reminder_day}_days").execute()
+                        if existing_check.data:
+                            print(f"Reminder already sent to stakeholder {stakeholder_id} for task {task_data.get('task_id')}")
+                            continue
                     except Exception as e:
-                        print(f"Error storing in-app notification: {e}")
-                else:
-                    print(f"In-app notifications disabled for this task")
+                        print(f"Error checking existing notifications: {e}")
 
-                # Send email if enabled (separate from in-app)
-                if prefs.get("email_enabled", True):
-                    if not EMAIL_SERVICE_AVAILABLE:
-                        print(f"Email service not available, skipping email for task {task_data.get('task_id')}")
+                    # Check notification preferences for this stakeholder
+                    prefs = get_notification_preferences(stakeholder_id, task_data["task_id"])
+                    print(f"Notification preferences for stakeholder {stakeholder_id}, task {task_data.get('task_id')}: {prefs}")
+
+                    # Create notification directly in database first (only if in-app enabled)
+                    if prefs.get("in_app_enabled", True):
+                        notification_data = {
+                            "user_id": stakeholder_id,
+                            "title": f"Task Due in {reminder_day} Day{'s' if reminder_day != 1 else ''}",
+                            "message": f"Task '{task_data['title']}' is due on {due_date.strftime('%B %d, %Y')}",
+                            "type": f"reminder_{reminder_day}_days",
+                            "task_id": task_data["task_id"],
+                            "due_date": task_data["due_date"],
+                            "priority": task_data.get("priority", "Medium"),
+                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "is_read": False
+                        }
+
+                        # Store in notifications table directly
+                        try:
+                            response = supabase.table("notifications").insert(notification_data).execute()
+                            if response.data:
+                                print(f"✅ Successfully stored {reminder_day}-day notification for stakeholder {stakeholder_id}")
+
+                                # Publish to RabbitMQ for real-time delivery
+                                notification_publisher.publish_due_date_notification(task_data, reminder_day)
+
+                                # Also try to notify the notification service for real-time delivery
+                                try:
+                                    notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                                    notif_response = requests.post(
+                                        f"{notification_service_url}/notifications/create",
+                                        json=notification_data,
+                                        timeout=5,
+                                        headers={'Content-Type': 'application/json'}
+                                    )
+                                    if notif_response.ok:
+                                        print(f"Successfully notified notification service via HTTP for stakeholder {stakeholder_id}")
+                                    else:
+                                        print(f"Notification service returned status {notif_response.status_code}")
+                                except requests.exceptions.RequestException as e:
+                                    print(f"Failed to notify notification service: {e}")
+                                    # Continue anyway since we stored in DB
+                            else:
+                                print(f"Failed to store in-app notification in database for stakeholder {stakeholder_id}")
+                        except Exception as e:
+                            print(f"Error storing in-app notification: {e}")
                     else:
-                        user_email = get_user_email(task_data["owner_id"])
-                        if user_email:
-                            try:
-                                print(f"Sending email notification to {user_email} for {reminder_day}-day reminder")
-                                send_notification_email(
-                                    user_email=user_email,
-                                    notification_type=f"reminder_{reminder_day}_days",
-                                    task_title=task_data["title"],
-                                    due_date=due_date.strftime('%B %d, %Y'),
-                                    priority=task_data.get("priority", "Medium"),
-                                    task_id=task_data["task_id"]
-                                )
-                                print(f"✅ Email notification sent successfully to {user_email}")
-                            except Exception as e:
-                                print(f"❌ Failed to send email notification: {e}")
-                                import traceback
-                                traceback.print_exc()
+                        print(f"In-app notifications disabled for stakeholder {stakeholder_id}")
+
+                    # Send email if enabled (separate from in-app)
+                    if prefs.get("email_enabled", True):
+                        if not EMAIL_SERVICE_AVAILABLE:
+                            print(f"Email service not available, skipping email for stakeholder {stakeholder_id}")
                         else:
-                            print(f"No email found for user {task_data['owner_id']}")
-                else:
-                    print(f"Email notifications disabled for task {task_data.get('task_id')}")
+                            user_email = get_user_email(stakeholder_id)
+                            if user_email:
+                                try:
+                                    print(f"Sending email notification to {user_email} for {reminder_day}-day reminder")
+                                    send_notification_email(
+                                        user_email=user_email,
+                                        notification_type=f"reminder_{reminder_day}_days",
+                                        task_title=task_data["title"],
+                                        due_date=due_date.strftime('%B %d, %Y'),
+                                        priority=task_data.get("priority", "Medium"),
+                                        task_id=task_data["task_id"]
+                                    )
+                                    print(f"✅ Email notification sent successfully to {user_email}")
+                                except Exception as e:
+                                    print(f"❌ Failed to send email notification: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+                            else:
+                                print(f"No email found for stakeholder {stakeholder_id}")
+                    else:
+                        print(f"Email notifications disabled for stakeholder {stakeholder_id}")
     
     except Exception as e:
         print(f"Error checking due date notifications: {e}")
@@ -1743,11 +1753,11 @@ def add_task_comment(task_id: str):
         if not user_id:
             return jsonify({"error": "User ID is required"}), 400
         
-        # Verify the task exists and user has access
-        task_response = supabase.table("task").select("task_id, owner_id, collaborators").eq("task_id", task_id).execute()
+        # Verify the task exists and user has access - get ALL task data for notifications
+        task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
         if not task_response.data:
             return jsonify({"error": "Task not found"}), 404
-        
+
         task = task_response.data[0]
         collaborators = task.get("collaborators", [])
         
