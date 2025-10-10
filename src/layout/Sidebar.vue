@@ -179,11 +179,12 @@
 </style>
 
 <script>
-import { computed, ref, onMounted, watch, h } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons-vue'
 import { HomeIcon, TaskIcon, DashboardIcon, ProjectIcon, SettingsIcon, UserIcon, LogoutIcon } from '../components/icons/index.js'
 import { useAuthStore } from '../stores/auth.js'
+import { useProjectEvents } from '../composables/useProjectEvents.js'
 
 export default {
   name: 'Sidebar',
@@ -209,6 +210,7 @@ export default {
     const router = useRouter()
     const route = useRoute()
     const authStore = useAuthStore()
+    const { onProjectCreated } = useProjectEvents()
 
     // Get user data directly from auth store
     const user = computed(() => authStore.user)
@@ -308,6 +310,16 @@ export default {
       }
     })
 
+    // Listen for project created events and reload
+    const cleanup = onProjectCreated(() => {
+      loadUserProjects()
+    })
+
+    // Cleanup listener on unmount
+    onUnmounted(() => {
+      cleanup()
+    })
+
     return {
       user,
       selectedKeys,
@@ -320,6 +332,7 @@ export default {
       handleProjectsTitleClick,
       toggleCollapse,
       logout,
+      loadUserProjects, // Expose for external refresh
       h,
       MenuFoldOutlined,
       MenuUnfoldOutlined

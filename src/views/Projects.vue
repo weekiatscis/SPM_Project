@@ -66,6 +66,7 @@ import { PlusOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import ProjectList from '../components/projects/ProjectList.vue'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
+import { useProjectEvents } from '../composables/useProjectEvents'
 
 export default {
   name: 'Projects',
@@ -79,6 +80,7 @@ export default {
     const showCreateModal = ref(false)
     const authStore = useAuthStore()
     const projectListRef = ref(null)
+    const { emitProjectCreated } = useProjectEvents()
 
     const currentUser = computed(() => {
       const user = localStorage.getItem('user')
@@ -96,13 +98,19 @@ export default {
     const handleProjectSaved = async (projectData) => {
       console.log('Projects.vue received new project:', projectData)
 
-      // Add to local stats array
-      projects.value.unshift(projectData)
+      // Add to local stats array with status
+      projects.value.unshift({
+        ...projectData,
+        status: 'Active' // Add status for stats calculation
+      })
 
       // Also notify ProjectList component to add the project
       if (projectListRef.value && projectListRef.value.addNewProject) {
         await projectListRef.value.addNewProject(projectData)
       }
+
+      // Emit event to notify other components (like Sidebar) to refresh
+      emitProjectCreated(projectData)
 
       showCreateModal.value = false
     }
