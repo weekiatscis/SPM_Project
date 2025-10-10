@@ -1,0 +1,16 @@
+# Test dependencies for SPM Project microservices
+# Install with: pip install -r tests/requirements-test.txt
+
+# Testing framework
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-timeout==2.2.0
+
+# HTTP testing
+requests==2.31.0
+
+# Test utilities
+faker==20.1.0
+
+# Code quality
+flake8==6.1.0

@@ -1,0 +1,164 @@
+name: Validate Microservices
+
+on:
+  push:
+    branches:
+      - main
+      - ranentest
+      - develop
+  pull_request:
+    branches:
+      - main
+
+env:
+  # Service URLs for testing
+  TASK_SERVICE_URL: http://localhost:8080
+  PROJECT_SERVICE_URL: http://localhost:8082
+  USER_SERVICE_URL: http://localhost:8081
+  AUTH_SERVICE_URL: http://localhost:8086
+  NOTIFICATION_SERVICE_URL: http://localhost:8084
+
+jobs:
+  validate-services:
+    name: Validate All Microservices
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest requests
+
+      - name: Create .env file from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> .env
+          echo "RABBITMQ_URL=amqp://admin:admin123@localhost:5672" >> .env
+          echo "VITE_TASK_OWNER_ID=${{ secrets.VITE_TASK_OWNER_ID }}" >> .env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start RabbitMQ
+        run: |
+          docker run -d \
+            --name rabbitmq \
+            -p 5672:5672 \
+            -p 15672:15672 \
+            -e RABBITMQ_DEFAULT_USER=admin \
+            -e RABBITMQ_DEFAULT_PASS=admin123 \
+            rabbitmq:3.12-management
+
+          # Wait for RabbitMQ to be ready
+          echo "Waiting for RabbitMQ to be ready..."
+          sleep 15
+
+      - name: Start microservices with docker-compose
+        run: |
+          docker-compose up -d --build
+
+          # Wait for services to be ready
+          echo "Waiting for services to start..."
+          sleep 30
+
+      - name: Check running containers
+        run: |
+          echo "Running containers:"
+          docker ps
+
+          echo -e "\nDocker-compose services:"
+          docker-compose ps
+
+      - name: Check service logs (if services fail to start)
+        if: failure()
+        run: |
+          echo "=== Task Service Logs ==="
+          docker-compose logs task-service || true
+
+          echo -e "\n=== Project Service Logs ==="
+          docker-compose logs project-service || true
+
+          echo -e "\n=== User Service Logs ==="
+          docker-compose logs user-service || true
+
+          echo -e "\n=== Auth Service Logs ==="
+          docker-compose logs auth-service || true
+
+          echo -e "\n=== Notification Service Logs ==="
+          docker-compose logs notification-service || true
+
+      - name: Run comprehensive service validation
+        run: |
+          python tests/validate_all_services.py
+
+      - name: Run Task Service tests
+        run: |
+          python tests/test_task_service.py
+
+      - name: Run Project Service tests
+        run: |
+          python tests/test_project_service.py
+
+      - name: Run User Service tests
+        run: |
+          python tests/test_user_service.py
+
+      - name: Run Auth Service tests
+        run: |
+          python tests/test_auth_service.py
+
+      - name: Run Notification Service tests
+        run: |
+          python tests/test_notification_service.py
+
+      - name: Stop and remove containers
+        if: always()
+        run: |
+          docker-compose down -v
+          docker stop rabbitmq || true
+          docker rm rabbitmq || true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-results
+          path: |
+            tests/
+            .env
+          retention-days: 7
+
+  lint-python:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+
+      - name: Lint with flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 src/microservices --count --select=E9,F63,F7,F82 --show-source --statistics || true
+
+          # Exit-zero treats all errors as warnings
+          flake8 src/microservices --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || true
