@@ -1395,12 +1395,39 @@ def delete_task(task_id: str):
         return jsonify({"error": f"Failed to delete task: {str(exc)}"}), 500
 
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint"""
+    return jsonify({"status": "healthy", "service": "task-service"}), 200
+
+
+@app.route("/users", methods=["GET"])
+def get_all_users():
+    """Get all users from Supabase user table"""
+    try:
+        response = supabase.table("user").select("user_id, name, email, department").execute()
+
+        users = []
+        if response.data:
+            for user_row in response.data:
+                users.append({
+                    "user_id": user_row.get("user_id"),
+                    "name": user_row.get("name"),
+                    "email": user_row.get("email"),
+                    "department": user_row.get("department")
+                })
+
+        return jsonify({"users": users}), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to fetch users: {str(exc)}"}), 500
+
 @app.route("/users/<user_id>", methods=["GET"])
 def get_user_by_id(user_id: str):
     """Get user info by user_id from Supabase user table"""
     try:
         response = supabase.table("user").select("user_id, name, email").eq("user_id", user_id).execute()
-        
+
         if response.data and len(response.data) > 0:
             user_row = response.data[0]
             return jsonify({"user": {

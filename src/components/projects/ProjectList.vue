@@ -10,13 +10,15 @@
   <div>
     <!-- Section Toggle Tabs -->
     <a-tabs v-model:activeKey="activeTab" style="margin-bottom: 16px;">
-      <a-tab-pane key="projects" tab="All Projects" />
+      <a-tab-pane key="all" tab="All Projects" />
+      <a-tab-pane key="owned" tab="My Projects" />
+      <a-tab-pane key="collaborating" tab="Collaborating" />
       <a-tab-pane key="assign" tab="Assign Task" />
     </a-tabs>
 
-    <!-- Projects Section -->
+    <!-- All Projects Section -->
     <a-card
-      v-if="activeTab === 'projects'"
+      v-if="activeTab === 'all'"
       style="min-height: 500px;"
     >
       <template #title>
@@ -57,6 +59,116 @@
       <a-row v-else :gutter="[16, 16]">
         <a-col
           v-for="project in allProjects"
+          :key="project.project_id"
+          :xs="24"
+          :sm="12"
+          :lg="8"
+          :xl="6"
+        >
+          <ProjectCard
+            :project="project"
+            @view-details="handleProjectClick"
+          />
+        </a-col>
+      </a-row>
+    </a-card>
+
+    <!-- My Projects Section -->
+    <a-card
+      v-if="activeTab === 'owned'"
+      style="min-height: 500px;"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>My Projects</span>
+          <a-space size="small">
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
+              @click="toggleDateSort"
+            >
+              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
+            </a-button>
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
+              @click="toggleStatusSort"
+            >
+              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
+            </a-button>
+          </a-space>
+        </div>
+      </template>
+
+      <div v-if="isLoading" style="text-align: center; padding: 50px;">
+        <a-spin size="large" />
+        <p style="margin-top: 16px;">Loading projects...</p>
+      </div>
+
+      <div v-else-if="ownedProjects.length === 0" style="text-align: center; padding: 50px;">
+        <a-empty description="You haven't created any projects yet">
+          <a-button type="primary" @click="showProjectModal = true">
+            Create Your First Project
+          </a-button>
+        </a-empty>
+      </div>
+
+      <a-row v-else :gutter="[16, 16]">
+        <a-col
+          v-for="project in ownedProjects"
+          :key="project.project_id"
+          :xs="24"
+          :sm="12"
+          :lg="8"
+          :xl="6"
+        >
+          <ProjectCard
+            :project="project"
+            @view-details="handleProjectClick"
+          />
+        </a-col>
+      </a-row>
+    </a-card>
+
+    <!-- Collaborating Projects Section -->
+    <a-card
+      v-if="activeTab === 'collaborating'"
+      style="min-height: 500px;"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>Collaborating</span>
+          <a-space size="small">
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
+              @click="toggleDateSort"
+            >
+              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
+            </a-button>
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
+              @click="toggleStatusSort"
+            >
+              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
+            </a-button>
+          </a-space>
+        </div>
+      </template>
+
+      <div v-if="isLoading" style="text-align: center; padding: 50px;">
+        <a-spin size="large" />
+        <p style="margin-top: 16px;">Loading projects...</p>
+      </div>
+
+      <div v-else-if="collaboratingProjects.length === 0" style="text-align: center; padding: 50px;">
+        <a-empty description="You are not collaborating on any projects yet" />
+      </div>
+
+      <a-row v-else :gutter="[16, 16]">
+        <a-col
+          v-for="project in collaboratingProjects"
           :key="project.project_id"
           :xs="24"
           :sm="12"
@@ -265,7 +377,7 @@ export default {
     const authStore = useAuthStore()
 
     // Tab state for switching between sections
-    const activeTab = ref('projects')
+    const activeTab = ref('all')
 
     // Modal state for creating project
     const showProjectModal = ref(false)
@@ -281,26 +393,50 @@ export default {
     const selectedProjectForAssign = ref(null)
     const isAssigning = ref(false)
 
-    // Handle project saved from ProjectFormModal
-    const handleProjectSaved = (projectData) => {
+    // Method to add new project (can be called from parent component)
+    const addNewProject = async (projectData) => {
+      console.log('ProjectList.addNewProject called with:', projectData)
+
+      // Fetch the user name for the created_by user_id
+      const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+      let createdByName = projectData.created_by
+
+      try {
+        const userResponse = await fetch(`${taskServiceUrl}/users/${projectData.created_by}`)
+        if (userResponse.ok) {
+          const userData = await userResponse.json()
+          createdByName = userData.user?.name || projectData.created_by
+        }
+      } catch (err) {
+        console.error(`Failed to fetch user name for ${projectData.created_by}:`, err)
+      }
+
       // Transform the API response to match frontend format
       const mappedProject = {
         project_id: projectData.project_id || projectData.id,
         project_name: projectData.project_name,
         project_description: projectData.project_description,
         created_at: projectData.created_at,
-        created_by: projectData.created_by,
+        created_by: createdByName, // Use the fetched user name
+        created_by_id: projectData.created_by,
         due_date: projectData.due_date,
-        status: 'Active' // Default status
+        collaborators: projectData.collaborators || [],
+        status: 'Active'
       }
 
       // Add the new project to the projects list
       projects.value.unshift(mappedProject)
+      console.log('Project added to ProjectList, total:', projects.value.length)
+    }
+
+    // Handle project saved from ProjectFormModal (for internal modal)
+    const handleProjectSaved = async (projectData) => {
+      await addNewProject(projectData)
 
       // Show success notification
       notification.success({
         message: 'Project created successfully',
-        description: `"${mappedProject.project_name}" has been added to your projects.`,
+        description: `"${projectData.project_name}" has been added to your projects.`,
         placement: 'topRight',
         duration: 3
       })
@@ -315,21 +451,44 @@ export default {
     }
 
 
-    // All projects computed property with sorting
-    const allProjects = computed(() => {
-      const sortedProjects = [...projects.value]
+    // Helper function to apply sorting
+    const applySorting = (projectList) => {
+      const sorted = [...projectList]
 
       if (sortBy.value === 'created_at-asc') {
-        return sortedProjects.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+        return sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
       } else if (sortBy.value === 'created_at-desc') {
-        return sortedProjects.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        return sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       } else if (sortBy.value === 'status-asc') {
-        return sortedProjects.sort((a, b) => (a.status || 'Active').localeCompare(b.status || 'Active'))
+        return sorted.sort((a, b) => (a.status || 'Active').localeCompare(b.status || 'Active'))
       } else if (sortBy.value === 'status-desc') {
-        return sortedProjects.sort((a, b) => (b.status || 'Active').localeCompare(a.status || 'Active'))
+        return sorted.sort((a, b) => (b.status || 'Active').localeCompare(a.status || 'Active'))
       }
 
-      return sortedProjects
+      return sorted
+    }
+
+    // All projects computed property with sorting
+    const allProjects = computed(() => {
+      return applySorting(projects.value)
+    })
+
+    // Owned projects (where user is the creator)
+    const ownedProjects = computed(() => {
+      const currentUserId = authStore.user?.user_id
+      const owned = projects.value.filter(p => p.created_by_id === currentUserId)
+      return applySorting(owned)
+    })
+
+    // Collaborating projects (where user is in collaborators array but not the creator)
+    const collaboratingProjects = computed(() => {
+      const currentUserId = authStore.user?.user_id
+      const collaborating = projects.value.filter(p =>
+        p.created_by_id !== currentUserId &&
+        p.collaborators &&
+        p.collaborators.includes(currentUserId)
+      )
+      return applySorting(collaborating)
     })
 
     // Function to toggle date sort between ascending and descending
@@ -634,14 +793,44 @@ export default {
         const payload = await response.json()
         const apiProjects = Array.isArray(payload?.projects) ? payload.projects : []
 
-        projects.value = apiProjects.map(p => ({
+        // Map projects and fetch user names
+        const projectsWithUserIds = apiProjects.map(p => ({
           project_id: p.project_id,
           project_name: p.project_name,
           project_description: p.project_description,
           created_at: p.created_at,
-          created_by: p.created_by,
+          created_by: p.created_by, // This is still user_id
+          created_by_id: p.created_by, // Store the original user_id
           due_date: p.due_date,
+          collaborators: p.collaborators || [], // Store collaborators array
           status: 'Active' // Default status since not in DB yet
+        }))
+
+        // Fetch user names for all unique created_by user IDs
+        const uniqueUserIds = [...new Set(projectsWithUserIds.map(p => p.created_by).filter(Boolean))]
+        const userNameMap = {}
+
+        // Fetch user names from task service
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        for (const userId of uniqueUserIds) {
+          try {
+            const userResponse = await fetch(`${taskServiceUrl}/users/${userId}`)
+            if (userResponse.ok) {
+              const userData = await userResponse.json()
+              userNameMap[userId] = userData.user?.name || userId
+            } else {
+              userNameMap[userId] = userId // Fallback to user_id if fetch fails
+            }
+          } catch (err) {
+            console.error(`Failed to fetch user name for ${userId}:`, err)
+            userNameMap[userId] = userId // Fallback to user_id
+          }
+        }
+
+        // Replace user_id with user name
+        projects.value = projectsWithUserIds.map(p => ({
+          ...p,
+          created_by: userNameMap[p.created_by_id] || p.created_by_id || 'Unknown'
         }))
       } catch (error) {
         console.error('Failed to load projects:', error)
@@ -663,6 +852,8 @@ export default {
     return {
       h,
       allProjects,
+      ownedProjects,
+      collaboratingProjects,
       isLoading,
       activeTab,
       showProjectModal,
@@ -670,6 +861,7 @@ export default {
       toggleDateSort,
       toggleStatusSort,
       handleProjectSaved,
+      addNewProject, // Expose this method to parent
       handleProjectClick,
       // Task assignment related
       allAvailableTasks,
@@ -700,17 +892,115 @@ export default {
 <style scoped>
 /* Custom card grid spacing */
 :deep(.ant-col) {
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 /* Enhanced card hover effects */
 :deep(.ant-card) {
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(139, 92, 246, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.05);
 }
 
 :deep(.ant-card:hover) {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 24px rgba(139, 92, 246, 0.15);
+  transform: translateY(-4px);
+  border-color: rgba(139, 92, 246, 0.2);
+}
+
+:deep(.ant-card-head) {
+  border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+  background: transparent;
+  font-weight: 600;
+}
+
+:deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1F2937;
+}
+
+:deep(.ant-tabs) {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 4px;
+  border: 1px solid rgba(139, 92, 246, 0.1);
+}
+
+:deep(.ant-tabs-nav) {
+  margin: 0 !important;
+}
+
+:deep(.ant-tabs-tab) {
+  padding: 10px 24px;
+  border-radius: 8px;
+  margin: 0 4px !important;
+  color: #6B7280;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:deep(.ant-tabs-tab:hover) {
+  color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.05);
+}
+
+:deep(.ant-tabs-tab-active) {
+  background: #D78FEE !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(215, 143, 238, 0.3);
+}
+
+:deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+  color: white !important;
+}
+
+:deep(.ant-tabs-ink-bar) {
+  display: none;
+}
+
+:deep(.ant-btn-primary) {
+  background: linear-gradient(135deg, #8B5CF6, #06B6D4);
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:deep(.ant-btn-primary:hover) {
   transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
+}
+
+:deep(.ant-btn-default) {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  color: #6B7280;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:deep(.ant-btn-default:hover) {
+  border-color: #8B5CF6;
+  color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.05);
+}
+
+:deep(.ant-empty) {
+  padding: 40px 20px;
+}
+
+:deep(.ant-empty-description) {
+  color: #6B7280;
+  font-size: 14px;
 }
 </style>

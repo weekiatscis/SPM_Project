@@ -40,14 +40,26 @@ def create_project():
         if not body.get("project_name", "").strip():
             return jsonify({"error": "project_name is required"}), 400
 
+        # Validate collaborators (now mandatory)
+        collaborators = body.get("collaborators", [])
+        print(f"DEBUG: Received collaborators from request: {collaborators}")
+
+        if not collaborators or not isinstance(collaborators, list) or len(collaborators) == 0:
+            return jsonify({"error": "At least one collaborator is required"}), 400
+
         # Prepare project data according to your Supabase schema
-        # Fields: project_id (auto), created_at (auto), created_by, project_description, project_name
+        # Fields: project_id (auto), created_at (auto), created_by, project_description, project_name, due_date, collaborators (jsonb)
         # Use owner_id as created_by to identify user ownership
+
         project_data = {
             "project_name": body.get("project_name").strip(),
             "project_description": body.get("project_description", "").strip(),
-            "created_by": body.get("owner_id") or body.get("created_by", "").strip() or "Unknown"
+            "created_by": body.get("owner_id") or body.get("created_by", "").strip() or "Unknown",
+            "due_date": body.get("due_date"),
+            "collaborators": collaborators if isinstance(collaborators, list) else []
         }
+
+        print(f"DEBUG: Inserting project with collaborators: {project_data.get('collaborators')}")
 
         # Insert directly using Python Supabase client syntax
         response = supabase.table("project").insert(project_data).execute()
@@ -55,7 +67,10 @@ def create_project():
         if not response.data:
             return jsonify({"error": "insert failed"}), 500
 
-        return jsonify({"project": response.data[0]}), 201
+        created_project = response.data[0]
+        print(f"DEBUG: Project created successfully! Collaborators saved: {created_project.get('collaborators')}")
+
+        return jsonify({"project": created_project}), 201
 
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -67,7 +82,8 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "project_description": row.get("project_description"),
         "created_at": row.get("created_at"),
         "created_by": row.get("created_by"),
-        "due_date": row.get("due_date")
+        "due_date": row.get("due_date"),
+        "collaborators": row.get("collaborators", [])
     }
 
 
@@ -75,25 +91,37 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
 def get_projects():
     try:
         limit_param = request.args.get("limit", default=None, type=int)
-        created_by = request.args.get("created_by", default=None, type=str)
+        user_id = request.args.get("created_by", default=None, type=str)  # Renamed for clarity
         project_id = request.args.get("project_id", default=None, type=str)
 
         query = (
             supabase
             .table("project")
-            .select("project_id,project_name,project_description,created_at,created_by,due_date")
+            .select("project_id,project_name,project_description,created_at,created_by,due_date,collaborators")
             .order("created_at", desc=True)
         )
 
-        if limit_param:
-            query = query.limit(limit_param)
-        if created_by:
-            query = query.eq("created_by", created_by)
         if project_id:
             query = query.eq("project_id", project_id)
 
         response = query.execute()
         rows: List[Dict[str, Any]] = response.data or []
+
+        # Filter by user_id: include projects where user is creator OR collaborator
+        if user_id:
+            filtered_rows = []
+            for row in rows:
+                # Check if user is the creator
+                if row.get("created_by") == user_id:
+                    filtered_rows.append(row)
+                # Check if user is in collaborators array
+                elif user_id in (row.get("collaborators") or []):
+                    filtered_rows.append(row)
+            rows = filtered_rows
+
+        if limit_param:
+            rows = rows[:limit_param]
+
         projects = [map_db_row_to_api(r) for r in rows]
         return jsonify({"projects": projects})
 
@@ -124,6 +152,10 @@ def update_project(project_id):
 
         if "created_by" in body:
             update_data["created_by"] = body["created_by"].strip()
+
+        if "collaborators" in body:
+            collaborators = body["collaborators"]
+            update_data["collaborators"] = collaborators if isinstance(collaborators, list) else []
 
         if not update_data:
             return jsonify({"error": "No valid fields to update"}), 400
