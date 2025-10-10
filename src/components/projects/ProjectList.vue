@@ -10,13 +10,15 @@
   <div>
     <!-- Section Toggle Tabs -->
     <a-tabs v-model:activeKey="activeTab" style="margin-bottom: 16px;">
-      <a-tab-pane key="projects" tab="All Projects" />
+      <a-tab-pane key="all" tab="All Projects" />
+      <a-tab-pane key="owned" tab="My Projects" />
+      <a-tab-pane key="collaborating" tab="Collaborating" />
       <a-tab-pane key="assign" tab="Assign Task" />
     </a-tabs>
 
-    <!-- Projects Section -->
+    <!-- All Projects Section -->
     <a-card
-      v-if="activeTab === 'projects'"
+      v-if="activeTab === 'all'"
       style="min-height: 500px;"
     >
       <template #title>
@@ -57,6 +59,116 @@
       <a-row v-else :gutter="[16, 16]">
         <a-col
           v-for="project in allProjects"
+          :key="project.project_id"
+          :xs="24"
+          :sm="12"
+          :lg="8"
+          :xl="6"
+        >
+          <ProjectCard
+            :project="project"
+            @view-details="handleProjectClick"
+          />
+        </a-col>
+      </a-row>
+    </a-card>
+
+    <!-- My Projects Section -->
+    <a-card
+      v-if="activeTab === 'owned'"
+      style="min-height: 500px;"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>My Projects</span>
+          <a-space size="small">
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
+              @click="toggleDateSort"
+            >
+              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
+            </a-button>
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
+              @click="toggleStatusSort"
+            >
+              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
+            </a-button>
+          </a-space>
+        </div>
+      </template>
+
+      <div v-if="isLoading" style="text-align: center; padding: 50px;">
+        <a-spin size="large" />
+        <p style="margin-top: 16px;">Loading projects...</p>
+      </div>
+
+      <div v-else-if="ownedProjects.length === 0" style="text-align: center; padding: 50px;">
+        <a-empty description="You haven't created any projects yet">
+          <a-button type="primary" @click="showProjectModal = true">
+            Create Your First Project
+          </a-button>
+        </a-empty>
+      </div>
+
+      <a-row v-else :gutter="[16, 16]">
+        <a-col
+          v-for="project in ownedProjects"
+          :key="project.project_id"
+          :xs="24"
+          :sm="12"
+          :lg="8"
+          :xl="6"
+        >
+          <ProjectCard
+            :project="project"
+            @view-details="handleProjectClick"
+          />
+        </a-col>
+      </a-row>
+    </a-card>
+
+    <!-- Collaborating Projects Section -->
+    <a-card
+      v-if="activeTab === 'collaborating'"
+      style="min-height: 500px;"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>Collaborating</span>
+          <a-space size="small">
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
+              @click="toggleDateSort"
+            >
+              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
+            </a-button>
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
+              @click="toggleStatusSort"
+            >
+              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
+            </a-button>
+          </a-space>
+        </div>
+      </template>
+
+      <div v-if="isLoading" style="text-align: center; padding: 50px;">
+        <a-spin size="large" />
+        <p style="margin-top: 16px;">Loading projects...</p>
+      </div>
+
+      <div v-else-if="collaboratingProjects.length === 0" style="text-align: center; padding: 50px;">
+        <a-empty description="You are not collaborating on any projects yet" />
+      </div>
+
+      <a-row v-else :gutter="[16, 16]">
+        <a-col
+          v-for="project in collaboratingProjects"
           :key="project.project_id"
           :xs="24"
           :sm="12"
@@ -265,7 +377,7 @@ export default {
     const authStore = useAuthStore()
 
     // Tab state for switching between sections
-    const activeTab = ref('projects')
+    const activeTab = ref('all')
 
     // Modal state for creating project
     const showProjectModal = ref(false)
@@ -308,6 +420,7 @@ export default {
         created_by: createdByName, // Use the fetched user name
         created_by_id: projectData.created_by,
         due_date: projectData.due_date,
+        collaborators: projectData.collaborators || [],
         status: 'Active'
       }
 
@@ -338,21 +451,44 @@ export default {
     }
 
 
-    // All projects computed property with sorting
-    const allProjects = computed(() => {
-      const sortedProjects = [...projects.value]
+    // Helper function to apply sorting
+    const applySorting = (projectList) => {
+      const sorted = [...projectList]
 
       if (sortBy.value === 'created_at-asc') {
-        return sortedProjects.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+        return sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
       } else if (sortBy.value === 'created_at-desc') {
-        return sortedProjects.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        return sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       } else if (sortBy.value === 'status-asc') {
-        return sortedProjects.sort((a, b) => (a.status || 'Active').localeCompare(b.status || 'Active'))
+        return sorted.sort((a, b) => (a.status || 'Active').localeCompare(b.status || 'Active'))
       } else if (sortBy.value === 'status-desc') {
-        return sortedProjects.sort((a, b) => (b.status || 'Active').localeCompare(a.status || 'Active'))
+        return sorted.sort((a, b) => (b.status || 'Active').localeCompare(a.status || 'Active'))
       }
 
-      return sortedProjects
+      return sorted
+    }
+
+    // All projects computed property with sorting
+    const allProjects = computed(() => {
+      return applySorting(projects.value)
+    })
+
+    // Owned projects (where user is the creator)
+    const ownedProjects = computed(() => {
+      const currentUserId = authStore.user?.user_id
+      const owned = projects.value.filter(p => p.created_by_id === currentUserId)
+      return applySorting(owned)
+    })
+
+    // Collaborating projects (where user is in collaborators array but not the creator)
+    const collaboratingProjects = computed(() => {
+      const currentUserId = authStore.user?.user_id
+      const collaborating = projects.value.filter(p =>
+        p.created_by_id !== currentUserId &&
+        p.collaborators &&
+        p.collaborators.includes(currentUserId)
+      )
+      return applySorting(collaborating)
     })
 
     // Function to toggle date sort between ascending and descending
@@ -666,6 +802,7 @@ export default {
           created_by: p.created_by, // This is still user_id
           created_by_id: p.created_by, // Store the original user_id
           due_date: p.due_date,
+          collaborators: p.collaborators || [], // Store collaborators array
           status: 'Active' // Default status since not in DB yet
         }))
 
@@ -715,6 +852,8 @@ export default {
     return {
       h,
       allProjects,
+      ownedProjects,
+      collaboratingProjects,
       isLoading,
       activeTab,
       showProjectModal,
