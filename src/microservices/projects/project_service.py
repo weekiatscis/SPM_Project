@@ -1,6 +1,8 @@
 import os
+import json
+import requests
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -29,6 +31,110 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 app = Flask(__name__)
 CORS(app)
+
+
+# Helper functions
+def get_user_email(user_id: str) -> Optional[str]:
+    """Get user email from database"""
+    try:
+        response = supabase.table("user").select("email").eq("user_id", user_id).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0].get("email")
+        return None
+    except Exception as e:
+        print(f"Failed to get user email: {e}")
+        return None
+
+def get_project_stakeholders(project_data: dict) -> List[str]:
+    """Get all stakeholders for a project (creator + collaborators)"""
+    stakeholders = set()
+
+    # Add creator
+    created_by = project_data.get("created_by")
+    if created_by:
+        stakeholders.add(created_by)
+
+    # Add collaborators
+    collaborators = project_data.get("collaborators", [])
+    if isinstance(collaborators, str):
+        try:
+            collaborators = json.loads(collaborators)
+        except:
+            collaborators = []
+
+    if isinstance(collaborators, list):
+        for collaborator_id in collaborators:
+            if collaborator_id:
+                stakeholders.add(collaborator_id)
+
+    return list(stakeholders)
+
+def notify_project_comment(project_data: dict, comment_text: str, commenter_id: str, commenter_name: str):
+    """Send notification to all stakeholders when a comment is added to a project"""
+    try:
+        # Get all stakeholders (creator + collaborators)
+        stakeholders = get_project_stakeholders(project_data)
+
+        if not stakeholders:
+            print("No stakeholders found for project comment notification")
+            return
+
+        print(f"Notifying {len(stakeholders)} stakeholder(s) about new comment on project {project_data.get('project_id')}")
+
+        for stakeholder_id in stakeholders:
+            # Skip the person who made the comment
+            if stakeholder_id == commenter_id:
+                print(f"Skipping notification for user {stakeholder_id} (they made the comment)")
+                continue
+
+            # Truncate comment for notification if too long
+            truncated_comment = comment_text[:100] + "..." if len(comment_text) > 100 else comment_text
+
+            notification_data = {
+                "user_id": stakeholder_id,
+                "title": f"New comment on project '{project_data['project_name']}'",
+                "message": f"{commenter_name} commented: {truncated_comment}",
+                "type": "project_comment",
+                "task_id": None,  # This is a project comment, not a task comment
+                "due_date": project_data.get("due_date"),
+                "priority": "Medium",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "is_read": False
+            }
+
+            # Store in-app notification (project comments don't have individual notification preferences)
+            response = supabase.table("notifications").insert(notification_data).execute()
+            if response.data:
+                print(f"✅ Sent project comment notification to stakeholder {stakeholder_id}")
+
+                # Try to send via notification service for real-time
+                try:
+                    notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                    requests.post(
+                        f"{notification_service_url}/notifications/create",
+                        json=notification_data,
+                        timeout=5,
+                        headers={'Content-Type': 'application/json'}
+                    )
+                except Exception as e:
+                    print(f"Failed to notify stakeholder via notification service: {e}")
+
+            # Send email notification (always enabled for project comments)
+            user_email = get_user_email(stakeholder_id)
+            if user_email:
+                # Use a simple email template for project comments
+                try:
+                    # Note: You may need to implement this in your email service
+                    # For now, we'll just log it
+                    print(f"📧 Would send email notification to {user_email} about project comment")
+                    # TODO: Implement email sending via email_service if needed
+                except Exception as e:
+                    print(f"Failed to send email to stakeholder: {e}")
+
+    except Exception as e:
+        print(f"Failed to notify stakeholders about project comment: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @app.route("/projects", methods=["POST"])
@@ -219,22 +325,37 @@ def add_project_comment(project_id):
     POST /projects/<project_id>/comments - Add a new comment to a project
     """
     try:
-        # Validate project exists
-        project_response = supabase.table("project").select("project_id").eq("project_id", project_id).execute()
+        # Validate project exists and get project data
+        project_response = supabase.table("project").select("*").eq("project_id", project_id).execute()
         if not project_response.data:
             return jsonify({"error": "Project not found"}), 404
 
+        project = project_response.data[0]
+
         body = request.get_json(silent=True) or {}
-        
+
         # Validate required fields
         comment_text = body.get("comment_text", "").strip()
         user_id = body.get("user_id", "").strip()
-        
+
         if not comment_text:
             return jsonify({"error": "comment_text is required"}), 400
-        
+
         if not user_id:
             return jsonify({"error": "user_id is required"}), 400
+
+        # Get user information for the commenter
+        user_response = supabase.table("user").select("first_name, last_name, name").eq("user_id", user_id).execute()
+        user_name = "Unknown User"
+        if user_response.data:
+            user = user_response.data[0]
+            # Try first_name + last_name first
+            first_name = user.get('first_name', '')
+            last_name = user.get('last_name', '')
+            user_name = f"{first_name} {last_name}".strip()
+            # Fallback to name field if first/last name is empty
+            if not user_name:
+                user_name = user.get('name', 'Unknown User')
 
         # Prepare comment data
         comment_data = {
@@ -246,12 +367,25 @@ def add_project_comment(project_id):
 
         # Insert comment
         response = supabase.table("project_comment").insert(comment_data).execute()
-        
+
         if not response.data:
             return jsonify({"error": "Failed to add comment"}), 500
 
         created_comment = response.data[0]
-        
+
+        # Send notifications to all stakeholders (creator + collaborators) except the commenter
+        try:
+            notify_project_comment(
+                project_data=project,
+                comment_text=comment_text,
+                commenter_id=user_id,
+                commenter_name=user_name
+            )
+            print(f"✅ Project comment notifications sent for project {project_id}")
+        except Exception as notification_error:
+            print(f"⚠️ Failed to send project comment notifications: {notification_error}")
+            # Don't fail the request if notifications fail
+
         return jsonify({
             "success": True,
             "comment": created_comment,

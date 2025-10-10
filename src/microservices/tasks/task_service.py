@@ -231,6 +231,16 @@ def get_subtasks_count(task_id: str) -> int:
         return 0
 
 def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False) -> Dict[str, Any]:
+    # Parse collaborators to ensure it's always an array
+    collaborators = row.get("collaborators")
+    if isinstance(collaborators, str):
+        try:
+            collaborators = json.loads(collaborators)
+        except:
+            collaborators = []
+    elif collaborators is None:
+        collaborators = []
+
     task_data = {
         "id": row.get("task_id") or row.get("id"),
         "title": row.get("title"),
@@ -240,17 +250,17 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
         "priority": row.get("priority") or "Medium",  # Default to Medium if null
         "owner_id": row.get("owner_id"),
         "project_id": row.get("project_id"),
-        "collaborators": row.get("collaborators") or [],
+        "collaborators": collaborators,  # Always an array
         "isSubtask": row.get("isSubtask", False),
         "parent_task_id": row.get("parent_task_id"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at")),
     }
-    
+
     # Optionally include subtasks count for parent tasks
     if include_subtasks_count and not task_data["isSubtask"]:
         task_data["subtasks_count"] = get_subtasks_count(task_data["id"])
-    
+
     return task_data
 
 def log_task_change(task_id: str, action: str, field: str, user_id: str,
@@ -360,6 +370,30 @@ def get_notification_preferences(user_id: str, task_id: str) -> dict:
         print(f"❌ Failed to get notification preferences: {e}")
         return {"email_enabled": True, "in_app_enabled": True}
 
+def get_task_stakeholders(task_data: dict) -> List[str]:
+    """Get all stakeholders for a task (owner + collaborators)"""
+    stakeholders = set()
+
+    # Add owner
+    owner_id = task_data.get("owner_id")
+    if owner_id:
+        stakeholders.add(owner_id)
+
+    # Add collaborators
+    collaborators = task_data.get("collaborators", [])
+    if isinstance(collaborators, str):
+        try:
+            collaborators = json.loads(collaborators)
+        except:
+            collaborators = []
+
+    if isinstance(collaborators, list):
+        for collaborator_id in collaborators:
+            if collaborator_id:
+                stakeholders.add(collaborator_id)
+
+    return list(stakeholders)
+
 def save_notification_preferences(user_id: str, task_id: str, email_enabled: bool, in_app_enabled: bool):
     """Save notification preferences for a user and task"""
     try:
@@ -392,19 +426,104 @@ def save_notification_preferences(user_id: str, task_id: str, email_enabled: boo
         traceback.print_exc()
         return False
 
-def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new_due_date: str):
-    """Send notification to collaborators when due date changes"""
+def notify_task_comment(task_data: dict, comment_text: str, commenter_id: str, commenter_name: str):
+    """Send notification to all stakeholders when a comment is added to a task"""
     try:
-        collaborators = task_data.get("collaborators", [])
-        if not collaborators or not isinstance(collaborators, list):
+        # Get all stakeholders (owner + collaborators)
+        stakeholders = get_task_stakeholders(task_data)
+
+        if not stakeholders:
+            print("No stakeholders found for comment notification")
             return
 
-        for collaborator_id in collaborators:
-            if collaborator_id == task_data.get("owner_id"):
-                continue  # Skip owner, they already get reminders
+        print(f"Notifying {len(stakeholders)} stakeholder(s) about new comment on task {task_data.get('task_id')}")
+
+        for stakeholder_id in stakeholders:
+            # Skip the person who made the comment
+            if stakeholder_id == commenter_id:
+                print(f"Skipping notification for user {stakeholder_id} (they made the comment)")
+                continue
+
+            # Truncate comment for notification if too long
+            truncated_comment = comment_text[:100] + "..." if len(comment_text) > 100 else comment_text
 
             notification_data = {
-                "user_id": collaborator_id,
+                "user_id": stakeholder_id,
+                "title": f"New comment on '{task_data['title']}'",
+                "message": f"{commenter_name} commented: {truncated_comment}",
+                "type": "task_comment",
+                "task_id": task_data["task_id"],
+                "due_date": task_data.get("due_date"),
+                "priority": task_data.get("priority", "Medium"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "is_read": False
+            }
+
+            # Check notification preferences
+            prefs = get_notification_preferences(stakeholder_id, task_data["task_id"])
+
+            # Store in-app notification if enabled
+            if prefs.get("in_app_enabled", True):
+                response = supabase.table("notifications").insert(notification_data).execute()
+                if response.data:
+                    print(f"✅ Sent comment notification to stakeholder {stakeholder_id}")
+
+                    # Try to send via notification service for real-time
+                    try:
+                        notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                        requests.post(
+                            f"{notification_service_url}/notifications/create",
+                            json=notification_data,
+                            timeout=5,
+                            headers={'Content-Type': 'application/json'}
+                        )
+                    except Exception as e:
+                        print(f"Failed to notify stakeholder via notification service: {e}")
+
+            # Send email if enabled
+            if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
+                user_email = get_user_email(stakeholder_id)
+                if user_email:
+                    try:
+                        send_notification_email(
+                            user_email=user_email,
+                            notification_type="task_comment",
+                            task_title=task_data["title"],
+                            comment_text=truncated_comment,
+                            commenter_name=commenter_name,
+                            task_id=task_data["task_id"],
+                            due_date=task_data.get("due_date"),
+                            priority=task_data.get("priority", "Medium")
+                        )
+                        print(f"📧 Email notification sent to stakeholder {user_email}")
+                    except Exception as e:
+                        print(f"Failed to send email to stakeholder: {e}")
+
+    except Exception as e:
+        print(f"Failed to notify stakeholders about comment: {e}")
+        import traceback
+        traceback.print_exc()
+
+def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new_due_date: str, updated_by: str = None):
+    """Send notification to all stakeholders (owner + collaborators) when due date changes"""
+    try:
+        # Get all stakeholders (owner + collaborators)
+        stakeholders = get_task_stakeholders(task_data)
+
+        if not stakeholders:
+            print("No stakeholders found for due date change notification")
+            return
+
+        print(f"Notifying {len(stakeholders)} stakeholder(s) about due date change for task {task_data.get('task_id')}")
+
+        for stakeholder_id in stakeholders:
+            # Skip the person who made the change
+            if updated_by and stakeholder_id == updated_by:
+                print(f"Skipping notification for user {stakeholder_id} (they made the change)")
+                continue
+
+            notification_data = {
+                "user_id": stakeholder_id,
                 "title": "Task Due Date Changed",
                 "message": f"The due date for task '{task_data['title']}' has been changed from {old_due_date} to {new_due_date}",
                 "type": "due_date_change",
@@ -415,44 +534,50 @@ def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new
                 "is_read": False
             }
 
-            # Store notification
-            response = supabase.table("notifications").insert(notification_data).execute()
-            if response.data:
-                print(f"Sent due date change notification to collaborator {collaborator_id}")
+            # Check notification preferences
+            prefs = get_notification_preferences(stakeholder_id, task_data["task_id"])
 
-                # Try to send via notification service for real-time
-                try:
-                    notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                    requests.post(
-                        f"{notification_service_url}/notifications/create",
-                        json=notification_data,
-                        timeout=5,
-                        headers={'Content-Type': 'application/json'}
-                    )
-                except Exception as e:
-                    print(f"Failed to notify collaborator via notification service: {e}")
+            # Store in-app notification if enabled
+            if prefs.get("in_app_enabled", True):
+                response = supabase.table("notifications").insert(notification_data).execute()
+                if response.data:
+                    print(f"✅ Sent due date change notification to stakeholder {stakeholder_id}")
 
-                # Send email if enabled
-                prefs = get_notification_preferences(collaborator_id, task_data["task_id"])
-                if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
-                    user_email = get_user_email(collaborator_id)
-                    if user_email:
-                        try:
-                            send_notification_email(
-                                user_email=user_email,
-                                notification_type="due_date_change",
-                                task_title=task_data["title"],
-                                due_date=new_due_date,
-                                priority=task_data.get("priority", "Medium"),
-                                task_id=task_data["task_id"],
-                                old_due_date=old_due_date,
-                                new_due_date=new_due_date
-                            )
-                            print(f"Email notification sent to collaborator {user_email}")
-                        except Exception as e:
-                            print(f"Failed to send email to collaborator: {e}")
+                    # Try to send via notification service for real-time
+                    try:
+                        notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                        requests.post(
+                            f"{notification_service_url}/notifications/create",
+                            json=notification_data,
+                            timeout=5,
+                            headers={'Content-Type': 'application/json'}
+                        )
+                    except Exception as e:
+                        print(f"Failed to notify stakeholder via notification service: {e}")
+
+            # Send email if enabled
+            if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
+                user_email = get_user_email(stakeholder_id)
+                if user_email:
+                    try:
+                        send_notification_email(
+                            user_email=user_email,
+                            notification_type="due_date_change",
+                            task_title=task_data["title"],
+                            due_date=new_due_date,
+                            priority=task_data.get("priority", "Medium"),
+                            task_id=task_data["task_id"],
+                            old_due_date=old_due_date,
+                            new_due_date=new_due_date
+                        )
+                        print(f"📧 Email notification sent to stakeholder {user_email}")
+                    except Exception as e:
+                        print(f"Failed to send email to stakeholder: {e}")
+
     except Exception as e:
-        print(f"Failed to notify collaborators: {e}")
+        print(f"Failed to notify stakeholders: {e}")
+        import traceback
+        traceback.print_exc()
 
 def check_and_send_due_date_notifications(task_data: dict):
     """Check if task needs due date notifications and send them"""
@@ -1197,9 +1322,9 @@ def update_task(task_id: str):
             old_due_date = complete_existing_task.get("due_date")
             new_due_date = update_data.get("due_date")
 
-            # Notify collaborators about due date change
+            # Notify all stakeholders about due date change
             if old_due_date and old_due_date != new_due_date:
-                notify_collaborators_due_date_change(response.data[0], old_due_date, new_due_date)
+                notify_collaborators_due_date_change(response.data[0], old_due_date, new_due_date, updated_by=actor_id)
 
             # Delete old notifications when due date changes
             delete_old_notifications(task_id)
@@ -1675,7 +1800,20 @@ def add_task_comment(task_id: str):
         except Exception as log_error:
             # Don't fail the entire request if logging fails
             pass
-        
+
+        # Send notifications to all stakeholders (owner + collaborators) except the commenter
+        try:
+            notify_task_comment(
+                task_data=task,
+                comment_text=comment_data.comment_text,
+                commenter_id=user_id,
+                commenter_name=user_name
+            )
+            print(f"✅ Task comment notifications sent for task {task_id}")
+        except Exception as notification_error:
+            print(f"⚠️ Failed to send comment notifications: {notification_error}")
+            # Don't fail the request if notifications fail
+
         response_data = {
             "success": True,
             "comment": {
@@ -1687,7 +1825,7 @@ def add_task_comment(task_id: str):
                 "updated_at": comment.get("updated_at")
             }
         }
-        
+
         return jsonify(response_data), 201
         
     except ValidationError as e:
