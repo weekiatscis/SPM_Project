@@ -77,6 +77,7 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "email": row.get("email"),
         "role": row.get("role"),
         "department": row.get("department"),
+        "superior": row.get("superior"),
         "is_active": row.get("is_active"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at")
@@ -121,10 +122,183 @@ def get_current_user():
         return jsonify({"error": str(exc)}), 500
 
 
-@app.get("/health")
-def health_check():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy"})
+@app.get("/users")
+def get_all_users():
+    """Get all active users (for admin purposes or fallback)"""
+    try:
+        response = supabase.table("user").select(
+            "user_id, name, email, role, department, superior"
+        ).eq("is_active", True).order("name").execute()
+        
+        users = []
+        for user in response.data or []:
+            users.append({
+                "user_id": user.get("user_id"),
+                "name": user.get("name"),
+                "email": user.get("email"),
+                "role": user.get("role"),
+                "department": user.get("department"),
+                "superior": user.get("superior")
+            })
+        
+        return jsonify({"users": users}), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch users: {str(e)}"}), 500
+
+
+@app.get("/users/<user_id>/possible-superiors")
+def get_possible_superiors(user_id: str):
+    """Get possible superiors for a user based on role hierarchy and department"""
+    try:
+        # First get the user's info
+        user_response = supabase.table("user").select("*").eq("user_id", user_id).execute()
+        
+        if not user_response.data:
+            return jsonify({"error": "User not found"}), 404
+        
+        current_user = user_response.data[0]
+        user_role = current_user.get("role")
+        user_department = current_user.get("department")
+        
+        # Define role hierarchy (what roles can be superiors to what roles)
+        superior_roles = {
+            "Staff": ["Manager", "Director"],
+            "Manager": ["Director"],
+            "Director": [],  # Directors typically don't have superiors
+            "Hr": ["Director"]  # HR reports to Director
+        }
+        
+        possible_superior_roles = superior_roles.get(user_role, [])
+        
+        if not possible_superior_roles:
+            return jsonify({"possible_superiors": []}), 200
+        
+        # Get users with superior roles in the same department
+        superiors_response = supabase.table("user").select(
+            "user_id, name, email, role, department"
+        ).in_("role", possible_superior_roles).eq("department", user_department).eq("is_active", True).execute()
+        
+        superiors = []
+        for user in superiors_response.data or []:
+            # Don't include the user themselves
+            if user.get("user_id") != user_id:
+                superiors.append({
+                    "user_id": user.get("user_id"),
+                    "name": user.get("name"),
+                    "email": user.get("email"),
+                    "role": user.get("role"),
+                    "department": user.get("department")
+                })
+        
+        return jsonify({"possible_superiors": superiors}), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch possible superiors: {str(e)}"}), 500
+
+
+@app.get("/users/departments/<department>")
+def get_users_by_department(department: str):
+    """Get all active users in a specific department"""
+    try:
+        response = supabase.table("user").select(
+            "user_id, name, email, role, department, superior"
+        ).eq("department", department).eq("is_active", True).order("role", desc=True).order("name").execute()
+        
+        users = []
+        for user in response.data or []:
+            users.append({
+                "user_id": user.get("user_id"),
+                "name": user.get("name"),
+                "email": user.get("email"),
+                "role": user.get("role"),
+                "department": user.get("department"),
+                "superior": user.get("superior")
+            })
+        
+        return jsonify({"users": users, "department": department}), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch users for department {department}: {str(e)}"}), 500
+
+
+@app.get("/users/<user_id>/subordinates")
+def get_user_subordinates(user_id: str):
+    """Get subordinates for a Manager or Director user"""
+    try:
+        # First get the current user's info to determine their role and department
+        user_response = supabase.table("user").select("*").eq("user_id", user_id).execute()
+        
+        if not user_response.data:
+            return jsonify({"error": "User not found"}), 404
+        
+        current_user = user_response.data[0]
+        user_role = current_user.get("role")
+        user_department = current_user.get("department")
+        
+        # Only Manager and Director can have subordinates
+        if user_role not in ["Manager", "Director"]:
+            return jsonify({"subordinates": []}), 200
+        
+        # Define role hierarchy
+        role_hierarchy = {
+            "Director": ["Manager", "Staff"],
+            "Manager": ["Staff"]
+        }
+        
+        subordinate_roles = role_hierarchy.get(user_role, [])
+        
+        if not subordinate_roles:
+            return jsonify({"subordinates": []}), 200
+        
+        # Get users who have the current user as their superior
+        # This provides a more accurate hierarchy than just role + department matching
+        direct_subordinates_response = supabase.table("user").select(
+            "user_id, name, email, role, department, superior"
+        ).eq("superior", user_id).eq("is_active", True).execute()
+        
+        # Also get users with subordinate roles in the same department as fallback
+        # (for cases where superior relationships haven't been fully established)
+        role_based_subordinates_response = supabase.table("user").select(
+            "user_id, name, email, role, department, superior"
+        ).in_("role", subordinate_roles).eq("department", user_department).eq("is_active", True).execute()
+        
+        # Combine both approaches: prioritize direct superior relationships, 
+        # but include role-based matches as fallback
+        subordinates_dict = {}
+        
+        # Add direct subordinates (highest priority)
+        for user in direct_subordinates_response.data or []:
+            subordinates_dict[user.get("user_id")] = {
+                "user_id": user.get("user_id"),
+                "name": user.get("name"),
+                "email": user.get("email"),
+                "role": user.get("role"),
+                "department": user.get("department"),
+                "superior": user.get("superior"),
+                "relationship_type": "direct"
+            }
+        
+        # Add role-based subordinates if they don't already exist
+        for user in role_based_subordinates_response.data or []:
+            user_id_key = user.get("user_id")
+            if user_id_key not in subordinates_dict:
+                subordinates_dict[user_id_key] = {
+                    "user_id": user.get("user_id"),
+                    "name": user.get("name"),
+                    "email": user.get("email"),
+                    "role": user.get("role"),
+                    "department": user.get("department"),
+                    "superior": user.get("superior"),
+                    "relationship_type": "role_based"
+                }
+        
+        subordinates = list(subordinates_dict.values())
+        
+        return jsonify({"subordinates": subordinates}), 200
+        
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch subordinates: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

@@ -1,13 +1,14 @@
 
 <template>
-  <div v-if="isOpen" class="fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-      <!-- Background overlay -->
-      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="$emit('close')"></div>
+  <teleport to="body">
+    <div v-if="isOpen" class="fixed inset-0 overflow-y-auto" style="z-index: 10000;">
+      <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <!-- Background overlay -->
+        <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" style="z-index: 10000;" @click="$emit('close')"></div>
 
-      <!-- Modal panel -->
-      <div
-        class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full">
+        <!-- Modal panel -->
+        <div
+          class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl sm:w-full relative" style="z-index: 10001;">
         <!-- Header -->
         <div class="bg-white px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between min-h-[2.5rem]">
@@ -51,6 +52,110 @@
               <label class="block text-sm font-semibold text-gray-700 mb-1">Priority</label>
               <p class="text-gray-900 text-xs capitalize">{{ task.priority || 'Medium' }}</p>
             </div>
+          </div>
+
+          <!-- Collaborators Section -->
+          <div v-if="collaborators.length > 0" class="mb-6">
+            <label class="block text-sm font-semibold text-gray-700 mb-3">Collaborators</label>
+            <div class="space-y-2">
+              <div v-if="isLoadingCollaborators" class="text-center py-2">
+                <div class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                <p class="text-xs text-gray-500 mt-1">Loading collaborators...</p>
+              </div>
+              <div v-else-if="collaborators.length === 0" class="text-center py-2">
+                <p class="text-xs text-gray-500">No collaborators assigned to this task.</p>
+              </div>
+              <div v-else class="grid grid-cols-2 gap-2">
+                <div 
+                  v-for="collaborator in collaborators" 
+                  :key="collaborator.user_id"
+                  class="flex items-center space-x-2 bg-blue-50 px-3 py-2 rounded-md border border-blue-200"
+                >
+                  <div class="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                    <span class="text-xs font-medium text-white">
+                      {{ getInitials(collaborator.name) }}
+                    </span>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-blue-700 truncate">{{ collaborator.name }}</p>
+                    <p class="text-xs text-blue-600">{{ collaborator.role }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Subtasks Section -->
+          <div v-if="task.isSubtask || subtasks.length > 0" class="mb-6">
+            <!-- Show parent task if this is a subtask -->
+            <div v-if="task.isSubtask && parentTask" class="mb-4">
+              <label class="block text-sm font-semibold text-gray-700 mb-2">Parent Task</label>
+              <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <div class="flex items-center justify-between">
+                  <div class="flex-1">
+                    <h4 class="text-sm font-medium text-gray-900">{{ parentTask.title }}</h4>
+                    <p class="text-xs text-gray-600 mt-1">{{ parentTask.description || 'No description' }}</p>
+                  </div>
+                  <div class="ml-4">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                          :class="getStatusBadgeClass(parentTask.status)">
+                      {{ parentTask.status }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Show subtasks if this task has any -->
+            <div v-if="!task.isSubtask">
+              <label class="block text-sm font-semibold text-gray-700 mb-3">Subtasks</label>
+              <div class="space-y-2">
+                <div v-if="isLoadingSubtasks" class="text-center py-2">
+                  <div class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                  <p class="text-xs text-gray-500 mt-1">Loading subtasks...</p>
+                </div>
+                <div v-else-if="subtasks.length === 0" class="text-center py-2">
+                  <p class="text-xs text-gray-500">No subtasks created for this task.</p>
+                </div>
+                <div v-else class="space-y-2">
+                  <div 
+                    v-for="subtask in subtasks" 
+                    :key="subtask.id"
+                    class="bg-gray-50 border border-gray-200 rounded-lg p-3 hover:bg-gray-100 transition-colors"
+                  >
+                    <div class="flex items-center justify-between">
+                      <div class="flex-1">
+                        <h4 class="text-sm font-medium text-gray-900">{{ subtask.title }}</h4>
+                        <p class="text-xs text-gray-600 mt-1">{{ subtask.description || 'No description' }}</p>
+                        <div class="flex items-center space-x-4 mt-2">
+                          <span class="text-xs text-gray-500">
+                            Due: {{ formatDate(subtask.dueDate) }}
+                          </span>
+                          <span class="text-xs text-gray-500">
+                            Priority: {{ subtask.priority || 'Medium' }}
+                          </span>
+                        </div>
+                      </div>
+                      <div class="ml-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              :class="getStatusBadgeClass(subtask.status)">
+                          {{ subtask.status }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Comments Section -->
+          <div class="mb-6">
+            <TaskComments 
+              :task-id="task.id" 
+              :task="task"
+              @comments-updated="handleCommentsUpdated"
+            />
           </div>
 
           <!-- Audit Log Section -->
@@ -110,6 +215,7 @@
               @click="deleteTask"
               :disabled="isDeleting"
               class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              :title="!task.isSubtask && subtasks.length > 0 ? `This will also delete ${subtasks.length} subtask(s)` : 'Delete this task'"
             >
               <svg v-if="!isDeleting" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
@@ -118,7 +224,7 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              {{ isDeleting ? 'Deleting...' : 'Delete Task' }}
+              {{ isDeleting ? 'Deleting...' : getDeleteButtonText() }}
             </button>
           </div>
           <button
@@ -128,17 +234,22 @@
             Close
           </button>
         </div>
+        </div>
       </div>
     </div>
-  </div>
+  </teleport>
 </template>
 
 <script>
 import { ref, onMounted, watch, nextTick } from 'vue'
+import TaskComments from './TaskComments.vue'
 // Icons will be inline SVG instead of components
 
 export default {
   name: 'TaskDetailModal',
+  components: {
+    TaskComments
+  },
   props: {
     task: {
       type: Object,
@@ -155,6 +266,12 @@ export default {
     const auditLogs = ref([])
     const isLoadingLogs = ref(false)
     const userCache = ref({})
+    const collaborators = ref([])
+    const isLoadingCollaborators = ref(false)
+    const subtasks = ref([])
+    const isLoadingSubtasks = ref(false)
+    const parentTask = ref(null)
+    const isLoadingParentTask = ref(false)
 
     // Fetch audit logs when modal opens or task changes
     const fetchAuditLogs = async () => {
@@ -188,24 +305,125 @@ export default {
       }
     }
 
+    // Fetch collaborators details
+    const fetchCollaborators = async () => {
+      if (!props.task?.collaborators || props.task.collaborators.length === 0) {
+        collaborators.value = []
+        return
+      }
+      
+      isLoadingCollaborators.value = true
+      try {
+        const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
+        const collaboratorPromises = props.task.collaborators.map(async (userId) => {
+          try {
+            // Try to get user details from the users service
+            const response = await fetch(`${userServiceUrl}/users`)
+            if (response.ok) {
+              const result = await response.json()
+              const user = result.users.find(u => u.user_id === userId)
+              return user || { user_id: userId, name: `User ${userId.slice(0, 8)}`, role: 'Unknown' }
+            }
+            return { user_id: userId, name: `User ${userId.slice(0, 8)}`, role: 'Unknown' }
+          } catch (error) {
+            console.error(`Failed to fetch collaborator ${userId}:`, error)
+            return { user_id: userId, name: `User ${userId.slice(0, 8)}`, role: 'Unknown' }
+          }
+        })
+        
+        const results = await Promise.all(collaboratorPromises)
+        collaborators.value = results.filter(Boolean) // Remove null values
+        
+      } catch (error) {
+        console.error('Failed to fetch collaborators:', error)
+        collaborators.value = []
+      } finally {
+        isLoadingCollaborators.value = false
+      }
+    }
+
+    // Fetch subtasks
+    const fetchSubtasks = async () => {
+      if (!props.task?.id || props.task.isSubtask) {
+        subtasks.value = []
+        return
+      }
+      
+      isLoadingSubtasks.value = true
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}/subtasks`)
+        
+        if (response.ok) {
+          const result = await response.json()
+          subtasks.value = result.subtasks || []
+        } else {
+          subtasks.value = []
+        }
+        
+      } catch (error) {
+        console.error('Failed to fetch subtasks:', error)
+        subtasks.value = []
+      } finally {
+        isLoadingSubtasks.value = false
+      }
+    }
+
+    // Fetch parent task if this is a subtask
+    const fetchParentTask = async () => {
+      if (!props.task?.parent_task_id) {
+        parentTask.value = null
+        return
+      }
+      
+      isLoadingParentTask.value = true
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/tasks/${props.task.parent_task_id}`)
+        
+        if (response.ok) {
+          const result = await response.json()
+          parentTask.value = result.task
+        } else {
+          parentTask.value = null
+        }
+        
+      } catch (error) {
+        console.error('Failed to fetch parent task:', error)
+        parentTask.value = null
+      } finally {
+        isLoadingParentTask.value = false
+      }
+    }
+
+    // Fetch all related data
+    const fetchAllData = async () => {
+      await Promise.all([
+        fetchAuditLogs(),
+        fetchCollaborators(),
+        fetchSubtasks(),
+        fetchParentTask()
+      ])
+    }
+
     // Fetch logs when component mounts and modal is open
     onMounted(() => {
       if (props.isOpen && props.task?.id) {
-        nextTick(() => fetchAuditLogs())
+        nextTick(() => fetchAllData())
       }
     })
 
-    // Watch for modal opening to fetch logs
+    // Watch for modal opening to fetch data
     watch(() => props.isOpen, (isOpen) => {
       if (isOpen && props.task?.id) {
-        nextTick(() => fetchAuditLogs())
+        nextTick(() => fetchAllData())
       }
     })
 
-    // Watch for task changes to refetch logs
+    // Watch for task changes to refetch data
     watch(() => props.task?.id, (taskId) => {
       if (props.isOpen && taskId) {
-        nextTick(() => fetchAuditLogs())
+        nextTick(() => fetchAllData())
       }
     })
 
@@ -281,6 +499,17 @@ export default {
     const formatLogMessage = (log) => {
       if (log.action === 'create') {
         return 'created task.'
+      } else if (log.action === 'assign_task') {
+        // Handle task assignment: "assigned task to [User Name]"
+        const assigneeId = log.new_value?.assignee
+        if (assigneeId) {
+          const assigneeName = getUserName(assigneeId)
+          return `assigned task to ${assigneeName}.`
+        }
+        return 'assigned task.'
+      } else if (log.action === 'auto_add_collaborator') {
+        // Handle auto-collaboration: "is added as collaborator automatically"
+        return 'is added as collaborator automatically.'
       } else if (log.action === 'update') {
         const fieldName = log.field
         
@@ -363,6 +592,28 @@ export default {
       return texts[status] || 'Unassigned'
     }
 
+    const getStatusBadgeClass = (status) => {
+      const classes = {
+        'Unassigned': 'bg-gray-100 text-gray-800',
+        'Ongoing': 'bg-blue-100 text-blue-800',
+        'Under Review': 'bg-yellow-100 text-yellow-800',
+        'Completed': 'bg-green-100 text-green-800'
+      }
+      return classes[status] || 'bg-gray-100 text-gray-800'
+    }
+
+    const getInitials = (name) => {
+      if (!name) return '??'
+      return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
+    }
+
+    const getDeleteButtonText = () => {
+      if (!props.task.isSubtask && subtasks.value.length > 0) {
+        return `Delete Task + ${subtasks.value.length} Subtask${subtasks.value.length > 1 ? 's' : ''}`
+      }
+      return 'Delete Task'
+    }
+
     const getPriorityColor = (priority) => {
       const colors = {
         low: 'bg-green-400',
@@ -377,8 +628,44 @@ export default {
     }
 
     const deleteTask = async () => {
-      if (!confirm(`Are you sure you want to delete "${props.task.title}"? This action cannot be undone.`)) {
-        return
+      try {
+        // First, get the delete preview to show what will be deleted
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const previewResponse = await fetch(`${taskServiceUrl}/tasks/${props.task.id}/delete-preview`)
+        
+        if (previewResponse.ok) {
+          const previewData = await previewResponse.json()
+          
+          // Create confirmation message based on what will be deleted
+          let confirmMessage = `Are you sure you want to delete "${props.task.title}"?`
+          
+          if (previewData.has_subtasks) {
+            confirmMessage += `\n\nThis will also delete ${previewData.subtasks_count} subtask(s):`
+            previewData.tasks_to_delete.forEach(task => {
+              if (task.type === 'subtask') {
+                confirmMessage += `\n• ${task.title}`
+              }
+            })
+            confirmMessage += '\n\nThis action cannot be undone.'
+          } else {
+            confirmMessage += '\n\nThis action cannot be undone.'
+          }
+          
+          if (!confirm(confirmMessage)) {
+            return
+          }
+        } else {
+          // Fallback if preview fails
+          if (!confirm(`Are you sure you want to delete "${props.task.title}"? This action cannot be undone.`)) {
+            return
+          }
+        }
+      } catch (error) {
+        console.error('Failed to get delete preview:', error)
+        // Fallback confirmation
+        if (!confirm(`Are you sure you want to delete "${props.task.title}"? This action cannot be undone.`)) {
+          return
+        }
       }
 
       isDeleting.value = true
@@ -396,6 +683,15 @@ export default {
           throw new Error(errorData.error || `HTTP ${response.status}`)
         }
 
+        const result = await response.json()
+        
+        // Show success message with details of what was deleted
+        if (result.total_deleted > 1) {
+          console.log(`Successfully deleted ${result.total_deleted} tasks (1 main task + ${result.total_deleted - 1} subtasks)`)
+        } else {
+          console.log('Task deleted successfully')
+        }
+
         emit('delete', props.task)
       } catch (error) {
         console.error('Failed to delete task:', error)
@@ -405,20 +701,35 @@ export default {
       }
     }
 
+    const handleCommentsUpdated = (commentCount) => {
+      // This method can be used to update comment count in the UI if needed
+      console.log(`Task ${props.task.id} now has ${commentCount} comments`)
+    }
+
     return {
       isDeleting,
       auditLogs,
       isLoadingLogs,
+      collaborators,
+      isLoadingCollaborators,
+      subtasks,
+      isLoadingSubtasks,
+      parentTask,
+      isLoadingParentTask,
       formatDate,
       formatLogDate,
       formatActivityDate,
       getStatusColor,
       getStatusText,
+      getStatusBadgeClass,
       getPriorityColor,
       getUserName,
+      getInitials,
+      getDeleteButtonText,
       formatLogMessage,
       editTask,
-      deleteTask
+      deleteTask,
+      handleCommentsUpdated
     }
   }
 }

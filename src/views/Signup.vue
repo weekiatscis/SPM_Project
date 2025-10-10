@@ -87,6 +87,7 @@
             placeholder="Select your role"
             size="large"
             :disabled="isLoading"
+            @change="onRoleChange"
           >
             <a-select-option value="Staff">Staff</a-select-option>
             <a-select-option value="Manager">Manager</a-select-option>
@@ -96,21 +97,54 @@
         </a-form-item>
 
         <a-form-item 
-          label="Department (Optional)"
+          label="Department"
           :validate-status="errorFields.department ? 'error' : ''"
           :help="errorFields.department"
         >
-          <a-input
+          <a-select
             v-model:value="form.department"
-            type="text"
-            placeholder="Enter your department"
+            placeholder="Select your department"
             size="large"
             :disabled="isLoading"
+            @change="onDepartmentChange"
           >
-            <template #prefix>
-              <BankOutlined />
-            </template>
-          </a-input>
+            <a-select-option value="Sales">Sales</a-select-option>
+            <a-select-option value="Consultancy">Consultancy</a-select-option>
+            <a-select-option value="Systems solutioning">Systems solutioning</a-select-option>
+            <a-select-option value="Engineering operations">Engineering operations</a-select-option>
+            <a-select-option value="HR and admin">HR and admin</a-select-option>
+            <a-select-option value="Finance">Finance</a-select-option>
+            <a-select-option value="IT">IT</a-select-option>
+          </a-select>
+        </a-form-item>
+
+        <a-form-item 
+          label="Superior"
+          :validate-status="errorFields.superior ? 'error' : ''"
+          :help="errorFields.superior"
+        >
+          <a-select
+            v-model:value="form.superior"
+            placeholder="Select your superior"
+            size="large"
+            :disabled="isLoading || !form.department || isLoadingSuperiors"
+            :loading="isLoadingSuperiors"
+          >
+            <a-select-option value="">No superior</a-select-option>
+            <a-select-option 
+              v-for="superior in availableSuperiors" 
+              :key="superior.user_id" 
+              :value="superior.user_id"
+            >
+              {{ superior.name }} ({{ superior.role }})
+            </a-select-option>
+          </a-select>
+          <div v-if="!form.department" class="mt-1 text-sm text-gray-500">
+            Please select a department first
+          </div>
+          <div v-if="form.department && availableSuperiors.length === 0 && !isLoadingSuperiors" class="mt-1 text-sm text-gray-500">
+            No managers found in {{ form.department }} department
+          </div>
         </a-form-item>
         
         <a-form-item>
@@ -160,17 +194,21 @@ export default {
       password: '',
       confirmPassword: '',
       role: '',
-      department: ''
+      department: '',
+      superior: ''
     })
     
     const isLoading = ref(false)
+    const isLoadingSuperiors = ref(false)
+    const availableSuperiors = ref([])
     const errorFields = ref({
       name: '',
       email: '',
       password: '',
       confirmPassword: '',
       role: '',
-      department: ''
+      department: '',
+      superior: ''
     })
     
     const validateForm = () => {
@@ -181,7 +219,8 @@ export default {
         password: '',
         confirmPassword: '',
         role: '',
-        department: ''
+        department: '',
+        superior: ''
       }
       
       let isValid = true
@@ -231,7 +270,101 @@ export default {
         isValid = false
       }
       
+      // Department validation
+      if (!form.department) {
+        errorFields.value.department = 'Please select your department'
+        isValid = false
+      }
+      
+      // Superior validation (optional but should make sense if provided)
+      if (form.superior) {
+        const selectedSuperior = availableSuperiors.value.find(s => s.user_id === form.superior)
+        if (selectedSuperior) {
+          // Check role hierarchy logic
+          if (form.role === 'Director' && selectedSuperior.role !== 'Director') {
+            errorFields.value.superior = 'Directors typically report to other Directors or have no superior'
+            isValid = false
+          } else if (form.role === 'Manager' && selectedSuperior.role === 'Staff') {
+            errorFields.value.superior = 'Managers cannot report to Staff members'
+            isValid = false
+          } else if (form.role === 'Staff' && selectedSuperior.role === 'Staff') {
+            errorFields.value.superior = 'Staff members cannot report to other Staff members'
+            isValid = false
+          }
+        }
+      }
+      
       return isValid
+    }
+    
+    // Fetch managers from the selected department
+    const fetchDepartmentSuperiors = async (department) => {
+      if (!department) {
+        availableSuperiors.value = []
+        return
+      }
+
+      isLoadingSuperiors.value = true
+      try {
+        const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
+        const response = await fetch(`${userServiceUrl}/users/departments/${encodeURIComponent(department)}`)
+        
+        if (response.ok) {
+          const data = await response.json()
+          let potentialSuperiors = data.users || []
+          
+          // Filter based on role hierarchy
+          if (form.role === 'Staff') {
+            // Staff can report to Managers or Directors
+            potentialSuperiors = potentialSuperiors.filter(user => 
+              user.role === 'Manager' || user.role === 'Director'
+            )
+          } else if (form.role === 'Manager') {
+            // Managers can report to Directors
+            potentialSuperiors = potentialSuperiors.filter(user => 
+              user.role === 'Director'
+            )
+          } else if (form.role === 'Hr') {
+            // HR can report to Directors
+            potentialSuperiors = potentialSuperiors.filter(user => 
+              user.role === 'Director'
+            )
+          } else if (form.role === 'Director') {
+            // Directors can report to other Directors (rare) or no one
+            potentialSuperiors = potentialSuperiors.filter(user => 
+              user.role === 'Director'
+            )
+          }
+          
+          availableSuperiors.value = potentialSuperiors
+        } else {
+          console.error('Failed to fetch department users:', response.status)
+          availableSuperiors.value = []
+        }
+      } catch (error) {
+        console.error('Error fetching department users:', error)
+        availableSuperiors.value = []
+      } finally {
+        isLoadingSuperiors.value = false
+      }
+    }
+
+    // Handle department change
+    const onDepartmentChange = (department) => {
+      // Reset superior when department changes
+      form.superior = ''
+      // Fetch new superiors for the selected department
+      fetchDepartmentSuperiors(department)
+    }
+
+    // Handle role change
+    const onRoleChange = (role) => {
+      // Reset superior when role changes as the available superiors might change
+      form.superior = ''
+      // Re-fetch superiors if department is already selected
+      if (form.department) {
+        fetchDepartmentSuperiors(form.department)
+      }
     }
     
     const handleSignup = async (e) => {
@@ -254,7 +387,8 @@ export default {
             email: form.email.trim().toLowerCase(),
             password: form.password,
             role: form.role,
-            department: form.department.trim() || undefined
+            department: form.department.trim() || undefined,
+            superior: form.superior || null
           }),
         })
         
@@ -286,8 +420,12 @@ export default {
     return {
       form,
       isLoading,
+      isLoadingSuperiors,
+      availableSuperiors,
       errorFields,
-      handleSignup
+      handleSignup,
+      onDepartmentChange,
+      onRoleChange
     }
   }
 }
