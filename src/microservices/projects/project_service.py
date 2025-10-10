@@ -39,11 +39,16 @@ def create_project():
         if not body.get("project_name", "").strip():
             return jsonify({"error": "project_name is required"}), 400
 
+        # Validate collaborators (now mandatory)
+        collaborators = body.get("collaborators", [])
+        print(f"DEBUG: Received collaborators from request: {collaborators}")
+
+        if not collaborators or not isinstance(collaborators, list) or len(collaborators) == 0:
+            return jsonify({"error": "At least one collaborator is required"}), 400
+
         # Prepare project data according to your Supabase schema
         # Fields: project_id (auto), created_at (auto), created_by, project_description, project_name, due_date, collaborators (jsonb)
         # Use owner_id as created_by to identify user ownership
-        collaborators = body.get("collaborators", [])
-        print(f"DEBUG: Received collaborators from request: {collaborators}")
 
         project_data = {
             "project_name": body.get("project_name").strip(),
@@ -85,25 +90,37 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
 def get_projects():
     try:
         limit_param = request.args.get("limit", default=None, type=int)
-        created_by = request.args.get("created_by", default=None, type=str)
+        user_id = request.args.get("created_by", default=None, type=str)  # Renamed for clarity
         project_id = request.args.get("project_id", default=None, type=str)
 
         query = (
             supabase
             .table("project")
-            .select("project_id,project_name,project_description,created_at,created_by,due_date")
+            .select("project_id,project_name,project_description,created_at,created_by,due_date,collaborators")
             .order("created_at", desc=True)
         )
 
-        if limit_param:
-            query = query.limit(limit_param)
-        if created_by:
-            query = query.eq("created_by", created_by)
         if project_id:
             query = query.eq("project_id", project_id)
 
         response = query.execute()
         rows: List[Dict[str, Any]] = response.data or []
+
+        # Filter by user_id: include projects where user is creator OR collaborator
+        if user_id:
+            filtered_rows = []
+            for row in rows:
+                # Check if user is the creator
+                if row.get("created_by") == user_id:
+                    filtered_rows.append(row)
+                # Check if user is in collaborators array
+                elif user_id in (row.get("collaborators") or []):
+                    filtered_rows.append(row)
+            rows = filtered_rows
+
+        if limit_param:
+            rows = rows[:limit_param]
+
         projects = [map_db_row_to_api(r) for r in rows]
         return jsonify({"projects": projects})
 

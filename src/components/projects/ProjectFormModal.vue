@@ -115,7 +115,12 @@
         </a-form-item>
 
         <!-- Collaborators Section -->
-        <a-form-item label="Add Collaborators (Optional)">
+        <a-form-item
+          label="Add Collaborators"
+          :validate-status="errors.collaborators ? 'error' : ''"
+          :help="errors.collaborators"
+          required
+        >
           <div class="collaborators-section">
             <!-- Filter and Search Controls -->
             <div class="filter-controls">
@@ -271,7 +276,8 @@ export default {
 
     const errors = ref({
       project_name: '',
-      due_date: ''
+      due_date: '',
+      collaborators: ''
     })
 
     const isLoading = ref(false)
@@ -437,7 +443,8 @@ export default {
         // Reset errors
         errors.value = {
           project_name: '',
-          due_date: ''
+          due_date: '',
+          collaborators: ''
         }
       }
     }, { immediate: true })
@@ -446,7 +453,8 @@ export default {
       // Reset errors
       errors.value = {
         project_name: '',
-        due_date: ''
+        due_date: '',
+        collaborators: ''
       }
 
       // Validate required fields
@@ -459,6 +467,11 @@ export default {
 
       if (!form.value.due_date) {
         errors.value.due_date = 'Due date is required'
+        hasErrors = true
+      }
+
+      if (selectedCollaborators.value.length === 0) {
+        errors.value.collaborators = 'At least one collaborator is required'
         hasErrors = true
       }
 
@@ -549,7 +562,8 @@ export default {
         // Reset errors
         errors.value = {
           project_name: '',
-          due_date: ''
+          due_date: '',
+          collaborators: ''
         }
 
         // Emit success with the created project data
