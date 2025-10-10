@@ -753,17 +753,115 @@ export default {
 <style scoped>
 /* Custom card grid spacing */
 :deep(.ant-col) {
-  margin-bottom: 16px;
+  margin-bottom: 24px;
 }
 
 /* Enhanced card hover effects */
 :deep(.ant-card) {
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(139, 92, 246, 0.1);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.05);
 }
 
 :deep(.ant-card:hover) {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 24px rgba(139, 92, 246, 0.15);
+  transform: translateY(-4px);
+  border-color: rgba(139, 92, 246, 0.2);
+}
+
+:deep(.ant-card-head) {
+  border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+  background: transparent;
+  font-weight: 600;
+}
+
+:deep(.ant-card-head-title) {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1F2937;
+}
+
+:deep(.ant-tabs) {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 12px;
+  padding: 4px;
+  border: 1px solid rgba(139, 92, 246, 0.1);
+}
+
+:deep(.ant-tabs-nav) {
+  margin: 0 !important;
+}
+
+:deep(.ant-tabs-tab) {
+  padding: 10px 24px;
+  border-radius: 8px;
+  margin: 0 4px !important;
+  color: #6B7280;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:deep(.ant-tabs-tab:hover) {
+  color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.05);
+}
+
+:deep(.ant-tabs-tab-active) {
+  background: #D78FEE !important;
+  color: white !important;
+  box-shadow: 0 2px 8px rgba(215, 143, 238, 0.3);
+}
+
+:deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
+  color: white !important;
+}
+
+:deep(.ant-tabs-ink-bar) {
+  display: none;
+}
+
+:deep(.ant-btn-primary) {
+  background: linear-gradient(135deg, #8B5CF6, #06B6D4);
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:deep(.ant-btn-primary:hover) {
   transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
+}
+
+:deep(.ant-btn-default) {
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+  color: #6B7280;
+  font-weight: 500;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:deep(.ant-btn-default:hover) {
+  border-color: #8B5CF6;
+  color: #8B5CF6;
+  background: rgba(139, 92, 246, 0.05);
+}
+
+:deep(.ant-empty) {
+  padding: 40px 20px;
+}
+
+:deep(.ant-empty-description) {
+  color: #6B7280;
+  font-size: 14px;
 }
 </style>

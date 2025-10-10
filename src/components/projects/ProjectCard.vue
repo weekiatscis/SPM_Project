@@ -131,13 +131,13 @@ export default {
 
     const getProjectColor = (status) => {
       const colors = {
-        'Active': '#1890ff',
-        'Planning': '#13c2c2',
-        'On Hold': '#fa8c16',
-        'Completed': '#52c41a',
-        'Cancelled': '#ff4d4f'
+        'Active': '#8B5CF6',
+        'Planning': '#06B6D4',
+        'On Hold': '#F59E0B',
+        'Completed': '#10B981',
+        'Cancelled': '#EF4444'
       }
-      return colors[status] || '#1890ff'
+      return colors[status] || '#8B5CF6'
     }
 
     const formatDueDate = (dateString) => {
@@ -191,24 +191,56 @@ export default {
 
 <style scoped>
 .project-card {
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+
+.project-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(139, 92, 246, 0.15) !important;
 }
 
 .urgent-project {
-  border: 1px solid #ff4d4f !important;
-  box-shadow: 0 2px 8px rgba(255, 77, 79, 0.1);
+  border: 1px solid #EF4444 !important;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15) !important;
+}
+
+:deep(.ant-card) {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(139, 92, 246, 0.1);
+  box-shadow: 0 4px 6px rgba(139, 92, 246, 0.05);
 }
 
 :deep(.ant-card-head) {
-  padding: 12px 16px;
+  padding: 16px 20px;
   min-height: auto;
+  border-bottom: 1px solid rgba(139, 92, 246, 0.08);
+  background: transparent;
 }
 
 :deep(.ant-card-body) {
-  padding: 12px 16px;
+  padding: 16px 20px;
 }
 
 :deep(.ant-card-head-title) {
   padding: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1F2937;
+}
+
+:deep(.ant-tag) {
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+}
+
+:deep(.ant-typography) {
+  color: #6B7280;
 }
 </style>

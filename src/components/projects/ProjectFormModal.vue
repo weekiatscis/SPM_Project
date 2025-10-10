@@ -113,6 +113,80 @@
             <span>You will be assigned as the project owner</span>
           </div>
         </a-form-item>
+
+        <!-- Collaborators Section -->
+        <a-form-item label="Add Collaborators (Optional)">
+          <div class="collaborators-section">
+            <!-- Filter and Search Controls -->
+            <div class="filter-controls">
+              <a-select
+                v-model:value="departmentFilter"
+                placeholder="Filter by Department"
+                size="large"
+                allow-clear
+                style="width: 48%;"
+                @change="filterUsers"
+              >
+                <a-select-option value="">All Departments</a-select-option>
+                <a-select-option v-for="dept in departments" :key="dept" :value="dept">
+                  {{ dept }}
+                </a-select-option>
+              </a-select>
+
+              <a-input
+                v-model:value="userSearchQuery"
+                placeholder="Search by name..."
+                size="large"
+                allow-clear
+                style="width: 48%;"
+                @input="filterUsers"
+              >
+                <template #prefix>
+                  <SearchOutlined />
+                </template>
+              </a-input>
+            </div>
+
+            <!-- Selected Collaborators -->
+            <div v-if="selectedCollaborators.length > 0" class="selected-collaborators">
+              <div class="selected-label">Selected ({{ selectedCollaborators.length }}):</div>
+              <div class="selected-tags">
+                <a-tag
+                  v-for="user in selectedCollaborators"
+                  :key="user.user_id"
+                  closable
+                  @close="removeCollaborator(user)"
+                  color="purple"
+                >
+                  {{ user.name }} - {{ user.department }}
+                </a-tag>
+              </div>
+            </div>
+
+            <!-- Available Users List -->
+            <div class="users-list">
+              <a-spin v-if="isLoadingUsers" />
+              <div v-else-if="filteredUsers.length === 0" class="no-users">
+                No users found
+              </div>
+              <div v-else class="user-items">
+                <div
+                  v-for="user in filteredUsers"
+                  :key="user.user_id"
+                  class="user-item"
+                  :class="{ selected: isUserSelected(user) }"
+                  @click="toggleCollaborator(user)"
+                >
+                  <a-checkbox :checked="isUserSelected(user)" />
+                  <div class="user-info">
+                    <div class="user-name">{{ user.name }}</div>
+                    <div class="user-department">{{ user.department }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </a-form-item>
       </a-form>
     </div>
 
@@ -156,7 +230,8 @@ import {
   UserOutlined,
   InfoCircleOutlined,
   ClockCircleOutlined,
-  CheckOutlined
+  CheckOutlined,
+  SearchOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../../stores/auth'
 
@@ -170,7 +245,8 @@ export default {
     UserOutlined,
     InfoCircleOutlined,
     ClockCircleOutlined,
-    CheckOutlined
+    CheckOutlined,
+    SearchOutlined
   },
   props: {
     project: {
@@ -189,7 +265,8 @@ export default {
       project_name: '',
       project_description: '',
       due_date: '',
-      created_by: ''
+      created_by: '',
+      collaborators: []
     })
 
     const errors = ref({
@@ -199,6 +276,15 @@ export default {
 
     const isLoading = ref(false)
     const modalVisible = ref(false)
+
+    // Collaborators state
+    const allUsers = ref([])
+    const filteredUsers = ref([])
+    const selectedCollaborators = ref([])
+    const departmentFilter = ref('')
+    const userSearchQuery = ref('')
+    const isLoadingUsers = ref(false)
+    const departments = ref([])
 
     // Sync modalVisible with isOpen prop
     watch(() => props.isOpen, (newVal) => {
@@ -228,11 +314,108 @@ export default {
       return current && current < dayjs().startOf('day')
     }
 
+    // Fetch all users from the user table
+    const fetchUsers = async () => {
+      isLoadingUsers.value = true
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/users`)
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+        const payload = await response.json()
+        const users = Array.isArray(payload?.users) ? payload.users : []
+
+        // Filter out current user from the list
+        allUsers.value = users.filter(u => u.user_id !== currentUserId.value)
+
+        // Extract unique departments
+        const deptSet = new Set(users.map(u => u.department).filter(Boolean))
+        departments.value = Array.from(deptSet).sort()
+
+        // Initialize filtered users
+        filteredUsers.value = allUsers.value
+      } catch (error) {
+        console.error('Failed to fetch users:', error)
+        notification.error({
+          message: 'Failed to load users',
+          description: 'Unable to fetch users. Please try again.',
+          placement: 'topRight',
+          duration: 3
+        })
+      } finally {
+        isLoadingUsers.value = false
+      }
+    }
+
+    // Filter users based on department and search query
+    const filterUsers = () => {
+      let filtered = [...allUsers.value]
+
+      // Filter by department
+      if (departmentFilter.value) {
+        filtered = filtered.filter(u => u.department === departmentFilter.value)
+      }
+
+      // Filter by search query
+      if (userSearchQuery.value) {
+        const query = userSearchQuery.value.toLowerCase()
+        filtered = filtered.filter(u =>
+          u.name.toLowerCase().includes(query)
+        )
+      }
+
+      // Exclude already selected collaborators
+      filtered = filtered.filter(u =>
+        !selectedCollaborators.value.some(sc => sc.user_id === u.user_id)
+      )
+
+      filteredUsers.value = filtered
+    }
+
+    // Check if user is selected
+    const isUserSelected = (user) => {
+      return selectedCollaborators.value.some(u => u.user_id === user.user_id)
+    }
+
+    // Toggle collaborator selection
+    const toggleCollaborator = (user) => {
+      const index = selectedCollaborators.value.findIndex(u => u.user_id === user.user_id)
+
+      if (index > -1) {
+        selectedCollaborators.value.splice(index, 1)
+      } else {
+        selectedCollaborators.value.push(user)
+      }
+
+      filterUsers()
+    }
+
+    // Remove collaborator
+    const removeCollaborator = (user) => {
+      const index = selectedCollaborators.value.findIndex(u => u.user_id === user.user_id)
+      if (index > -1) {
+        selectedCollaborators.value.splice(index, 1)
+        filterUsers()
+      }
+    }
+
     // Handle close modal
     const handleClose = () => {
       modalVisible.value = false
+      // Reset collaborator state
+      selectedCollaborators.value = []
+      departmentFilter.value = ''
+      userSearchQuery.value = ''
       emit('close')
     }
+
+    // Watch for modal open to fetch users
+    watch(() => props.isOpen, (newVal) => {
+      if (newVal) {
+        fetchUsers()
+      }
+    })
 
     // Watch for project changes to populate form
     watch(() => props.project, (newProject) => {
@@ -327,8 +510,12 @@ export default {
           project_description: form.value.project_description?.trim() || '',
           due_date: form.value.due_date,
           created_by: currentUserId.value, // Use current user's ID
-          owner_id: currentUserId.value // Also set owner_id to current user
+          owner_id: currentUserId.value, // Also set owner_id to current user
+          collaborators: selectedCollaborators.value.map(u => u.user_id) // Add collaborator user IDs
         }
+
+        console.log('DEBUG: Sending request to:', `${createProjectUrl}/projects`)
+        console.log('DEBUG: Payload:', JSON.stringify(payload, null, 2))
 
         const response = await fetch(`${createProjectUrl}/projects`, {
           method: 'POST',
@@ -350,8 +537,14 @@ export default {
           project_name: '',
           project_description: '',
           due_date: '',
-          created_by: ''
+          created_by: '',
+          collaborators: []
         }
+
+        // Reset collaborators
+        selectedCollaborators.value = []
+        departmentFilter.value = ''
+        userSearchQuery.value = ''
 
         // Reset errors
         errors.value = {
@@ -369,6 +562,9 @@ export default {
           placement: 'topRight',
           duration: 3
         })
+
+        // Close modal
+        handleClose()
 
       } catch (error) {
         console.error('Failed to create project:', error)
@@ -394,7 +590,18 @@ export default {
       modalVisible,
       dueDateValue,
       disabledDate,
-      handleClose
+      handleClose,
+      // Collaborator-related
+      filteredUsers,
+      selectedCollaborators,
+      departmentFilter,
+      userSearchQuery,
+      isLoadingUsers,
+      departments,
+      filterUsers,
+      isUserSelected,
+      toggleCollaborator,
+      removeCollaborator
     }
   }
 }
@@ -678,5 +885,120 @@ export default {
   .modal-footer {
     padding: 12px 16px;
   }
+}
+
+/* Collaborators Section */
+.collaborators-section {
+  border: 1px solid rgba(215, 143, 238, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.filter-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.selected-collaborators {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(215, 143, 238, 0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(215, 143, 238, 0.15);
+}
+
+.selected-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6B7280;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.users-list {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid rgba(215, 143, 238, 0.15);
+  border-radius: 8px;
+  padding: 8px;
+  background: white;
+}
+
+.no-users {
+  text-align: center;
+  padding: 32px;
+  color: #9CA3AF;
+  font-size: 14px;
+}
+
+.user-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.user-item:hover {
+  background: rgba(215, 143, 238, 0.08);
+  border-color: rgba(215, 143, 238, 0.2);
+}
+
+.user-item.selected {
+  background: rgba(215, 143, 238, 0.12);
+  border-color: rgba(215, 143, 238, 0.3);
+}
+
+.user-info {
+  flex: 1;
+}
+
+.user-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1F2937;
+  margin-bottom: 2px;
+}
+
+.user-department {
+  font-size: 12px;
+  color: #6B7280;
+}
+
+.users-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.users-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.users-list::-webkit-scrollbar-thumb {
+  background: #D78FEE;
+  border-radius: 3px;
+}
+
+.users-list::-webkit-scrollbar-thumb:hover {
+  background: #C77FDE;
 }
 </style>
