@@ -64,7 +64,7 @@ jobs:
 
       - name: Start microservices with docker-compose
         run: |
-          docker-compose up -d --build
+          docker compose up -d --build
 
           # Wait for services to be ready
           echo "Waiting for services to start..."
@@ -76,25 +76,25 @@ jobs:
           docker ps
 
           echo -e "\nDocker-compose services:"
-          docker-compose ps
+          docker compose ps
 
       - name: Check service logs (if services fail to start)
         if: failure()
         run: |
           echo "=== Task Service Logs ==="
-          docker-compose logs task-service || true
+          docker compose logs task-service || true
 
           echo -e "\n=== Project Service Logs ==="
-          docker-compose logs project-service || true
+          docker compose logs project-service || true
 
           echo -e "\n=== User Service Logs ==="
-          docker-compose logs user-service || true
+          docker compose logs user-service || true
 
           echo -e "\n=== Auth Service Logs ==="
-          docker-compose logs auth-service || true
+          docker compose logs auth-service || true
 
           echo -e "\n=== Notification Service Logs ==="
-          docker-compose logs notification-service || true
+          docker compose logs notification-service || true
 
       - name: Run comprehensive service validation
         run: |
@@ -123,7 +123,7 @@ jobs:
       - name: Stop and remove containers
         if: always()
         run: |
-          docker-compose down -v
+          docker compose down -v
           docker stop rabbitmq || true
           docker rm rabbitmq || true
 
