@@ -70,77 +70,66 @@
           {{ project.project_description || 'No description available' }}
         </p>
 
-        <!-- Project Meta Info -->
-        <div class="meta-info">
-          <div class="meta-item">
-            <CalendarOutlined class="meta-icon" />
-            <div class="meta-content">
-              <span class="meta-label">Created</span>
-              <span class="meta-value">{{ formatDate(project.created_at) }}</span>
+        <!-- Project Meta Info and Progress -->
+        <div class="meta-and-progress">
+          <div class="meta-info">
+            <div class="meta-item">
+              <CalendarOutlined class="meta-icon" />
+              <div class="meta-content">
+                <span class="meta-label">Created</span>
+                <span class="meta-value">{{ formatDate(project.created_at) }}</span>
+              </div>
+            </div>
+            <div class="meta-divider"></div>
+            <div class="meta-item">
+              <UserOutlined class="meta-icon" />
+              <div class="meta-content">
+                <span class="meta-label">Created By</span>
+                <span class="meta-value">{{ project.created_by || 'Unknown' }}</span>
+              </div>
+            </div>
+            <div class="meta-divider"></div>
+            <div class="meta-item">
+              <ClockCircleOutlined class="meta-icon" />
+              <div class="meta-content">
+                <span class="meta-label">Due Date</span>
+                <span class="meta-value">{{ formatDate(project.due_date) || 'No due date' }}</span>
+              </div>
+            </div>
+            <div class="meta-divider"></div>
+            <div class="meta-item">
+              <TeamOutlined class="meta-icon" />
+              <div class="meta-content">
+                <span class="meta-label">Team Members</span>
+                <span class="meta-value">{{ getTeamMembersCount() }}</span>
+              </div>
             </div>
           </div>
-          <div class="meta-divider"></div>
-          <div class="meta-item">
-            <UserOutlined class="meta-icon" />
-            <div class="meta-content">
-              <span class="meta-label">Created By</span>
-              <span class="meta-value">{{ project.created_by || 'Unknown' }}</span>
-            </div>
-          </div>
-          <div class="meta-divider"></div>
-          <div class="meta-item">
-            <ClockCircleOutlined class="meta-icon" />
-            <div class="meta-content">
-              <span class="meta-label">Due Date</span>
-              <span class="meta-value">{{ formatDate(project.due_date) || 'No due date' }}</span>
-            </div>
-          </div>
-          <div class="meta-divider"></div>
-          <div class="meta-item">
-            <TeamOutlined class="meta-icon" />
-            <div class="meta-content">
-              <span class="meta-label">Team Members</span>
-              <span class="meta-value">{{ getTeamMembersCount() }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <!-- Project Progress -->
-      <div class="section-card">
-        <div class="section-header">
-          <h2 class="section-title">
-            <DashboardOutlined class="title-icon" />
-            Project Progress
-          </h2>
-        </div>
-
-        <div class="progress-stats">
-          <div class="stat-card">
-            <div class="stat-number">{{ projectTasks.length }}</div>
-            <div class="stat-label">Total Tasks</div>
-          </div>
-          <div class="stat-card completed">
-            <div class="stat-number">{{ getCompletedTasksCount() }}</div>
-            <div class="stat-label">Completed</div>
-          </div>
-          <div class="stat-card ongoing">
-            <div class="stat-number">{{ getOngoingTasksCount() }}</div>
-            <div class="stat-label">Ongoing</div>
-          </div>
-          <div class="stat-card overdue">
-            <div class="stat-number">{{ getOverdueTasksCount() }}</div>
-            <div class="stat-label">Overdue</div>
-          </div>
-        </div>
-
-        <div class="progress-bar-section">
-          <div class="progress-info">
-            <span class="progress-label">Completion Rate</span>
-            <span class="progress-percentage">{{ getCompletionPercentage() }}%</span>
-          </div>
-          <div class="progress-bar">
-            <div class="progress-fill" :style="{ width: getCompletionPercentage() + '%' }"></div>
+          <!-- Project Progress Stats (Inline) -->
+          <div class="progress-stats-inline">
+            <div class="stat-item-inline">
+              <div class="stat-number-inline">{{ projectTasks.length }}</div>
+              <div class="stat-label-inline">Total</div>
+            </div>
+            <div class="stat-item-inline completed">
+              <div class="stat-number-inline">{{ getCompletedTasksCount() }}</div>
+              <div class="stat-label-inline">Completed</div>
+            </div>
+            <div class="stat-item-inline ongoing">
+              <div class="stat-number-inline">{{ getOngoingTasksCount() }}</div>
+              <div class="stat-label-inline">Ongoing</div>
+            </div>
+            <div class="stat-item-inline overdue">
+              <div class="stat-number-inline">{{ getOverdueTasksCount() }}</div>
+              <div class="stat-label-inline">Overdue</div>
+            </div>
+            <div class="progress-inline">
+              <div class="progress-percentage-inline">{{ getCompletionPercentage() }}%</div>
+              <div class="progress-bar-inline">
+                <div class="progress-fill-inline" :style="{ width: getCompletionPercentage() + '%' }"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -362,6 +351,7 @@ import {
   FlagOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { useProjectEvents } from '../composables/useProjectEvents'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
 import ProjectComments from '../components/projects/ProjectComments.vue'
@@ -391,6 +381,7 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const authStore = useAuthStore()
+    const { emitProjectUpdated, emitProjectDeleted } = useProjectEvents()
 
     const project = ref(null)
     const isLoading = ref(true)
@@ -733,6 +724,9 @@ export default {
           duration: 3
         })
 
+        // Emit event to update sidebar
+        emitProjectDeleted(project.value.project_id)
+
         closeDeleteModal()
         router.push('/projects')
       } catch (err) {
@@ -762,6 +756,9 @@ export default {
         placement: 'topRight',
         duration: 3
       })
+
+      // Emit event to update sidebar
+      emitProjectUpdated(updatedProject)
 
       loadProject()
     }
@@ -954,13 +951,21 @@ export default {
   transform: translateY(-1px);
 }
 
-/* Meta Info */
+/* Meta Info and Progress Container */
+.meta-and-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 48px;
+  padding-top: 32px;
+  border-top: 1px solid #e5e7eb;
+}
+
 .meta-info {
   display: flex;
   align-items: center;
   gap: 32px;
-  padding-top: 32px;
-  border-top: 1px solid #e5e7eb;
+  flex: 0 1 auto;
 }
 
 .meta-item {
@@ -998,6 +1003,69 @@ export default {
   width: 1px;
   height: 40px;
   background: #e5e7eb;
+}
+
+/* Inline Progress Stats */
+.progress-stats-inline {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex: 0 0 auto;
+}
+
+.stat-item-inline {
+  text-align: center;
+  min-width: 60px;
+}
+
+.stat-number-inline {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.stat-item-inline.completed .stat-number-inline { color: #10b981; }
+.stat-item-inline.ongoing .stat-number-inline { color: #667eea; }
+.stat-item-inline.overdue .stat-number-inline { color: #ef4444; }
+
+.stat-label-inline {
+  font-size: 11px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.progress-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 140px;
+  padding-left: 24px;
+  border-left: 1px solid #e5e7eb;
+}
+
+.progress-percentage-inline {
+  font-size: 24px;
+  font-weight: 700;
+  color: #667eea;
+  text-align: right;
+}
+
+.progress-bar-inline {
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill-inline {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 4px;
+  transition: width 0.6s ease;
 }
 
 /* Section Cards */
@@ -1338,13 +1406,61 @@ export default {
 }
 
 /* Responsive Design */
+@media (max-width: 1200px) {
+  .meta-and-progress {
+    gap: 32px;
+  }
+
+  .meta-info {
+    gap: 20px;
+  }
+
+  .progress-stats-inline {
+    gap: 16px;
+  }
+
+  .stat-item-inline {
+    min-width: 50px;
+  }
+
+  .stat-number-inline {
+    font-size: 24px;
+  }
+
+  .progress-inline {
+    min-width: 120px;
+  }
+
+  .progress-percentage-inline {
+    font-size: 20px;
+  }
+}
+
 @media (max-width: 1024px) {
+  .meta-and-progress {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 24px;
+  }
+
   .meta-info {
     flex-wrap: wrap;
   }
 
   .meta-divider {
     display: none;
+  }
+
+  .progress-stats-inline {
+    width: 100%;
+    justify-content: space-between;
+    padding-top: 24px;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .progress-inline {
+    border-left: none;
+    padding-left: 0;
   }
 }
 
@@ -1381,8 +1497,24 @@ export default {
     gap: 20px;
   }
 
-  .progress-stats {
-    grid-template-columns: repeat(2, 1fr);
+  .progress-stats-inline {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .stat-item-inline {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
+
+  .progress-inline {
+    flex: 1 1 100%;
+    min-width: 0;
+    margin-top: 12px;
+  }
+
+  .progress-percentage-inline {
+    text-align: left;
   }
 
   .tasks-grid {
@@ -1404,12 +1536,16 @@ export default {
     align-items: flex-start;
   }
 
-  .progress-stats {
-    grid-template-columns: 1fr;
+  .stat-number-inline {
+    font-size: 20px;
   }
 
-  .stat-number {
-    font-size: 36px;
+  .stat-label-inline {
+    font-size: 10px;
+  }
+
+  .progress-percentage-inline {
+    font-size: 18px;
   }
 }
 </style>

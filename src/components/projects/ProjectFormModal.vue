@@ -239,6 +239,7 @@ import {
   SearchOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../../stores/auth'
+import { useProjectEvents } from '../../composables/useProjectEvents'
 
 export default {
   name: 'ProjectFormModal',
@@ -266,6 +267,7 @@ export default {
   emits: ['close', 'save'],
   setup(props, { emit }) {
     const authStore = useAuthStore()
+    const { emitProjectCreated, emitProjectUpdated } = useProjectEvents()
     const form = ref({
       project_name: '',
       project_description: '',
@@ -512,6 +514,10 @@ export default {
             ...form.value,
             project_id: props.project.project_id
           }
+
+          // Emit event to update sidebar
+          emitProjectUpdated(updatedProjectData)
+
           emit('save', updatedProjectData)
           return
         }
@@ -565,6 +571,9 @@ export default {
           due_date: '',
           collaborators: ''
         }
+
+        // Emit event to update sidebar
+        emitProjectCreated(result.project)
 
         // Emit success with the created project data
         emit('save', result.project)
