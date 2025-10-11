@@ -63,6 +63,7 @@ class TaskCreate(BaseModel):
     email_enabled: Optional[bool] = True  # Email notifications enabled
     in_app_enabled: Optional[bool] = True  # In-app notifications enabled
     created_by: Optional[str] = None  # NEW: Track who actually created the task (for manager assignments)
+    recurrence: Optional[str] = None  # e.g., 'daily', 'weekly', 'monthly'
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
@@ -80,6 +81,7 @@ class TaskUpdate(BaseModel):
     email_enabled: Optional[bool] = None  # Email notifications enabled
     in_app_enabled: Optional[bool] = None  # In-app notifications enabled
     updated_by: Optional[str] = None  # Track who is making the update
+    recurrence: Optional[str] = None
 
 
 # Pydantic model for rescheduling a task
@@ -243,6 +245,7 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
         "collaborators": row.get("collaborators") or [],
         "isSubtask": row.get("isSubtask", False),
         "parent_task_id": row.get("parent_task_id"),
+        "recurrence": row.get("recurrence"),  # Add recurrence field
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at")),
     }
@@ -391,6 +394,158 @@ def save_notification_preferences(user_id: str, task_id: str, email_enabled: boo
         import traceback
         traceback.print_exc()
         return False
+
+def calculate_next_due_date(current_due_date: str, recurrence: str) -> Optional[str]:
+    """Calculate the next due date based on recurrence pattern"""
+    try:
+        # Parse current due date
+        if isinstance(current_due_date, str):
+            current_date = datetime.strptime(current_due_date[:10], "%Y-%m-%d").date()
+        else:
+            current_date = current_due_date
+
+        # Calculate next date based on recurrence type
+        if recurrence == "daily":
+            next_date = current_date + timedelta(days=1)
+        elif recurrence == "weekly":
+            next_date = current_date + timedelta(weeks=1)
+        elif recurrence == "biweekly":
+            next_date = current_date + timedelta(weeks=2)
+        elif recurrence == "monthly":
+            # Add one month (handle month overflow)
+            month = current_date.month
+            year = current_date.year
+            if month == 12:
+                next_date = current_date.replace(year=year + 1, month=1)
+            else:
+                try:
+                    next_date = current_date.replace(month=month + 1)
+                except ValueError:
+                    # Handle day overflow (e.g., Jan 31 -> Feb 28/29)
+                    next_month = month + 1
+                    next_year = year
+                    if next_month > 12:
+                        next_month = 1
+                        next_year += 1
+                    # Get last day of next month
+                    if next_month == 12:
+                        last_day = 31
+                    else:
+                        last_day = (datetime(next_year, next_month + 1, 1) - timedelta(days=1)).day
+                    next_date = current_date.replace(year=next_year, month=next_month, day=min(current_date.day, last_day))
+        elif recurrence == "quarterly":
+            # Add 3 months
+            month = current_date.month
+            year = current_date.year
+            new_month = month + 3
+            new_year = year
+            while new_month > 12:
+                new_month -= 12
+                new_year += 1
+            try:
+                next_date = current_date.replace(year=new_year, month=new_month)
+            except ValueError:
+                # Handle day overflow
+                last_day = (datetime(new_year, new_month + 1 if new_month < 12 else 1, 1) - timedelta(days=1)).day
+                next_date = current_date.replace(year=new_year, month=new_month, day=min(current_date.day, last_day))
+        elif recurrence == "yearly":
+            next_date = current_date.replace(year=current_date.year + 1)
+        else:
+            return None
+
+        return next_date.strftime("%Y-%m-%d")
+    except Exception as e:
+        print(f"Error calculating next due date: {e}")
+        return None
+
+def create_recurring_task_instance(original_task: dict) -> Optional[dict]:
+    """Create a new instance of a recurring task with the next due date"""
+    try:
+        recurrence = original_task.get("recurrence")
+        if not recurrence:
+            return None
+
+        current_due_date = original_task.get("due_date")
+        if not current_due_date:
+            return None
+
+        # Calculate next due date
+        next_due_date = calculate_next_due_date(current_due_date, recurrence)
+        if not next_due_date:
+            return None
+
+        # Create new task data (copy from original but with new due date and reset status)
+        new_task_data = {
+            "title": original_task.get("title"),
+            "description": original_task.get("description"),
+            "due_date": next_due_date,
+            "status": "Unassigned",  # Reset status for new instance
+            "priority": original_task.get("priority", 5),
+            "owner_id": original_task.get("owner_id"),
+            "project_id": original_task.get("project_id"),
+            "collaborators": original_task.get("collaborators"),
+            "recurrence": recurrence,  # Preserve recurrence pattern
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Insert new task instance
+        response = supabase.table("task").insert(new_task_data).execute()
+        
+        if response.data:
+            created_task = response.data[0]
+            task_id = created_task.get("task_id")
+            
+            print(f"✅ Created recurring task instance: {task_id} with due date {next_due_date}")
+            
+            # Copy notification preferences from original task
+            try:
+                original_prefs = get_notification_preferences(
+                    original_task.get("owner_id"), 
+                    original_task.get("task_id")
+                )
+                save_notification_preferences(
+                    original_task.get("owner_id"),
+                    task_id,
+                    original_prefs.get("email_enabled", True),
+                    original_prefs.get("in_app_enabled", True)
+                )
+            except Exception as e:
+                print(f"Failed to copy notification preferences: {e}")
+            
+            # Copy reminder preferences from original task
+            try:
+                reminder_response = supabase.table("task_reminder_preferences").select("reminder_days").eq("task_id", original_task.get("task_id")).execute()
+                if reminder_response.data:
+                    reminder_days = reminder_response.data[0].get("reminder_days", [7, 3, 1])
+                    save_reminder_preferences(task_id, reminder_days)
+            except Exception as e:
+                print(f"Failed to copy reminder preferences: {e}")
+            
+            # Log the creation
+            log_task_change(
+                task_id=task_id,
+                action="create",
+                field="recurring_instance",
+                user_id="system",
+                old_value=None,
+                new_value={
+                    "parent_recurrence_id": original_task.get("task_id"),
+                    "recurrence_type": recurrence,
+                    "due_date": next_due_date
+                }
+            )
+            
+            # Check and send due date notifications for the new instance
+            check_and_send_due_date_notifications(created_task)
+            
+            return created_task
+        
+        return None
+    except Exception as e:
+        print(f"Error creating recurring task instance: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new_due_date: str):
     """Send notification to collaborators when due date changes"""
@@ -604,11 +759,11 @@ def get_tasks():
         priority = request.args.get("priority", default=None, type=str)
         project_id = request.args.get("project_id", default=None, type=str)
 
-        # Build query - only select fields that definitely exist in the database
+        # Build query - select all necessary fields including recurrence
         query = (
             supabase
             .table("task")
-            .select("task_id,title,due_date,status,priority,description,created_at,owner_id,project_id")
+            .select("task_id,title,due_date,status,priority,description,created_at,updated_at,owner_id,project_id,collaborators,isSubtask,parent_task_id,recurrence")
             .order("created_at", desc=True)
         )
 
@@ -1205,6 +1360,16 @@ def update_task(task_id: str):
             delete_old_notifications(task_id)
             check_and_send_due_date_notifications(response.data[0])
 
+        # Check if task was just completed and has recurrence - create next instance
+        if "status" in update_data and update_data["status"] == "Completed":
+            task_recurrence = response.data[0].get("recurrence")
+            if task_recurrence:
+                print(f"Task {task_id} completed with recurrence '{task_recurrence}' - creating next instance")
+                new_instance = create_recurring_task_instance(response.data[0])
+                if new_instance:
+                    print(f"✅ Created recurring task instance: {new_instance.get('task_id')}")
+                else:
+                    print(f"❌ Failed to create recurring task instance")
                 
         # Log changes for audit trail - only log ACTUAL changes
         changes_made = False
@@ -1722,6 +1887,91 @@ def get_task_reminder_preferences(task_id: str):
             return jsonify({"reminder_days": [7, 3, 1]}), 200
     except Exception as e:
         return jsonify({"error": f"Failed to get reminder preferences: {str(e)}"}), 500
+
+@app.route("/tasks/<task_id>/recurring-preview", methods=["GET"])
+def get_recurring_preview(task_id: str):
+    """Preview the next N instances of a recurring task"""
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        task_data = get_task_by_id(task_id)
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+
+        recurrence = task_data.get("recurrence")
+        if not recurrence:
+            return jsonify({"error": "Task is not recurring"}), 400
+
+        due_date = task_data.get("due_date")
+        if not due_date:
+            return jsonify({"error": "Task has no due date"}), 400
+
+        # Generate next 5 instances
+        instances = []
+        current_date = due_date
+        count = int(request.args.get("count", 5))  # Default to 5 instances
+        
+        for i in range(count):
+            next_date = calculate_next_due_date(current_date, recurrence)
+            if not next_date:
+                break
+            
+            instances.append({
+                "instance_number": i + 1,
+                "due_date": next_date,
+                "recurrence_type": recurrence
+            })
+            current_date = next_date
+
+        return jsonify({
+            "task_id": task_id,
+            "title": task_data.get("title"),
+            "recurrence": recurrence,
+            "current_due_date": due_date,
+            "next_instances": instances
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate recurring preview: {str(e)}"}), 500
+
+@app.route("/tasks/<task_id>/stop-recurrence", methods=["POST"])
+def stop_task_recurrence(task_id: str):
+    """Stop recurrence for a task"""
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        task_data = get_task_by_id(task_id)
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+
+        if not task_data.get("recurrence"):
+            return jsonify({"error": "Task is not recurring"}), 400
+
+        # Update task to remove recurrence
+        response = supabase.table("task").update({"recurrence": None}).eq("task_id", task_id).execute()
+        
+        if not response.data:
+            return jsonify({"error": "Failed to stop recurrence"}), 500
+
+        # Log the change
+        log_task_change(
+            task_id=task_id,
+            action="update",
+            field="recurrence",
+            user_id=request.json.get("user_id", "system") if request.json else "system",
+            old_value=task_data.get("recurrence"),
+            new_value=None
+        )
+
+        return jsonify({
+            "message": "Recurrence stopped successfully",
+            "task_id": task_id
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to stop recurrence: {str(e)}"}), 500
 
 # Error handlers
 @app.errorhandler(404)

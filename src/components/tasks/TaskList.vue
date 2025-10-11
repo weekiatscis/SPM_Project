@@ -123,7 +123,9 @@ export default {
         id: taskData.task_id || taskData.id,
         title: taskData.title,
         dueDate: taskData.due_date || taskData.dueDate,
-        status: taskData.status
+        status: taskData.status,
+        recurrence: taskData.recurrence || null,
+        priority: taskData.priority || 5
       }
       
       // Add the new task to the tasks list
@@ -196,9 +198,13 @@ export default {
             : (apiTasks[0].collaborators || []),
           activities: apiTasks[0].activities || [],
           comments: apiTasks[0].comments || [],
+          recurrence: apiTasks[0].recurrence || null, // Add recurrence field
+          parent_task_id: apiTasks[0].parent_task_id || null, // Add parent_task_id for subtask detection
           // Add access information
           access_info: accessInfo
         }
+        
+        console.log('DEBUG fetchTaskDetails - recurrence from API:', apiTasks[0].recurrence, 'taskDetails.recurrence:', taskDetails.recurrence)
         
         return taskDetails
       } catch (error) {
@@ -381,7 +387,9 @@ export default {
           id: t.id,
           title: t.title,
           dueDate: t.dueDate || null,
-          status: normalizeStatus(t.status)
+          status: normalizeStatus(t.status),
+          recurrence: t.recurrence || null, // Add recurrence for recurring task icon
+          priority: t.priority || 5 // Add priority for sorting
         }))
       } catch (e) {
         console.error('Failed to load tasks via service:', e)

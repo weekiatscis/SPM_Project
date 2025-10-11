@@ -11,7 +11,18 @@
   >
     <a-row justify="space-between" align="middle">
       <a-col :span="16">
-        <a-typography-text strong>{{ task.title }}</a-typography-text>
+        <div class="flex items-center space-x-2">
+          <a-typography-text strong>{{ task.title }}</a-typography-text>
+          <a-tooltip v-if="task.recurrence" :title="getRecurrenceTooltip(task.recurrence)">
+            <svg 
+               class="w-5 h-5 text-blue-500 flex-shrink-0" 
+               fill="none" 
+               stroke="currentColor" 
+               viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </a-tooltip>
+        </div>
         <br>
         <a-typography-text type="secondary" style="font-size: 12px;">
           Due: {{ formatDate(task.dueDate) }}
@@ -95,11 +106,22 @@ export default {
       return taskDate.getTime() === today.getTime() || taskDate.getTime() === tomorrow.getTime()
     }
 
+    const getRecurrenceTooltip = (recurrence) => {
+      const tooltips = {
+        'daily': 'Recurring Daily - A new task will be created when completed',
+        'weekly': 'Recurring Weekly - A new task will be created when completed',
+        'biweekly': 'Recurring Biweekly - A new task will be created when completed',
+        'monthly': 'Recurring Monthly - A new task will be created when completed'
+      }
+      return tooltips[recurrence] || 'Recurring Task'
+    }
+
     return {
       formatDate,
       getStatusColor,
       getStatusText,
-      isDueWithin24Hours
+      isDueWithin24Hours,
+      getRecurrenceTooltip
     }
   }
 }
@@ -108,5 +130,14 @@ export default {
 <style scoped>
 .urgent-task {
   border: 1px solid #ff4d4f !important;
+}
+
+/* Add hover effect for recurring icon */
+.w-5.h-5.text-blue-500 {
+  transition: transform 0.2s ease;
+}
+
+.w-5.h-5.text-blue-500:hover {
+  transform: rotate(180deg);
 }
 </style>
