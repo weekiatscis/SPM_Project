@@ -1,13 +1,13 @@
 <template>
-  <div style="max-width: 1200px; margin: 0 auto; padding: 0px;">
+  <div class="project-details-container">
     <!-- Loading State -->
-    <div v-if="isLoading" style="text-align: center; padding: 50px;">
+    <div v-if="isLoading" class="loading-state">
       <a-spin size="large" />
-      <p style="margin-top: 16px;">Loading project details...</p>
+      <p>Loading project details...</p>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" style="text-align: center; padding: 50px;">
+    <div v-else-if="error" class="error-state">
       <a-result
         status="error"
         title="Failed to load project"
@@ -22,155 +22,241 @@
     </div>
 
     <!-- Project Details Content -->
-    <div v-else-if="project">
-      <!-- Header -->
-      <a-card :bordered="false" :style="headerStyle" style="margin-bottom: 24px;">
-        <a-row :gutter="[16, 16]" align="middle">
-          <a-col :xs="24" :sm="24" :md="16" :lg="18">
-            <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 8px; flex-wrap: wrap;">
-              <a-button
-                type="text"
-                @click="$router.push('/projects')"
-                style="padding: 4px;"
-              >
-                <template #icon>
-                  <LeftOutlined />
-                </template>
-              </a-button>
-              <a-typography-title :level="2" :style="titleStyle" style="margin: 0;">
-                {{ project.project_name }}
-              </a-typography-title>
-              <a-tag :color="getStatusColor(project.status)" size="large">
-                {{ getStatusText(project.status) }}
+    <div v-else-if="project" class="project-content">
+      <!-- Back Button -->
+      <a-button
+        type="text"
+        @click="$router.push('/projects')"
+        class="back-button"
+      >
+        <template #icon>
+          <LeftOutlined />
+        </template>
+        Back to Projects
+      </a-button>
+
+      <!-- Project Header -->
+      <div class="project-header">
+        <div class="header-top">
+          <div class="title-section">
+            <h1 class="project-title">{{ project.project_name }}</h1>
+            <a-tag :class="['status-tag', getStatusClass(project.status)]">
+              {{ getStatusText(project.status) }}
+            </a-tag>
+          </div>
+          <div class="header-actions">
+            <a-button @click="handleGenerateReport" class="action-btn">
+              <template #icon>
+                <FileTextOutlined />
+              </template>
+              Report
+            </a-button>
+            <a-button type="primary" @click="handleEdit" class="action-btn">
+              <template #icon>
+                <EditOutlined />
+              </template>
+              Edit
+            </a-button>
+            <a-button danger @click="handleDelete" class="action-btn">
+              <template #icon>
+                <DeleteOutlined />
+              </template>
+              Delete
+            </a-button>
+          </div>
+        </div>
+
+        <p class="project-description">
+          {{ project.project_description || 'No description available' }}
+        </p>
+
+        <!-- Project Meta Info -->
+        <div class="meta-info">
+          <div class="meta-item">
+            <CalendarOutlined class="meta-icon" />
+            <div class="meta-content">
+              <span class="meta-label">Created</span>
+              <span class="meta-value">{{ formatDate(project.created_at) }}</span>
+            </div>
+          </div>
+          <div class="meta-divider"></div>
+          <div class="meta-item">
+            <UserOutlined class="meta-icon" />
+            <div class="meta-content">
+              <span class="meta-label">Created By</span>
+              <span class="meta-value">{{ project.created_by || 'Unknown' }}</span>
+            </div>
+          </div>
+          <div class="meta-divider"></div>
+          <div class="meta-item">
+            <ClockCircleOutlined class="meta-icon" />
+            <div class="meta-content">
+              <span class="meta-label">Due Date</span>
+              <span class="meta-value">{{ formatDate(project.due_date) || 'No due date' }}</span>
+            </div>
+          </div>
+          <div class="meta-divider"></div>
+          <div class="meta-item">
+            <TeamOutlined class="meta-icon" />
+            <div class="meta-content">
+              <span class="meta-label">Team Members</span>
+              <span class="meta-value">{{ getTeamMembersCount() }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Project Progress -->
+      <div class="section-card">
+        <div class="section-header">
+          <h2 class="section-title">
+            <DashboardOutlined class="title-icon" />
+            Project Progress
+          </h2>
+        </div>
+
+        <div class="progress-stats">
+          <div class="stat-card">
+            <div class="stat-number">{{ projectTasks.length }}</div>
+            <div class="stat-label">Total Tasks</div>
+          </div>
+          <div class="stat-card completed">
+            <div class="stat-number">{{ getCompletedTasksCount() }}</div>
+            <div class="stat-label">Completed</div>
+          </div>
+          <div class="stat-card ongoing">
+            <div class="stat-number">{{ getOngoingTasksCount() }}</div>
+            <div class="stat-label">Ongoing</div>
+          </div>
+          <div class="stat-card overdue">
+            <div class="stat-number">{{ getOverdueTasksCount() }}</div>
+            <div class="stat-label">Overdue</div>
+          </div>
+        </div>
+
+        <div class="progress-bar-section">
+          <div class="progress-info">
+            <span class="progress-label">Completion Rate</span>
+            <span class="progress-percentage">{{ getCompletionPercentage() }}%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{ width: getCompletionPercentage() + '%' }"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Tasks Section -->
+      <div class="section-card">
+        <div class="section-header">
+          <h2 class="section-title">
+            <CheckCircleOutlined class="title-icon" />
+            My Tasks
+          </h2>
+          <span class="task-count">{{ getMyTasks().length }}</span>
+        </div>
+
+        <div v-if="isLoadingTasks" class="loading-content">
+          <a-spin size="large" />
+          <p>Loading tasks...</p>
+        </div>
+
+        <div v-else-if="getMyTasks().length === 0" class="empty-content">
+          <a-empty description="You have no tasks in this project yet" />
+        </div>
+
+        <div v-else class="tasks-grid">
+          <div
+            v-for="task in getMyTasks()"
+            :key="task.id"
+            @click="handleTaskClick(task)"
+            :class="['task-card', { 'overdue': isOverdue(task.dueDate) }]"
+          >
+            <div class="task-header">
+              <h3 class="task-title">{{ task.title }}</h3>
+              <a-tag :class="['task-status', getStatusClass(task.status)]">
+                {{ getStatusText(task.status) }}
               </a-tag>
             </div>
-            <a-typography-paragraph :style="subtitleStyle" style="margin: 0;">
-              {{ project.project_description || 'No description available' }}
-            </a-typography-paragraph>
-          </a-col>
-          <a-col :xs="24" :sm="24" :md="8" :lg="6">
-            <a-space
-              direction="vertical"
-              :style="{ width: '100%' }"
-              :size="8"
-              class="action-buttons"
-            >
-              <a-button
-                type="default"
-                @click="handleGenerateReport"
-                block
-              >
-                <template #icon>
-                  <FileTextOutlined />
-                </template>
-                Report
-              </a-button>
-              <a-button
-                type="primary"
-                @click="handleEdit"
-                block
-              >
-                <template #icon>
-                  <EditOutlined />
-                </template>
-                Edit
-              </a-button>
-              <a-button
-                danger
-                @click="handleDelete"
-                block
-              >
-                <template #icon>
-                  <DeleteOutlined />
-                </template>
-                Delete
-              </a-button>
-            </a-space>
-          </a-col>
-        </a-row>
-      </a-card>
 
-      <!-- Project Information - Full Width -->
-      <a-row style="margin-bottom: 24px;">
-        <a-col :span="24">
-          <a-card title="Project Information" size="small">
-            <a-row :gutter="24">
-              <a-col :span="8">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">
-                    Created By
-                  </label>
-                  <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
-                    {{ project.created_by || 'Unknown' }}
-                  </p>
-                </div>
-              </a-col>
-              <a-col :span="8">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">
-                    Created Date
-                  </label>
-                  <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
-                    {{ formatFullDate(project.created_at) }}
-                  </p>
-                </div>
-              </a-col>
-              <a-col :span="8">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">
-                    Due Date
-                  </label>
-                  <p class="text-sm text-gray-900 bg-gray-50 px-3 py-2 rounded-md">
-                    {{ formatFullDate(project.due_date) || 'No due date' }}
-                  </p>
-                </div>
-              </a-col>
-            </a-row>
-          </a-card>
-        </a-col>
-      </a-row>
+            <p class="task-description">{{ truncateText(task.description, 80) }}</p>
 
-      <!-- Project Tasks -->
-      <a-row style="margin-bottom: 24px;">
-        <a-col :span="24">
-          <a-card title="Project Tasks" size="small">
-            <div v-if="isLoadingTasks" style="text-align: center; padding: 50px;">
-              <a-spin size="large" />
-              <p style="margin-top: 16px;">Loading tasks...</p>
+            <div class="task-footer">
+              <div class="task-meta">
+                <CalendarOutlined />
+                <span :class="{ 'overdue-text': isOverdue(task.dueDate) }">
+                  {{ formatTaskDate(task.dueDate) }}
+                </span>
+              </div>
+              <div :class="['task-priority', getPriorityClass(task.priority)]">
+                <FlagOutlined />
+                {{ getPriorityText(task.priority) }}
+              </div>
             </div>
 
-            <div v-else-if="projectTasks.length === 0" style="text-align: center; padding: 50px;">
-              <a-empty description="No tasks assigned to this project yet" />
+            <div :class="['priority-indicator', getPriorityClass(task.priority)]"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Other Project Tasks Section -->
+      <div class="section-card" v-if="getOtherTasks().length > 0">
+        <div class="section-header">
+          <h2 class="section-title">
+            <UnorderedListOutlined class="title-icon" />
+            Other Project Tasks
+          </h2>
+          <span class="task-count">{{ getOtherTasks().length }}</span>
+        </div>
+
+        <div class="tasks-grid">
+          <div
+            v-for="task in getOtherTasks()"
+            :key="task.id"
+            @click="handleTaskClick(task)"
+            :class="['task-card', 'other-task', { 'overdue': isOverdue(task.dueDate) }]"
+          >
+            <div class="task-header">
+              <h3 class="task-title">{{ task.title }}</h3>
+              <a-tag :class="['task-status', getStatusClass(task.status)]">
+                {{ getStatusText(task.status) }}
+              </a-tag>
             </div>
 
-            <a-row v-else :gutter="[16, 16]">
-              <a-col
-                v-for="task in projectTasks"
-                :key="task.id"
-                :span="8"
-              >
-                <TaskCard
-                  :task="task"
-                  @view-details="handleTaskClick"
-                />
-              </a-col>
-            </a-row>
-          </a-card>
-        </a-col>
-      </a-row>
+            <p class="task-description">{{ truncateText(task.description, 80) }}</p>
+
+            <div class="task-footer">
+              <div class="task-meta">
+                <CalendarOutlined />
+                <span :class="{ 'overdue-text': isOverdue(task.dueDate) }">
+                  {{ formatTaskDate(task.dueDate) }}
+                </span>
+              </div>
+              <div :class="['task-priority', getPriorityClass(task.priority)]">
+                <FlagOutlined />
+                {{ getPriorityText(task.priority) }}
+              </div>
+            </div>
+
+            <div :class="['priority-indicator', getPriorityClass(task.priority)]"></div>
+          </div>
+        </div>
+      </div>
 
       <!-- Project Comments -->
-      <a-row style="margin-bottom: 24px;">
-        <a-col :span="24">
-          <a-card title="Project Comments" size="small">
-            <ProjectComments
-              v-if="project"
-              :projectId="project.project_id"
-            />
-          </a-card>
-        </a-col>
-      </a-row>
-
+      <div class="section-card">
+        <div class="section-header">
+          <h2 class="section-title">
+            <MessageOutlined class="title-icon" />
+            Project Comments
+          </h2>
+        </div>
+        <div class="comments-content">
+          <ProjectComments
+            v-if="project"
+            :projectId="project.project_id"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- Edit Project Modal -->
@@ -200,26 +286,23 @@
       :footer="null"
       width="500px"
     >
-      <div style="padding: 16px 0;">
-        <!-- Warning Icon -->
-        <div style="text-align: center; margin-bottom: 16px;">
-          <ExclamationCircleOutlined style="font-size: 48px; color: #ff4d4f;" />
+      <div class="delete-modal-content">
+        <div class="warning-icon">
+          <ExclamationCircleOutlined />
         </div>
 
-        <!-- Warning Message -->
-        <a-typography-paragraph style="text-align: center; font-size: 16px; margin-bottom: 8px;">
+        <p class="warning-title">
           <strong>Are you sure you want to delete this project?</strong>
-        </a-typography-paragraph>
+        </p>
 
-        <a-typography-paragraph style="text-align: center; color: #666; margin-bottom: 24px;">
+        <p class="warning-subtitle">
           This action cannot be undone. All data associated with "<strong>{{ project?.project_name }}</strong>" will be permanently deleted.
-        </a-typography-paragraph>
+        </p>
 
-        <!-- Confirmation Input -->
-        <div style="margin-bottom: 24px;">
-          <a-typography-text style="display: block; margin-bottom: 8px; color: #666;">
-            Type <strong style="color: #ff4d4f;">delete</strong> to confirm:
-          </a-typography-text>
+        <div class="confirmation-input">
+          <label>
+            Type <strong class="delete-text">delete</strong> to confirm:
+          </label>
           <a-input
             v-model:value="deleteConfirmText"
             placeholder="Type 'delete' here"
@@ -227,17 +310,15 @@
             @pressEnter="confirmDelete"
             :status="deleteConfirmText && deleteConfirmText !== 'delete' ? 'error' : ''"
           />
-          <a-typography-text
+          <span
             v-if="deleteConfirmText && deleteConfirmText !== 'delete'"
-            type="danger"
-            style="font-size: 12px; display: block; margin-top: 4px;"
+            class="error-text"
           >
             Please type exactly "delete" to confirm
-          </a-typography-text>
+          </span>
         </div>
 
-        <!-- Action Buttons -->
-        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+        <div class="modal-actions">
           <a-button @click="closeDeleteModal" size="large">
             Cancel
           </a-button>
@@ -264,10 +345,24 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { notification } from 'ant-design-vue'
-import { FileTextOutlined, EditOutlined, DeleteOutlined, LeftOutlined, ExclamationCircleOutlined } from '@ant-design/icons-vue'
+import {
+  FileTextOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  LeftOutlined,
+  ExclamationCircleOutlined,
+  CalendarOutlined,
+  UserOutlined,
+  ClockCircleOutlined,
+  TeamOutlined,
+  DashboardOutlined,
+  CheckCircleOutlined,
+  UnorderedListOutlined,
+  MessageOutlined,
+  FlagOutlined
+} from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
-import TaskCard from '../components/tasks/TaskCard.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
 import ProjectComments from '../components/projects/ProjectComments.vue'
 
@@ -275,9 +370,22 @@ export default {
   name: 'ProjectDetails',
   components: {
     ProjectFormModal,
-    TaskCard,
     TaskDetailModal,
-    ProjectComments
+    ProjectComments,
+    FileTextOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    LeftOutlined,
+    ExclamationCircleOutlined,
+    CalendarOutlined,
+    UserOutlined,
+    ClockCircleOutlined,
+    TeamOutlined,
+    DashboardOutlined,
+    CheckCircleOutlined,
+    UnorderedListOutlined,
+    MessageOutlined,
+    FlagOutlined
   },
   setup() {
     const route = useRoute()
@@ -300,54 +408,148 @@ export default {
     const deleteConfirmText = ref('')
     const isDeletingProject = ref(false)
 
-    // Light theme styles
-    const headerStyle = computed(() => {
-      const lightGradient = 'linear-gradient(135deg, #f3e8ff 0%, #e0e7ff 100%)'
-
-      return {
-        background: lightGradient
-      }
-    })
-
-    const titleStyle = computed(() => ({
-      color: '#7c3aed'
-    }))
-
-    const subtitleStyle = computed(() => ({
-      color: 'rgba(124,58,237,0.8)',
-      fontSize: '16px'
-    }))
-
-    const formatFullDate = (dateString) => {
-      if (!dateString) return 'Unknown'
-
+    // Helper functions
+    const formatDate = (dateString) => {
+      if (!dateString) return 'Not set'
       const date = new Date(dateString)
       return date.toLocaleDateString('en-US', {
-        weekday: 'long',
         year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        month: 'short',
+        day: 'numeric'
       })
     }
 
-    const getStatusColor = (status) => {
-      const colors = {
-        'Active': 'blue',
-        'Planning': 'cyan',
-        'On Hold': 'orange',
-        'Completed': 'green',
-        'Cancelled': 'red'
+    const formatTaskDate = (dateString) => {
+      if (!dateString) return 'No due date'
+
+      const dueDate = new Date(dateString + 'T00:00:00')
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      dueDate.setHours(0, 0, 0, 0)
+
+      const diffTime = dueDate.getTime() - today.getTime()
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+
+      if (diffDays < 0) {
+        return `${Math.abs(diffDays)} days overdue`
+      } else if (diffDays === 0) {
+        return 'Due today'
+      } else if (diffDays === 1) {
+        return 'Due tomorrow'
+      } else if (diffDays <= 7) {
+        return `Due in ${diffDays} days`
+      } else {
+        return formatDate(dateString)
       }
-      return colors[status] || 'default'
+    }
+
+    const isOverdue = (dateString) => {
+      if (!dateString) return false
+      const dueDate = new Date(dateString + 'T00:00:00')
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      dueDate.setHours(0, 0, 0, 0)
+      return dueDate < today
+    }
+
+    const truncateText = (text, maxLength) => {
+      if (!text || text === 'No description available') return 'No description'
+      if (text.length <= maxLength) return text
+      return text.substring(0, maxLength) + '...'
+    }
+
+    const getStatusClass = (status) => {
+      const statusMap = {
+        'Active': 'status-active',
+        'Planning': 'status-planning',
+        'On Hold': 'status-hold',
+        'Completed': 'status-completed',
+        'Cancelled': 'status-cancelled',
+        'Unassigned': 'status-unassigned',
+        'Ongoing': 'status-ongoing',
+        'Under Review': 'status-review'
+      }
+      return statusMap[status] || 'status-default'
     }
 
     const getStatusText = (status) => {
       return status || 'Active'
     }
 
-    // Load tasks for this project
+    const getPriorityClass = (priority) => {
+      const priorityStr = String(priority).toLowerCase()
+      if (priorityStr === 'high' || priorityStr === '1') return 'priority-high'
+      if (priorityStr === 'medium' || priorityStr === '2' || priorityStr === '3') return 'priority-medium'
+      if (priorityStr === 'low' || priorityStr === '4') return 'priority-low'
+      if (priorityStr === 'lowest' || priorityStr === '5') return 'priority-lowest'
+      return 'priority-medium'
+    }
+
+    const getPriorityText = (priority) => {
+      const priorityStr = String(priority).toLowerCase()
+      if (priorityStr === 'high' || priorityStr === '1') return 'High'
+      if (priorityStr === 'medium' || priorityStr === '2' || priorityStr === '3') return 'Medium'
+      if (priorityStr === 'low' || priorityStr === '4') return 'Low'
+      if (priorityStr === 'lowest' || priorityStr === '5') return 'Lowest'
+      return 'Medium'
+    }
+
+    const getTeamMembersCount = () => {
+      const members = new Set()
+      projectTasks.value.forEach(task => {
+        if (task.owner_id) members.add(task.owner_id)
+        if (task.collaborators && Array.isArray(task.collaborators)) {
+          task.collaborators.forEach(c => members.add(c))
+        }
+      })
+      return members.size || 1
+    }
+
+    const getCompletedTasksCount = () => {
+      return projectTasks.value.filter(t => t.status === 'Completed').length
+    }
+
+    const getOngoingTasksCount = () => {
+      return projectTasks.value.filter(t => t.status === 'Ongoing').length
+    }
+
+    const getOverdueTasksCount = () => {
+      return projectTasks.value.filter(t =>
+        isOverdue(t.dueDate) && t.status !== 'Completed'
+      ).length
+    }
+
+    const getCompletionPercentage = () => {
+      if (projectTasks.value.length === 0) return 0
+      return Math.round((getCompletedTasksCount() / projectTasks.value.length) * 100)
+    }
+
+    const getMyTasks = () => {
+      const userId = authStore.user?.user_id
+      if (!userId) return []
+
+      return projectTasks.value.filter(task => {
+        if (task.owner_id === userId) return true
+        if (task.collaborators && Array.isArray(task.collaborators)) {
+          return task.collaborators.includes(userId)
+        }
+        return false
+      })
+    }
+
+    const getOtherTasks = () => {
+      const userId = authStore.user?.user_id
+      if (!userId) return projectTasks.value
+
+      return projectTasks.value.filter(task => {
+        if (task.owner_id === userId) return false
+        if (task.collaborators && Array.isArray(task.collaborators)) {
+          if (task.collaborators.includes(userId)) return false
+        }
+        return true
+      })
+    }
+
     const loadProjectTasks = async () => {
       if (!project.value?.project_id) return
 
@@ -362,7 +564,6 @@ export default {
         const payload = await response.json()
         const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
 
-        // Filter tasks that are actually assigned to this project
         const filteredTasks = apiTasks.filter(task =>
           task.project_id === project.value.project_id
         )
@@ -373,8 +574,9 @@ export default {
           dueDate: t.dueDate || null,
           status: t.status,
           description: t.description || 'No description available',
-          priority: t.priority || 5,
-          assignee: t.assignee || 'Unassigned',
+          priority: t.priority || 'Medium',
+          owner_id: t.owner_id,
+          collaborators: t.collaborators || [],
           project: t.project || project.value.project_name
         }))
       } catch (err) {
@@ -385,39 +587,33 @@ export default {
       }
     }
 
-    // Handle task click - same functionality as home page
     const handleTaskClick = async (task) => {
       try {
         const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const url = `${baseUrl}/tasks?task_id=${encodeURIComponent(task.id)}`
 
         const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`)
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
         const payload = await response.json()
         const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
 
-        if (apiTasks.length === 0) {
-          throw new Error('Task not found')
-        }
+        if (apiTasks.length === 0) throw new Error('Task not found')
 
-        // Transform the API response to match TaskDetailModal expected format
         const taskDetails = {
           id: apiTasks[0].id,
           title: apiTasks[0].title,
           dueDate: apiTasks[0].dueDate,
           status: apiTasks[0].status,
           description: apiTasks[0].description || 'No description available',
-          priority: apiTasks[0].priority || 5,
-          assignee: apiTasks[0].assignee || 'Unassigned',
+          priority: apiTasks[0].priority || 'Medium',
+          owner_id: apiTasks[0].owner_id,
+          collaborators: apiTasks[0].collaborators || [],
           project: apiTasks[0].project || project.value.project_name,
           activities: apiTasks[0].activities || [],
           comments: apiTasks[0].comments || []
         }
 
-        // Show task detail modal
         selectedTask.value = taskDetails
         showTaskDetailModal.value = true
 
@@ -441,26 +637,19 @@ export default {
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
         const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
 
-        // Fetch all projects since there's no single project endpoint
         const url = ownerId
           ? `${baseUrl}/projects?created_by=${encodeURIComponent(ownerId)}`
           : `${baseUrl}/projects`
 
         const response = await fetch(url)
-        if (!response.ok) {
-          throw new Error(`Failed to load projects (HTTP ${response.status})`)
-        }
+        if (!response.ok) throw new Error(`Failed to load projects (HTTP ${response.status})`)
 
         const payload = await response.json()
         const apiProjects = Array.isArray(payload?.projects) ? payload.projects : []
 
-        // Find the specific project
         const foundProject = apiProjects.find(p => p.project_id === projectId)
-        if (!foundProject) {
-          throw new Error('Project not found')
-        }
+        if (!foundProject) throw new Error('Project not found')
 
-        // Fetch the user name for the created_by user_id
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         let createdByName = foundProject.created_by
 
@@ -482,10 +671,9 @@ export default {
           created_by: createdByName,
           created_by_id: foundProject.created_by,
           due_date: foundProject.due_date,
-          status: 'Active' // Default status
+          status: 'Active'
         }
 
-        // Load tasks for this project
         await loadProjectTasks()
 
       } catch (err) {
@@ -501,7 +689,6 @@ export default {
     }
 
     const handleDelete = () => {
-      // Open the delete confirmation modal
       showDeleteModal.value = true
       deleteConfirmText.value = ''
     }
@@ -513,7 +700,6 @@ export default {
     }
 
     const confirmDelete = async () => {
-      // Check if user typed "delete" correctly
       if (deleteConfirmText.value !== 'delete') {
         notification.warning({
           message: 'Invalid confirmation',
@@ -563,16 +749,13 @@ export default {
     }
 
     const handleProjectUpdated = (updatedProject) => {
-      // Update the local project state with the new data
       project.value = {
         ...project.value,
         ...updatedProject
       }
 
-      // Close the modal
       showEditModal.value = false
 
-      // Show success notification
       notification.success({
         message: 'Project updated successfully',
         description: `"${updatedProject.project_name}" has been updated.`,
@@ -580,12 +763,10 @@ export default {
         duration: 3
       })
 
-      // Optionally refresh the project data from the server to ensure consistency
       loadProject()
     }
 
     const handleGenerateReport = () => {
-      // Generate project report
       notification.info({
         message: 'Feature Coming Soon',
         description: 'Project report generation will be available soon.',
@@ -594,13 +775,11 @@ export default {
       })
     }
 
-    // Handle task modal close
     const closeTaskDetailModal = () => {
       showTaskDetailModal.value = false
       selectedTask.value = null
     }
 
-    // Watch for route parameter changes
     watch(() => route.params.id, (newId, oldId) => {
       if (newId && newId !== oldId) {
         loadProject()
@@ -623,12 +802,21 @@ export default {
       showDeleteModal,
       deleteConfirmText,
       isDeletingProject,
-      headerStyle,
-      titleStyle,
-      subtitleStyle,
-      formatFullDate,
-      getStatusColor,
+      formatDate,
+      formatTaskDate,
+      isOverdue,
+      truncateText,
+      getStatusClass,
       getStatusText,
+      getPriorityClass,
+      getPriorityText,
+      getTeamMembersCount,
+      getCompletedTasksCount,
+      getOngoingTasksCount,
+      getOverdueTasksCount,
+      getCompletionPercentage,
+      getMyTasks,
+      getOtherTasks,
       handleEdit,
       handleDelete,
       closeDeleteModal,
@@ -643,59 +831,585 @@ export default {
 </script>
 
 <style scoped>
-.space-y-4 > * + * {
-  margin-top: 1rem;
+/* Container */
+.project-details-container {
+  min-height: 100vh;
+  background: #f8f9fa;
+  padding: 48px 32px;
 }
 
-/* Action buttons styling */
-.action-buttons {
-  width: 100%;
+.project-content {
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
-.action-buttons :deep(.ant-btn) {
+/* Loading and Error States */
+.loading-state,
+.error-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  min-height: 60vh;
+}
+
+.loading-state p {
+  margin-top: 16px;
+  font-size: 16px;
+  color: #6b7280;
+}
+
+/* Back Button */
+.back-button {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 32px;
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+}
+
+.back-button:hover {
+  color: #667eea;
+}
+
+/* Project Header */
+.project-header {
+  background: white;
+  border-radius: 16px;
+  padding: 48px;
+  margin-bottom: 32px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  gap: 32px;
+}
+
+.title-section {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.project-title {
+  font-size: 36px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.status-tag {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: none;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-active { background: #667eea; color: white; }
+.status-planning { background: #06b6d4; color: white; }
+.status-hold { background: #f59e0b; color: white; }
+.status-completed { background: #10b981; color: white; }
+.status-cancelled { background: #ef4444; color: white; }
+.status-unassigned { background: #e5e7eb; color: #6b7280; }
+.status-ongoing { background: #667eea; color: white; }
+.status-review { background: #8b5cf6; color: white; }
+
+.project-description {
+  font-size: 16px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0 0 32px 0;
+}
+
+/* Header Actions */
+.header-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.action-btn {
   height: 40px;
+  padding: 0 20px;
+  font-size: 14px;
   font-weight: 500;
-  transition: all 0.3s ease;
+  border-radius: 8px;
+  transition: all 0.2s ease;
 }
 
-.action-buttons :deep(.ant-btn:hover) {
+.action-btn:hover {
+  transform: translateY(-1px);
+}
+
+/* Meta Info */
+.meta-info {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  padding-top: 32px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.meta-icon {
+  font-size: 20px;
+  color: #667eea;
+}
+
+.meta-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meta-label {
+  font-size: 12px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.meta-value {
+  font-size: 15px;
+  color: #111827;
+  font-weight: 500;
+}
+
+.meta-divider {
+  width: 1px;
+  height: 40px;
+  background: #e5e7eb;
+}
+
+/* Section Cards */
+.section-card {
+  background: white;
+  border-radius: 16px;
+  padding: 40px;
+  margin-bottom: 32px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.section-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title-icon {
+  font-size: 24px;
+  color: #667eea;
+}
+
+.task-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 12px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #667eea;
+}
+
+/* Progress Stats */
+.progress-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 24px;
+  margin-bottom: 40px;
+}
+
+.stat-card {
+  padding: 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.stat-card:hover {
+  border-color: #667eea;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
 }
 
-/* Responsive adjustments */
+.stat-number {
+  font-size: 48px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+
+.stat-card.completed .stat-number { color: #10b981; }
+.stat-card.ongoing .stat-number { color: #667eea; }
+.stat-card.overdue .stat-number { color: #ef4444; }
+
+.stat-label {
+  font-size: 13px;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+/* Progress Bar */
+.progress-bar-section {
+  padding: 32px;
+  background: #f9fafb;
+  border-radius: 12px;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.progress-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.progress-percentage {
+  font-size: 32px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.progress-bar {
+  height: 12px;
+  background: #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea, #764ba2);
+  border-radius: 6px;
+  transition: width 0.6s ease;
+}
+
+/* Tasks Grid */
+.tasks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 24px;
+}
+
+.task-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 24px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.task-card:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.12);
+}
+
+.task-card.overdue {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.task-card.other-task {
+  opacity: 0.7;
+}
+
+.task-card.other-task:hover {
+  opacity: 1;
+}
+
+.priority-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+}
+
+.priority-indicator.priority-high { background: #ef4444; }
+.priority-indicator.priority-medium { background: #f59e0b; }
+.priority-indicator.priority-low { background: #06b6d4; }
+.priority-indicator.priority-lowest { background: #9ca3af; }
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.task-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+  flex: 1;
+  line-height: 1.4;
+}
+
+.task-status {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.task-description {
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.6;
+  margin: 0 0 16px 0;
+  min-height: 44px;
+}
+
+.task-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 16px;
+  border-top: 1px solid #f3f4f6;
+}
+
+.task-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.overdue-text {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.task-priority {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-priority.priority-high {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+.task-priority.priority-medium {
+  background: #fffbeb;
+  color: #f59e0b;
+}
+
+.task-priority.priority-low {
+  background: #ecfeff;
+  color: #06b6d4;
+}
+
+.task-priority.priority-lowest {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* Loading and Empty States */
+.loading-content,
+.empty-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+}
+
+.loading-content p {
+  margin-top: 16px;
+  color: #6b7280;
+}
+
+/* Comments */
+.comments-content {
+  padding: 0;
+}
+
+/* Delete Modal */
+.delete-modal-content {
+  padding: 16px 0;
+}
+
+.warning-icon {
+  text-align: center;
+  margin-bottom: 16px;
+  font-size: 48px;
+  color: #ff4d4f;
+}
+
+.warning-title {
+  text-align: center;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.warning-subtitle {
+  text-align: center;
+  color: #666;
+  margin-bottom: 24px;
+}
+
+.confirmation-input {
+  margin-bottom: 24px;
+}
+
+.confirmation-input label {
+  display: block;
+  margin-bottom: 8px;
+  color: #666;
+}
+
+.delete-text {
+  color: #ff4d4f;
+}
+
+.error-text {
+  font-size: 12px;
+  color: #ff4d4f;
+  display: block;
+  margin-top: 4px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .meta-info {
+    flex-wrap: wrap;
+  }
+
+  .meta-divider {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
-  .action-buttons {
-    margin-top: 16px;
+  .project-details-container {
+    padding: 24px 16px;
+  }
+
+  .project-header,
+  .section-card {
+    padding: 24px;
+  }
+
+  .project-title {
+    font-size: 28px;
+  }
+
+  .header-top {
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .action-btn {
+    flex: 1;
+  }
+
+  .meta-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 20px;
+  }
+
+  .progress-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .tasks-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-title {
+    font-size: 20px;
   }
 }
 
-@media (min-width: 769px) {
-  .action-buttons {
-    align-items: flex-end;
+@media (max-width: 480px) {
+  .project-title {
+    font-size: 24px;
   }
-}
 
-/* Delete modal styling */
-:deep(.ant-modal-header) {
-  border-bottom: 1px solid #f0f0f0;
-  padding: 16px 24px;
-}
+  .title-section {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 
-:deep(.ant-modal-body) {
-  padding: 0 24px;
-}
+  .progress-stats {
+    grid-template-columns: 1fr;
+  }
 
-:deep(.ant-input-status-error) {
-  border-color: #ff4d4f;
-}
-
-:deep(.ant-input-status-error:focus) {
-  border-color: #ff4d4f;
-  box-shadow: 0 0 0 2px rgba(255, 77, 79, 0.1);
+  .stat-number {
+    font-size: 36px;
+  }
 }
 </style>
