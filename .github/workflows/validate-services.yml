@@ -61,8 +61,9 @@ jobs:
           echo "Waiting for services to start..."
           for i in {1..30}; do
             # Check if all containers are healthy using docker compose ps
-            UNHEALTHY=$(docker compose ps --format json | jq -r '.[] | select(.Health == "unhealthy" or .Health == "starting") | .Name' | wc -l)
-            RUNNING=$(docker compose ps --format json | jq -r '.[] | select(.State == "running") | .Name' | wc -l)
+            # Note: --format json outputs one JSON object per line, so we use jq -s to slurp into array
+            UNHEALTHY=$(docker compose ps --format json | jq -s -r '[.[] | select(.Health == "unhealthy" or .Health == "starting")] | length')
+            RUNNING=$(docker compose ps --format json | jq -s -r '[.[] | select(.State == "running")] | length')
 
             echo "Running containers: $RUNNING, Unhealthy/Starting: $UNHEALTHY"
 
