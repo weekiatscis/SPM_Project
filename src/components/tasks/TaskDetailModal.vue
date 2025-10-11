@@ -307,11 +307,19 @@ export default {
 
     // Fetch collaborators details
     const fetchCollaborators = async () => {
+      console.log('🔍 [TaskDetailModal] fetchCollaborators called')
+      console.log('   props.task:', props.task)
+      console.log('   props.task.collaborators:', props.task?.collaborators)
+      console.log('   Type of collaborators:', typeof props.task?.collaborators)
+      console.log('   Is Array:', Array.isArray(props.task?.collaborators))
+
       if (!props.task?.collaborators || props.task.collaborators.length === 0) {
+        console.log('   ⚠️ No collaborators or empty array, skipping fetch')
         collaborators.value = []
         return
       }
-      
+
+      console.log(`   ✅ Found ${props.task.collaborators.length} collaborator(s), fetching details...`)
       isLoadingCollaborators.value = true
       try {
         const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
