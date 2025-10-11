@@ -345,17 +345,13 @@ def add_project_comment(project_id):
             return jsonify({"error": "user_id is required"}), 400
 
         # Get user information for the commenter
-        user_response = supabase.table("user").select("first_name, last_name, name").eq("user_id", user_id).execute()
+        user_response = supabase.table("user").select("name").eq("user_id", user_id).execute()
         user_name = "Unknown User"
         if user_response.data:
             user = user_response.data[0]
-            # Try first_name + last_name first
-            first_name = user.get('first_name', '')
-            last_name = user.get('last_name', '')
-            user_name = f"{first_name} {last_name}".strip()
-            # Fallback to name field if first/last name is empty
+            user_name = user.get('name', '').strip()
             if not user_name:
-                user_name = user.get('name', 'Unknown User')
+                user_name = "Unknown User"
 
         # Prepare comment data
         comment_data = {

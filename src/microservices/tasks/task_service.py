@@ -1752,13 +1752,13 @@ def get_task_comments(task_id: str):
             user_name = "Unknown User"
             try:
                 user_response = supabase.table("user")\
-                    .select("first_name, last_name")\
+                    .select("name")\
                     .eq("user_id", comment["user_id"])\
                     .execute()
-                
+
                 if user_response.data:
                     user = user_response.data[0]
-                    user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+                    user_name = user.get('name', '').strip()
                     if not user_name:
                         user_name = f"User-{comment['user_id'][:8]}"
                 else:
@@ -1839,13 +1839,13 @@ def add_task_comment(task_id: str):
             return jsonify({"error": "Failed to create comment"}), 500
         
         comment = response.data[0]
-        
+
         # Get user information for the response
-        user_response = supabase.table("user").select("first_name, last_name").eq("user_id", user_id).execute()
+        user_response = supabase.table("user").select("name").eq("user_id", user_id).execute()
         user_name = "Unknown User"
         if user_response.data:
             user = user_response.data[0]
-            user_name = f"{user.get('first_name', '')} {user.get('last_name', '')}".strip()
+            user_name = user.get('name', '').strip()
             if not user_name:  # If the name is empty after stripping
                 user_name = "Unknown User"
         
