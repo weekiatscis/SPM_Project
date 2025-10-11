@@ -428,20 +428,43 @@ def save_notification_preferences(user_id: str, task_id: str, email_enabled: boo
 
 def notify_task_comment(task_data: dict, comment_text: str, commenter_id: str, commenter_name: str):
     """Send notification to all stakeholders when a comment is added to a task"""
-    try:
-        # Get all stakeholders (owner + collaborators)
-        stakeholders = get_task_stakeholders(task_data)
+    print("="*80)
+    print("🔔 NOTIFY_TASK_COMMENT CALLED")
+    print("="*80)
+    print(f"📋 Task Data: {task_data}")
+    print(f"💬 Comment Text: {comment_text}")
+    print(f"👤 Commenter ID: {commenter_id}")
+    print(f"👤 Commenter Name: {commenter_name}")
 
-        if not stakeholders:
-            print("No stakeholders found for comment notification")
+    try:
+        # Validate required task fields
+        required_fields = ['task_id', 'title', 'owner_id']
+        missing_fields = [field for field in required_fields if field not in task_data or not task_data[field]]
+        if missing_fields:
+            print(f"❌ ERROR: Missing required task fields: {missing_fields}")
+            print(f"Task data received: {task_data}")
             return
 
-        print(f"Notifying {len(stakeholders)} stakeholder(s) about new comment on task {task_data.get('task_id')}")
+        # Get all stakeholders (owner + collaborators)
+        print(f"🔍 Getting stakeholders for task {task_data.get('task_id')}...")
+        stakeholders = get_task_stakeholders(task_data)
+        print(f"👥 Stakeholders found: {stakeholders} (count: {len(stakeholders) if stakeholders else 0})")
 
+        if not stakeholders:
+            print("❌ No stakeholders found for comment notification")
+            print(f"   Task owner_id: {task_data.get('owner_id')}")
+            print(f"   Task collaborators: {task_data.get('collaborators')}")
+            return
+
+        print(f"✅ Notifying {len(stakeholders)} stakeholder(s) about new comment on task {task_data.get('task_id')}")
+
+        notifications_created = 0
         for stakeholder_id in stakeholders:
+            print(f"\n--- Processing stakeholder: {stakeholder_id} ---")
+
             # Skip the person who made the comment
             if stakeholder_id == commenter_id:
-                print(f"Skipping notification for user {stakeholder_id} (they made the comment)")
+                print(f"⏭️  Skipping notification for user {stakeholder_id} (they made the comment)")
                 continue
 
             # Truncate comment for notification if too long
@@ -459,32 +482,54 @@ def notify_task_comment(task_data: dict, comment_text: str, commenter_id: str, c
                 "is_read": False
             }
 
+            print(f"📝 Notification data prepared: {notification_data}")
+
             # Check notification preferences
             prefs = get_notification_preferences(stakeholder_id, task_data["task_id"])
+            print(f"⚙️  Notification preferences: email={prefs.get('email_enabled')}, in_app={prefs.get('in_app_enabled')}")
 
             # Store in-app notification if enabled
             if prefs.get("in_app_enabled", True):
-                response = supabase.table("notifications").insert(notification_data).execute()
-                if response.data:
-                    print(f"✅ Sent comment notification to stakeholder {stakeholder_id}")
+                try:
+                    print(f"💾 Inserting notification into database for user {stakeholder_id}...")
+                    response = supabase.table("notifications").insert(notification_data).execute()
 
-                    # Try to send via notification service for real-time
-                    try:
-                        notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                        requests.post(
-                            f"{notification_service_url}/notifications/create",
-                            json=notification_data,
-                            timeout=5,
-                            headers={'Content-Type': 'application/json'}
-                        )
-                    except Exception as e:
-                        print(f"Failed to notify stakeholder via notification service: {e}")
+                    if response.data:
+                        notifications_created += 1
+                        print(f"✅ SUCCESS: Notification inserted! ID: {response.data[0].get('id')}")
+                        print(f"   Notification title: {notification_data['title']}")
+                        print(f"   For user: {stakeholder_id}")
+
+                        # Try to send via notification service for real-time
+                        try:
+                            notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                            print(f"📡 Sending to notification service: {notification_service_url}")
+                            notif_response = requests.post(
+                                f"{notification_service_url}/notifications/create",
+                                json=notification_data,
+                                timeout=5,
+                                headers={'Content-Type': 'application/json'}
+                            )
+                            print(f"   Notification service response: {notif_response.status_code}")
+                        except Exception as e:
+                            print(f"⚠️  Failed to notify via notification service: {e}")
+                    else:
+                        print(f"❌ ERROR: Supabase insert returned no data!")
+                        print(f"   Response: {response}")
+
+                except Exception as insert_error:
+                    print(f"❌ EXCEPTION during database insert: {insert_error}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"⏭️  In-app notifications disabled for stakeholder {stakeholder_id}")
 
             # Send email if enabled
             if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
                 user_email = get_user_email(stakeholder_id)
                 if user_email:
                     try:
+                        print(f"📧 Sending email to {user_email}...")
                         send_notification_email(
                             user_email=user_email,
                             notification_type="task_comment",
@@ -495,14 +540,21 @@ def notify_task_comment(task_data: dict, comment_text: str, commenter_id: str, c
                             due_date=task_data.get("due_date"),
                             priority=task_data.get("priority", "Medium")
                         )
-                        print(f"📧 Email notification sent to stakeholder {user_email}")
+                        print(f"✅ Email sent successfully to {user_email}")
                     except Exception as e:
-                        print(f"Failed to send email to stakeholder: {e}")
+                        print(f"❌ Failed to send email: {e}")
+                else:
+                    print(f"⚠️  No email found for stakeholder {stakeholder_id}")
+
+        print(f"\n{'='*80}")
+        print(f"📊 SUMMARY: Created {notifications_created} notification(s) for task comment")
+        print(f"{'='*80}\n")
 
     except Exception as e:
-        print(f"Failed to notify stakeholders about comment: {e}")
+        print(f"❌❌❌ CRITICAL ERROR in notify_task_comment: {e}")
         import traceback
         traceback.print_exc()
+        print(f"{'='*80}\n")
 
 def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new_due_date: str, updated_by: str = None):
     """Send notification to all stakeholders (owner + collaborators) when due date changes"""
@@ -1812,6 +1864,13 @@ def add_task_comment(task_id: str):
             pass
 
         # Send notifications to all stakeholders (owner + collaborators) except the commenter
+        print(f"\n🔔 Attempting to send comment notifications for task {task_id}...")
+        print(f"   Task object keys: {list(task.keys())}")
+        print(f"   Task title: {task.get('title')}")
+        print(f"   Task owner_id: {task.get('owner_id')}")
+        print(f"   Task collaborators: {task.get('collaborators')}")
+        print(f"   Comment by: {user_id} ({user_name})")
+
         try:
             notify_task_comment(
                 task_data=task,
@@ -1819,9 +1878,11 @@ def add_task_comment(task_id: str):
                 commenter_id=user_id,
                 commenter_name=user_name
             )
-            print(f"✅ Task comment notifications sent for task {task_id}")
+            print(f"✅ Task comment notifications function completed for task {task_id}")
         except Exception as notification_error:
-            print(f"⚠️ Failed to send comment notifications: {notification_error}")
+            print(f"❌❌❌ EXCEPTION in comment notification: {notification_error}")
+            import traceback
+            traceback.print_exc()
             # Don't fail the request if notifications fail
 
         response_data = {
