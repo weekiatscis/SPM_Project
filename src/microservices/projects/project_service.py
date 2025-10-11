@@ -13,6 +13,18 @@ try:
 except Exception:
     pass
 
+# Try to import email service
+EMAIL_SERVICE_AVAILABLE = False
+try:
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../notifications'))
+    from email_service import send_notification_email
+    EMAIL_SERVICE_AVAILABLE = True
+    print("✅ Email service loaded successfully")
+except Exception as e:
+    print(f"⚠️  Email service not available: {e}")
+    EMAIL_SERVICE_AVAILABLE = False
+
 try:
     from supabase import create_client, Client
 except Exception as exc:
@@ -120,16 +132,24 @@ def notify_project_comment(project_data: dict, comment_text: str, commenter_id: 
                     print(f"Failed to notify stakeholder via notification service: {e}")
 
             # Send email notification (always enabled for project comments)
-            user_email = get_user_email(stakeholder_id)
-            if user_email:
-                # Use a simple email template for project comments
-                try:
-                    # Note: You may need to implement this in your email service
-                    # For now, we'll just log it
-                    print(f"📧 Would send email notification to {user_email} about project comment")
-                    # TODO: Implement email sending via email_service if needed
-                except Exception as e:
-                    print(f"Failed to send email to stakeholder: {e}")
+            if EMAIL_SERVICE_AVAILABLE:
+                user_email = get_user_email(stakeholder_id)
+                if user_email:
+                    try:
+                        print(f"📧 Sending email to {user_email} about project comment...")
+                        send_notification_email(
+                            user_email=user_email,
+                            notification_type="project_comment",
+                            project_name=project_data.get("project_name", "Untitled Project"),
+                            project_id=project_data.get("project_id"),
+                            comment_text=truncated_comment,
+                            commenter_name=commenter_name
+                        )
+                        print(f"✅ Email sent successfully to {user_email}")
+                    except Exception as e:
+                        print(f"❌ Failed to send email to stakeholder: {e}")
+                else:
+                    print(f"⚠️  No email found for stakeholder {stakeholder_id}")
 
     except Exception as e:
         print(f"Failed to notify stakeholders about project comment: {e}")
