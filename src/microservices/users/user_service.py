@@ -301,5 +301,11 @@ def get_user_subordinates(user_id: str):
         return jsonify({"error": f"Failed to fetch subordinates: {str(e)}"}), 500
 
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Simple health check endpoint for Docker and CI/CD"""
+    return jsonify({"status": "healthy", "service": "user-service"}), 200
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8081)

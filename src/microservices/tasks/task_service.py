@@ -1191,6 +1191,13 @@ def add_task_comment(task_id: str):
         return jsonify({"error": "Failed to add comment"}), 500
 
 
+# Health check endpoint (no authentication required)
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Simple health check endpoint for Docker and CI/CD"""
+    return jsonify({"status": "healthy", "service": "task-service"}), 200
+
+
 # Error handlers
 @app.errorhandler(404)
 def not_found(error):

@@ -60,18 +60,25 @@ jobs:
         run: |
           echo "Waiting for services to start..."
           for i in {1..30}; do
-            if curl -f http://localhost:8080/tasks > /dev/null 2>&1 && \
-               curl -f http://localhost:8082/projects > /dev/null 2>&1 && \
-               curl -f http://localhost:8081/users > /dev/null 2>&1 && \
-               curl -f http://localhost:8086/auth/validate > /dev/null 2>&1 && \
-               curl -f http://localhost:8084/notifications?user_id=test > /dev/null 2>&1; then
-              echo "All services are ready!"
+            # Check if all containers are healthy using docker compose ps
+            UNHEALTHY=$(docker compose ps --format json | jq -r '.[] | select(.Health == "unhealthy" or .Health == "starting") | .Name' | wc -l)
+            RUNNING=$(docker compose ps --format json | jq -r '.[] | select(.State == "running") | .Name' | wc -l)
+
+            echo "Running containers: $RUNNING, Unhealthy/Starting: $UNHEALTHY"
+
+            # We expect 6 services (5 microservices + rabbitmq)
+            if [ "$RUNNING" -ge 6 ] && [ "$UNHEALTHY" -eq 0 ]; then
+              echo "All services are healthy and running!"
+              docker compose ps
               exit 0
             fi
+
             echo "Waiting... (attempt $i/30)"
             sleep 2
           done
-          echo "Services did not start in time"
+
+          echo "Services did not become healthy in time"
+          docker compose ps
           exit 1
 
       - name: Check service logs (if services fail to start)

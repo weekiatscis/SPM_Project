@@ -154,6 +154,12 @@ def delete_project(project_id):
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Simple health check endpoint for Docker and CI/CD"""
+    return jsonify({"status": "healthy", "service": "project-service"}), 200
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8082))
     app.run(host="0.0.0.0", port=port)
