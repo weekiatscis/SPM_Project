@@ -122,14 +122,24 @@
           <!-- Priority -->
           <div>
             <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
-              Priority
+              Priority (1-10)
             </label>
-            <select id="priority" v-model="form.priority" class="input-field">
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-              <option value="Lowest">Lowest</option>
-            </select>
+            <div class="space-y-2">
+              <input 
+                id="priority" 
+                v-model.number="form.priority" 
+                type="range" 
+                min="1" 
+                max="10" 
+                step="1"
+                class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+              />
+              <div class="flex justify-between text-xs text-gray-500">
+                <span>1 (Lowest)</span>
+                <span class="font-semibold text-blue-600">{{ form.priority }}</span>
+                <span>10 (Highest)</span>
+              </div>
+            </div>
           </div>
 
           <!-- Assignee -->
@@ -323,7 +333,7 @@ export default {
       description: '',
       dueDate: '',
       status: 'Unassigned',
-      priority: 'Medium',
+      priority: 5,
       assigneeId: '',
       collaborators: [],
       isSubtask: false,
@@ -583,7 +593,7 @@ export default {
           description: newTask.description || '',
           dueDate: newTask.dueDate ? new Date(newTask.dueDate).toISOString().split('T')[0] : '',
           status: newTask.status || (isStaffRole.value ? 'Ongoing' : 'Unassigned'),
-          priority: newTask.priority || 'Medium',
+          priority: newTask.priority || 5,
           assigneeId: newTask.owner_id || '',
           collaborators: newTask.collaborators || [],
           isSubtask: !!newTask.parent_task_id,
@@ -607,7 +617,7 @@ export default {
           description: '',
           dueDate: '',
           status: isStaffRole.value ? 'Ongoing' : 'Unassigned',
-          priority: 'Medium',
+          priority: 5,
           assigneeId: defaultAssigneeId,
           collaborators: [],
           isSubtask: false,
@@ -801,7 +811,7 @@ export default {
           description: '',
           dueDate: '',
           status: isStaffRole.value ? 'Ongoing' : 'Unassigned',
-          priority: 'Medium',
+          priority: 5,
           assigneeId: defaultAssigneeId,
           collaborators: [],
           isSubtask: false,

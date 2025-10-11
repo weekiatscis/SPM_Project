@@ -186,7 +186,7 @@ export default {
           dueDate: apiTasks[0].dueDate,
           status: apiTasks[0].status,
           description: apiTasks[0].description || 'No description available',
-          priority: apiTasks[0].priority || 'Medium', // Default to Medium for consistency
+          priority: apiTasks[0].priority || 5, // Default to 5 for consistency
           assignee: apiTasks[0].assignee || 'Unassigned',
           project: apiTasks[0].project || 'Default Project',
           owner_id: apiTasks[0].owner_id, // Add owner_id
@@ -293,17 +293,18 @@ export default {
           return new Date(b.dueDate) - new Date(a.dueDate)
         })
       } else if (sortBy.value === 'priority-asc') {
-        const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2, 'Lowest': 3 }
+        // Sort by priority: lower numbers (1) = lower priority, higher numbers (10) = higher priority
+        // Ascending = low to high (1 to 10)
         return sortedTasks.sort((a, b) => {
-          const aPriority = priorityOrder[a.priority] ?? 4
-          const bPriority = priorityOrder[b.priority] ?? 4
+          const aPriority = typeof a.priority === 'number' ? a.priority : (parseInt(a.priority) || 5)
+          const bPriority = typeof b.priority === 'number' ? b.priority : (parseInt(b.priority) || 5)
           return aPriority - bPriority
         })
       } else if (sortBy.value === 'priority-desc') {
-        const priorityOrder = { 'High': 0, 'Medium': 1, 'Low': 2, 'Lowest': 3 }
+        // Descending = high to low (10 to 1)
         return sortedTasks.sort((a, b) => {
-          const aPriority = priorityOrder[a.priority] ?? 4
-          const bPriority = priorityOrder[b.priority] ?? 4
+          const aPriority = typeof a.priority === 'number' ? a.priority : (parseInt(a.priority) || 5)
+          const bPriority = typeof b.priority === 'number' ? b.priority : (parseInt(b.priority) || 5)
           return bPriority - aPriority
         })
       }

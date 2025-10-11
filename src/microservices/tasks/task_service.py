@@ -53,7 +53,7 @@ class TaskCreate(BaseModel):
     title: str
     due_date: Optional[str] = None
     status: Optional[str] = "Unassigned"
-    priority: Optional[str] = None
+    priority: Optional[int] = 5  # Priority from 1-10, default to 5 (medium)
     description: Optional[str] = None
     owner_id: Optional[str] = None
     collaborators: Optional[str] = None
@@ -68,7 +68,7 @@ class TaskUpdate(BaseModel):
     title: Optional[str] = None
     due_date: Optional[str] = None
     status: Optional[str] = None
-    priority: Optional[str] = None
+    priority: Optional[int] = None  # Priority from 1-10
     description: Optional[str] = None
     collaborators: Optional[str] = None
     project_id: Optional[str] = None
@@ -237,7 +237,7 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
         "description": row.get("description", ""),
         "dueDate": to_yyyy_mm_dd(row.get("due_date")),  # normalize for FE
         "status": row.get("status"),
-        "priority": row.get("priority") or "Medium",  # Default to Medium if null
+        "priority": row.get("priority") or 5,  # Default to 5 (medium) if null
         "owner_id": row.get("owner_id"),
         "project_id": row.get("project_id"),
         "collaborators": row.get("collaborators") or [],
@@ -410,7 +410,7 @@ def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new
                 "type": "due_date_change",
                 "task_id": task_data["task_id"],
                 "due_date": new_due_date,
-                "priority": task_data.get("priority", "Medium"),
+                "priority": task_data.get("priority", 5),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "is_read": False
             }
@@ -443,7 +443,7 @@ def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new
                                 notification_type="due_date_change",
                                 task_title=task_data["title"],
                                 due_date=new_due_date,
-                                priority=task_data.get("priority", "Medium"),
+                                priority=task_data.get("priority", 5),
                                 task_id=task_data["task_id"],
                                 old_due_date=old_due_date,
                                 new_due_date=new_due_date
@@ -514,7 +514,7 @@ def check_and_send_due_date_notifications(task_data: dict):
                         "type": f"reminder_{reminder_day}_days",
                         "task_id": task_data["task_id"],
                         "due_date": task_data["due_date"],
-                        "priority": task_data.get("priority", "Medium"),
+                        "priority": task_data.get("priority", 5),
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "is_read": False
                     }
@@ -565,7 +565,7 @@ def check_and_send_due_date_notifications(task_data: dict):
                                     notification_type=f"reminder_{reminder_day}_days",
                                     task_title=task_data["title"],
                                     due_date=due_date.strftime('%B %d, %Y'),
-                                    priority=task_data.get("priority", "Medium"),
+                                    priority=task_data.get("priority", 5),
                                     task_id=task_data["task_id"]
                                 )
                                 print(f"✅ Email notification sent successfully to {user_email}")

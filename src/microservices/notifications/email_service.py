@@ -32,18 +32,27 @@ def create_email_template(notification_type: str, data: dict) -> str:
 
     task_title = data.get("task_title", "Untitled Task")
     due_date = data.get("due_date", "")
-    priority = data.get("priority", "Medium")
+    priority = data.get("priority", 5)
     task_id = data.get("task_id", "")
     task_link = f"{FRONTEND_URL}/tasks?taskId={task_id}" if task_id else FRONTEND_URL
 
-    # Priority colors
-    priority_colors = {
-        "High": "#cf1322",
-        "Medium": "#d46b08",
-        "Low": "#389e0d",
-        "Lowest": "#1d39c4"
-    }
-    priority_color = priority_colors.get(priority, "#d46b08")
+    # Convert priority to number if it's a string (for backwards compatibility)
+    if isinstance(priority, str):
+        priority = int(priority) if priority.isdigit() else 5
+    
+    # Priority colors based on 1-10 scale
+    # 1-4: Low priority (green)
+    # 5-7: Medium priority (orange)
+    # 8-10: High priority (red)
+    if priority >= 8:
+        priority_color = "#cf1322"  # Red for high priority
+        priority_label = f"Priority: {priority}/10 (High)"
+    elif priority >= 5:
+        priority_color = "#d46b08"  # Orange for medium priority
+        priority_label = f"Priority: {priority}/10 (Medium)"
+    else:
+        priority_color = "#389e0d"  # Green for low priority
+        priority_label = f"Priority: {priority}/10 (Low)"
 
     # Base HTML template
     base_style = """
@@ -80,7 +89,7 @@ def create_email_template(notification_type: str, data: dict) -> str:
                     <div class="task-card">
                         <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
                         <p><strong>Due Date:</strong> {due_date}</p>
-                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
+                        <p><strong>Priority:</strong> <span class="priority-badge">{priority_label}</span></p>
                         <p style="color: #666; margin-top: 15px;">This task is due in <strong>{days} day(s)</strong>. Make sure to complete it on time!</p>
                     </div>
 
@@ -121,7 +130,7 @@ def create_email_template(notification_type: str, data: dict) -> str:
 
                     <div class="task-card">
                         <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
-                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
+                        <p><strong>Priority:</strong> <span class="priority-badge">{priority_label}</span></p>
                         <div style="background: #fff7e6; padding: 15px; border-radius: 6px; margin: 15px 0;">
                             <p style="margin: 5px 0;"><strong>Previous Due Date:</strong> <span style="text-decoration: line-through; color: #999;">{old_due_date}</span></p>
                             <p style="margin: 5px 0;"><strong>New Due Date:</strong> <span style="color: #d46b08; font-weight: bold;">{new_due_date}</span></p>
@@ -165,7 +174,7 @@ def create_email_template(notification_type: str, data: dict) -> str:
 
                     <div class="task-card">
                         <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
-                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
+                        <p><strong>Priority:</strong> <span class="priority-badge">{priority_label}</span></p>
                     </div>
 
                     <center>

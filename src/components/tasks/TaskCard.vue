@@ -38,10 +38,16 @@ export default {
   emits: ['view-details'],
   setup(props, { emit }) {
     const formatDate = (dateString) => {
-      const date = new Date(dateString)
-      const now = new Date()
-      const diffTime = date.getTime() - now.getTime()
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      // Parse the date string and set to midnight local time to avoid timezone issues
+      const dueDate = new Date(dateString + 'T00:00:00')
+      const today = new Date()
+      
+      // Reset both dates to midnight for accurate day comparison
+      today.setHours(0, 0, 0, 0)
+      dueDate.setHours(0, 0, 0, 0)
+      
+      const diffTime = dueDate.getTime() - today.getTime()
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
 
       if (diffDays < 0) {
         return `${Math.abs(diffDays)} days overdue`

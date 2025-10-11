@@ -373,7 +373,7 @@ export default {
           dueDate: t.dueDate || null,
           status: t.status,
           description: t.description || 'No description available',
-          priority: t.priority || 'Medium',
+          priority: t.priority || 5,
           assignee: t.assignee || 'Unassigned',
           project: t.project || project.value.project_name
         }))
@@ -410,7 +410,7 @@ export default {
           dueDate: apiTasks[0].dueDate,
           status: apiTasks[0].status,
           description: apiTasks[0].description || 'No description available',
-          priority: apiTasks[0].priority || 'Medium',
+          priority: apiTasks[0].priority || 5,
           assignee: apiTasks[0].assignee || 'Unassigned',
           project: apiTasks[0].project || project.value.project_name,
           activities: apiTasks[0].activities || [],

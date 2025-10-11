@@ -50,7 +50,7 @@
             </div>
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-1">Priority</label>
-              <p class="text-gray-900 text-xs capitalize">{{ task.priority || 'Medium' }}</p>
+              <p class="text-gray-900 text-xs">{{ task.priority || 5 }}/10</p>
             </div>
           </div>
 
@@ -132,7 +132,7 @@
                             Due: {{ formatDate(subtask.dueDate) }}
                           </span>
                           <span class="text-xs text-gray-500">
-                            Priority: {{ subtask.priority || 'Medium' }}
+                            Priority: {{ subtask.priority || 5 }}/10
                           </span>
                         </div>
                       </div>
@@ -615,12 +615,13 @@ export default {
     }
 
     const getPriorityColor = (priority) => {
-      const colors = {
-        low: 'bg-green-400',
-        medium: 'bg-yellow-400',
-        high: 'bg-red-400'
-      }
-      return colors[priority] || colors.medium
+      // Convert priority to number if it's a string (for backwards compatibility)
+      const priorityNum = typeof priority === 'string' ? parseInt(priority) : priority
+      
+      // Map 1-10 scale to colors
+      if (priorityNum >= 8) return 'bg-red-400'       // 8-10: High priority (red)
+      if (priorityNum >= 5) return 'bg-yellow-400'    // 5-7: Medium priority (yellow)
+      return 'bg-green-400'                            // 1-4: Low priority (green)
     }
 
     const editTask = () => {
