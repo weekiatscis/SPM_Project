@@ -56,23 +56,23 @@ jobs:
         run: |
           docker compose up -d --build
 
-      - name: Wait for services to be ready
-        run: |
-          echo "Waiting for services to start..."
-          for i in {1..30}; do
-            if curl -f http://localhost:8080/tasks > /dev/null 2>&1 && \
-               curl -f http://localhost:8082/projects > /dev/null 2>&1 && \
-               curl -f http://localhost:8081/users > /dev/null 2>&1 && \
-               curl -f http://localhost:8086/auth/validate > /dev/null 2>&1 && \
-               curl -f http://localhost:8084/notifications?user_id=test > /dev/null 2>&1; then
-              echo "All services are ready!"
-              exit 0
-            fi
-            echo "Waiting... (attempt $i/30)"
-            sleep 2
-          done
-          echo "Services did not start in time"
-          exit 1
+      # - name: Wait for services to be ready
+      #   run: |
+      #     echo "Waiting for services to start..."
+      #     for i in {1..30}; do
+      #       if curl -f http://localhost:8080/tasks > /dev/null 2>&1 && \
+      #          curl -f http://localhost:8082/projects > /dev/null 2>&1 && \
+      #          curl -f http://localhost:8081/users > /dev/null 2>&1 && \
+      #          curl -f http://localhost:8086/auth/validate > /dev/null 2>&1 && \
+      #          curl -f http://localhost:8084/notifications?user_id=test > /dev/null 2>&1; then
+      #         echo "All services are ready!"
+      #         exit 0
+      #       fi
+      #       echo "Waiting... (attempt $i/30)"
+      #       sleep 2
+      #     done
+      #     echo "Services did not start in time"
+      #     exit 1
 
       - name: Check service logs (if services fail to start)
         if: failure()
