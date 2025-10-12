@@ -1,4 +1,5 @@
 import os
+import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify, request
@@ -34,6 +35,15 @@ CORS(app, resources={
 
 # Session timeout constant
 SESSION_TIMEOUT = timedelta(minutes=15)
+
+
+def is_valid_uuid(value: str) -> bool:
+    """Validate if a string is a valid UUID"""
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 def validate_session(session_token: str) -> Optional[Dict[str, Any]]:

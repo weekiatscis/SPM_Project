@@ -19,6 +19,40 @@ env:
   NOTIFICATION_SERVICE_URL: http://localhost:8084
 
 jobs:
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 1  # Fast tests should complete quickly
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r tests/unit/requirements-test.txt
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ -v --tb=short --cov=src/microservices --cov-report=term --cov-report=xml
+
+      - name: Upload coverage to Codecov (optional)
+        if: success()
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-unit-tests
+        continue-on-error: true  # Don't fail if codecov upload fails
+
   validate-services:
     name: Validate All Microservices
     runs-on: ubuntu-latest

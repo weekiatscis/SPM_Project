@@ -3,6 +3,7 @@ import sys
 import json
 import traceback
 import logging
+import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
 
@@ -143,6 +144,14 @@ class NotificationPublisher:
 notification_publisher = NotificationPublisher()
 
 # Helper functions
+def is_valid_uuid(value: str) -> bool:
+    """Validate if a string is a valid UUID"""
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
 def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
     """Convert database row to API response format"""
     return {

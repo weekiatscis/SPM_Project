@@ -1,4 +1,5 @@
 import os
+import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
@@ -29,6 +30,15 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 app = Flask(__name__)
 CORS(app)
+
+
+def is_valid_uuid(value: str) -> bool:
+    """Validate if a string is a valid UUID"""
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 @app.route("/projects", methods=["POST"])

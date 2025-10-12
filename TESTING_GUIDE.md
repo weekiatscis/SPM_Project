@@ -207,12 +207,8 @@ To enable CI/CD, configure these secrets in your GitHub repository:
 1. `SUPABASE_URL` - Your Supabase project URL
 2. `SUPABASE_SERVICE_ROLE_KEY` - Your Supabase service role key
 3. `VITE_TASK_OWNER_ID` - Default task owner ID
+4. Optionally, you can configure the notification variables, but dummy vars have already been added.
 
-**How to add secrets:**
-1. Go to your repository on GitHub
-2. Click Settings > Secrets and variables > Actions
-3. Click "New repository secret"
-4. Add each secret with the exact names listed above
 
 ## Environment Variables
 
@@ -297,107 +293,117 @@ RABBITMQ_URL=amqp://admin:admin123@localhost:5672
 4. Ensure database is accessible
 5. Run tests individually to isolate issues
 
-## Best Practices
 
-### Writing Tests
 
-1. **Keep tests independent** - Each test should run independently
-2. **Use timeouts** - All HTTP requests have 5-second timeout
-3. **Check multiple status codes** - Services may return different codes based on auth
-4. **Don't modify data** - Tests should be read-only when possible
-5. **Clean up resources** - Always clean up test data
 
-### Running Tests
+---
 
-1. **Start services first** - Always ensure services are running
-2. **Wait for initialization** - Give services 30 seconds to start
-3. **Run comprehensive validation first** - Use `validate_all_services.py`
-4. **Check logs on failure** - Review service logs for errors
-5. **Use the test runner script** - Simplifies test execution
+## NEW: Unit Testing
 
-### CI/CD
+### Unit Test Suite Added!
 
-1. **Keep secrets secure** - Never commit secrets to repository
-2. **Monitor workflow runs** - Check GitHub Actions tab regularly
-3. **Review test artifacts** - Download and review uploaded artifacts
-4. **Fix failing tests immediately** - Don't let broken tests accumulate
-5. **Test before pushing** - Run tests locally before pushing
+We've now added comprehensive **unit tests** to complement the existing integration tests.
 
-## Test Output Example
+#### Location
+- **Unit Tests**: `tests/unit/`
+- **Integration Tests**: `tests/` (existing)
 
-```
-======================================================================
-SPM PROJECT - MICROSERVICES VALIDATION
-======================================================================
-Timestamp: 2025-10-10 12:34:56
+#### What's New
 
-STEP 1: Basic Health Checks
+**5 New Unit Test Files:**
+- ✅ `test_task_service_unit.py` - 20+ tests for task logic
+- ✅ `test_user_service_unit.py` - 15+ tests for user/session logic
+- ✅ `test_project_service_unit.py` - 15+ tests for project logic  
+- ✅ `test_auth_service_unit.py` - 20+ tests for auth/security logic
+- ✅ `test_notification_service_unit.py` - 15+ tests for notification logic
 
-Checking Task Service... ✓ Service is healthy (Status: 200)
-Checking Project Service... ✓ Service is healthy (Status: 200)
-Checking User Service... ✓ Service is healthy (Status: 200)
-Checking Auth Service... ✓ Service is healthy (Status: 401)
-Checking Notification Service... ✓ Service is healthy (Status: 200)
+**Total**: 85+ unit tests covering business logic!
 
-STEP 2: Functional Validation
+#### Quick Start
 
-Task Service:
-  ✓ GET /tasks endpoint working
-  ✓ GET /tasks/main endpoint working
-  ✓ POST /tasks validation working
+```bash
+# Install test dependencies
+pip install -r tests/unit/requirements-test.txt
 
-Project Service:
-  ✓ GET /projects endpoint working
-  ✓ POST /projects validation working
+# Run all unit tests
+pytest tests/unit/ -v
 
-...
+# Run with coverage report
+pytest tests/unit/ --cov=src/microservices --cov-report=html
+open htmlcov/index.html
 
-======================================================================
-VALIDATION SUMMARY
-======================================================================
-
-✓ Task Service: Service is healthy (Status: 200)
-✓ Project Service: Service is healthy (Status: 200)
-✓ User Service: Service is healthy (Status: 200)
-✓ Auth Service: Service is healthy (Status: 401)
-✓ Notification Service: Service is healthy (Status: 200)
-
-Services Healthy: 5/5
-
-✓ ALL SERVICES VALIDATED SUCCESSFULLY
+# Use the test runner
+python tests/run_unit_tests.py --coverage
 ```
 
-## Additional Resources
+#### Key Features
 
-- [Tests README](tests/README.md) - Detailed test documentation
-- [Docker Compose Configuration](docker-compose.yml) - Service orchestration
-- [GitHub Actions Workflow](.github/workflows/validate-services.yml) - CI/CD pipeline
-- [Test Runner Script](run_tests.sh) - Test execution helper
+1. **No Docker Required** - Unit tests run without any external dependencies
+2. **Very Fast** - Complete in seconds vs minutes for integration tests
+3. **Isolated Testing** - Uses mocks to test functions in isolation
+4. **High Coverage** - ~75-85% coverage of business logic
 
-## Support
+#### What's Tested
 
-If you encounter issues:
+**Business Logic:**
+- UUID validation
+- Data transformation (DB ↔ API formats)
+- Session management & expiration
+- Password hashing & verification
+- Role hierarchy rules
+- Reminder validation
+- Notification filtering & prioritization
 
-1. Check this guide for troubleshooting steps
-2. Review test output and service logs
-3. Verify all prerequisites are installed
-4. Ensure environment variables are configured
-5. Open an issue on GitHub with:
-   - Test output
-   - Service logs
-   - Environment details
-   - Steps to reproduce
+**Edge Cases:**
+- Empty/null inputs
+- Invalid formats
+- Boundary conditions
+- Error handling
 
-## Summary
+See [tests/unit/README.md](tests/unit/README.md) for detailed documentation.
 
-This testing infrastructure provides:
+---
 
-- ✓ Comprehensive validation of all 5 microservices
-- ✓ Individual test files for each service
-- ✓ Automated CI/CD pipeline with GitHub Actions
-- ✓ Easy-to-use test runner script
-- ✓ Detailed documentation and troubleshooting guides
-- ✓ Color-coded output for easy reading
-- ✓ Support for pytest and coverage reports
+## Testing Strategy
 
-The tests ensure that all microservices are functioning correctly and that any code changes don't break existing functionality.
+### Test Pyramid
+
+```
+        /\
+       /  \      E2E Tests (Manual/Future)
+      /____\
+     /      \    Integration Tests (tests/)
+    / ______ \   - Test full services
+   /          \  - Real dependencies
+  /____________\ Unit Tests (tests/unit/)
+                 - Test functions
+                 - Mocked dependencies
+```
+
+### When to Use Each
+
+| Scenario | Use Unit Tests | Use Integration Tests |
+|----------|---------------|----------------------|
+| Testing helper functions | ✅ Yes | ❌ No |
+| Testing business logic | ✅ Yes | ❌ No |
+| Testing API endpoints | ❌ No | ✅ Yes |
+| Testing database queries | ❌ No | ✅ Yes |
+| Testing service health | ❌ No | ✅ Yes |
+| Quick feedback during development | ✅ Yes | ❌ No |
+| Validate full system | ❌ No | ✅ Yes |
+
+### Running Both Test Suites
+
+```bash
+# Run unit tests first (fast feedback)
+pytest tests/unit/ -v
+
+# If unit tests pass, run integration tests
+docker compose up -d
+pytest tests/test_*.py -v
+docker compose down
+
+# Or run everything
+pytest tests/ -v --tb=short
+```
+
