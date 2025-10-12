@@ -141,6 +141,16 @@ notification_publisher = NotificationPublisher()
 # Helper functions
 def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
     """Convert database row to API response format"""
+    # Parse collaborators if it's a JSON string
+    collaborators = row.get("collaborators")
+    if isinstance(collaborators, str):
+        try:
+            collaborators = json.loads(collaborators)
+        except:
+            collaborators = []
+    elif collaborators is None:
+        collaborators = []
+    
     return {
         "id": row.get("task_id") or row.get("id"),
         "title": row.get("title"),
@@ -148,6 +158,8 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "dueDate": row.get("due_date"),
         "status": row.get("status"),
         "owner_id": row.get("owner_id"),
+        "assignee": row.get("owner_id"),  # For now, assignee is the owner_id
+        "collaborators": collaborators,
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at"))  # Use created_at if updated_at doesn't exist
     }
@@ -491,6 +503,13 @@ def notify_task_comment(task_data: dict, comment_text: str, commenter_id: str, c
             # Store in-app notification if enabled
             if prefs.get("in_app_enabled", True):
                 try:
+                    # Check for existing notification to prevent duplicates (check within last 2 minutes)
+                    existing_check = supabase.table("notifications").select("id").eq("user_id", stakeholder_id).eq("task_id", task_data["task_id"]).eq("type", "task_comment").gte("created_at", (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()).execute()
+                    
+                    if existing_check.data and len(existing_check.data) > 0:
+                        print(f"⏭️  Duplicate comment notification detected for user {stakeholder_id}, skipping...")
+                        continue
+                    
                     print(f"💾 Inserting notification into database for user {stakeholder_id}...")
                     response = supabase.table("notifications").insert(notification_data).execute()
 
@@ -500,19 +519,29 @@ def notify_task_comment(task_data: dict, comment_text: str, commenter_id: str, c
                         print(f"   Notification title: {notification_data['title']}")
                         print(f"   For user: {stakeholder_id}")
 
-                        # Try to send via notification service for real-time
+                        # Send real-time notification via WebSocket (if notification service is available)
                         try:
                             notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                            print(f"📡 Sending to notification service: {notification_service_url}")
+                            print(f"📡 Sending real-time notification via WebSocket")
+                            # Only send real-time notification, don't create another database entry
+                            realtime_data = {
+                                "user_id": stakeholder_id,
+                                "title": notification_data["title"],
+                                "message": notification_data["message"],
+                                "type": notification_data["type"],
+                                "task_id": notification_data.get("task_id"),
+                                "created_at": notification_data["created_at"]
+                            }
+                            # Send via WebSocket without creating duplicate database entry
                             notif_response = requests.post(
-                                f"{notification_service_url}/notifications/create",
-                                json=notification_data,
+                                f"{notification_service_url}/notifications/realtime",
+                                json=realtime_data,
                                 timeout=5,
                                 headers={'Content-Type': 'application/json'}
                             )
-                            print(f"   Notification service response: {notif_response.status_code}")
+                            print(f"   Real-time notification response: {notif_response.status_code}")
                         except Exception as e:
-                            print(f"⚠️  Failed to notify via notification service: {e}")
+                            print(f"⚠️  Failed to send real-time notification: {e}")
                     else:
                         print(f"❌ ERROR: Supabase insert returned no data!")
                         print(f"   Response: {response}")
@@ -595,17 +624,25 @@ def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new
                 if response.data:
                     print(f"✅ Sent due date change notification to stakeholder {stakeholder_id}")
 
-                    # Try to send via notification service for real-time
+                    # Send real-time notification via WebSocket (without creating duplicate database entry)
                     try:
                         notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                        realtime_data = {
+                            "user_id": stakeholder_id,
+                            "title": notification_data["title"],
+                            "message": notification_data["message"],
+                            "type": notification_data["type"],
+                            "task_id": notification_data.get("task_id"),
+                            "created_at": notification_data["created_at"]
+                        }
                         requests.post(
-                            f"{notification_service_url}/notifications/create",
-                            json=notification_data,
+                            f"{notification_service_url}/notifications/realtime",
+                            json=realtime_data,
                             timeout=5,
                             headers={'Content-Type': 'application/json'}
                         )
                     except Exception as e:
-                        print(f"Failed to notify stakeholder via notification service: {e}")
+                        print(f"Failed to send real-time notification: {e}")
 
             # Send email if enabled
             if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
@@ -679,14 +716,18 @@ def check_and_send_due_date_notifications(task_data: dict):
 
                 # Send reminder to EACH stakeholder
                 for stakeholder_id in stakeholders:
-                    # Check if we already sent this reminder to this specific user
+                    # Check if we already sent this reminder to this specific user (with multiple checks to prevent race conditions)
                     try:
-                        existing_check = supabase.table("notifications").select("id").eq("task_id", task_data["task_id"]).eq("user_id", stakeholder_id).eq("type", f"reminder_{reminder_day}_days").execute()
-                        if existing_check.data:
-                            print(f"Reminder already sent to stakeholder {stakeholder_id} for task {task_data.get('task_id')}")
+                        # Check for existing notifications within the last 24 hours to prevent duplicates
+                        yesterday = datetime.now(timezone.utc) - timedelta(hours=24)
+                        existing_check = supabase.table("notifications").select("id").eq("task_id", task_data["task_id"]).eq("user_id", stakeholder_id).eq("type", f"reminder_{reminder_day}_days").gte("created_at", yesterday.isoformat()).execute()
+                        if existing_check.data and len(existing_check.data) > 0:
+                            print(f"⏭️  Reminder already exists for stakeholder {stakeholder_id} for task {task_data.get('task_id')} within last 24 hours - skipping to prevent duplicate")
                             continue
                     except Exception as e:
                         print(f"Error checking existing notifications: {e}")
+                        # If check fails, skip to be safe and avoid duplicates
+                        continue
 
                     # Check notification preferences for this stakeholder
                     prefs = get_notification_preferences(stakeholder_id, task_data["task_id"])
@@ -715,21 +756,29 @@ def check_and_send_due_date_notifications(task_data: dict):
                                 # Publish to RabbitMQ for real-time delivery
                                 notification_publisher.publish_due_date_notification(task_data, reminder_day)
 
-                                # Also try to notify the notification service for real-time delivery
+                                # Send real-time notification via WebSocket (without creating duplicate database entry)
                                 try:
                                     notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                                    realtime_data = {
+                                        "user_id": stakeholder_id,
+                                        "title": notification_data["title"],
+                                        "message": notification_data["message"],
+                                        "type": notification_data["type"],
+                                        "task_id": notification_data.get("task_id"),
+                                        "created_at": notification_data["created_at"]
+                                    }
                                     notif_response = requests.post(
-                                        f"{notification_service_url}/notifications/create",
-                                        json=notification_data,
+                                        f"{notification_service_url}/notifications/realtime",
+                                        json=realtime_data,
                                         timeout=5,
                                         headers={'Content-Type': 'application/json'}
                                     )
                                     if notif_response.ok:
-                                        print(f"Successfully notified notification service via HTTP for stakeholder {stakeholder_id}")
+                                        print(f"Successfully sent real-time notification for stakeholder {stakeholder_id}")
                                     else:
-                                        print(f"Notification service returned status {notif_response.status_code}")
+                                        print(f"Real-time notification service returned status {notif_response.status_code}")
                                 except requests.exceptions.RequestException as e:
-                                    print(f"Failed to notify notification service: {e}")
+                                    print(f"Failed to send real-time notification: {e}")
                                     # Continue anyway since we stored in DB
                             else:
                                 print(f"Failed to store in-app notification in database for stakeholder {stakeholder_id}")
@@ -795,7 +844,7 @@ def get_tasks():
         query = (
             supabase
             .table("task")
-            .select("task_id,title,due_date,status,priority,description,created_at,owner_id,project_id")
+            .select("task_id,title,due_date,status,priority,description,created_at,owner_id,project_id,collaborators")
             .order("created_at", desc=True)
         )
 
@@ -1225,7 +1274,62 @@ def create_task():
         created_task = map_db_row_to_api(created_task_data)
 
         # Check and send due date notifications AFTER preferences are saved
+        # The duplicate check inside the function will prevent duplicates
         check_and_send_due_date_notifications(created_task_data)
+        
+        # Send task creation notifications to stakeholders
+        try:
+            stakeholders = get_task_stakeholders(created_task_data)
+            task_owner_id = created_task_data.get("owner_id")
+            creator_id = task_data.created_by or db_data.get("owner_id", "system")
+            
+            for stakeholder_id in stakeholders:
+                # Determine notification type based on role
+                if stakeholder_id == task_owner_id:
+                    # This is the assignee - they get "assigned" notification
+                    notification_data = {
+                        "user_id": stakeholder_id,
+                        "title": f"New task assigned: '{created_task_data['title']}'",
+                        "message": f"You have been assigned to a new task: '{created_task_data['title']}'",
+                        "type": "task_assigned",
+                        "task_id": task_id,
+                        "due_date": created_task_data.get("due_date"),
+                        "priority": created_task_data.get("priority", "Medium"),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "is_read": False
+                    }
+                else:
+                    # This is a collaborator (like the manager who created it) - they get "created" notification
+                    notification_data = {
+                        "user_id": stakeholder_id,
+                        "title": f"New task created: '{created_task_data['title']}'",
+                        "message": f"A new task has been created and you are collaborating on it: '{created_task_data['title']}'",
+                        "type": "task_created",
+                        "task_id": task_id,
+                        "due_date": created_task_data.get("due_date"),
+                        "priority": created_task_data.get("priority", "Medium"),
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "is_read": False
+                    }
+                
+                # Store in-app notification
+                supabase.table("notifications").insert(notification_data).execute()
+                
+                # Send email notification if enabled
+                if EMAIL_SERVICE_AVAILABLE:
+                    user_email = get_user_email(stakeholder_id)
+                    if user_email:
+                        notification_type = "task_assigned" if stakeholder_id == task_owner_id else "task_created"
+                        send_notification_email(
+                            user_email=user_email,
+                            notification_type=notification_type,
+                            task_title=created_task_data["title"],
+                            due_date=created_task_data.get("due_date"),
+                            priority=created_task_data.get("priority", "Medium"),
+                            task_id=task_id
+                        )
+        except Exception as e:
+            print(f"Failed to send task creation notifications: {e}")
 
         return jsonify({"task": created_task, "message": "Task created successfully"}), 201
 
@@ -1244,7 +1348,7 @@ def get_task_logs(task_id: str):
         # Query task_log table for this task
         response = supabase.table("task_log").select(
             "log_id,task_id,action,user_id,old_value,new_value,created_at,field"
-        ).eq("task_id", task_id).order("created_at", desc=False).execute()
+        ).eq("task_id", task_id).order("created_at", desc=True).execute()
         logs = response.data or []
 
         # Keep logs as JSON objects for frontend processing - do not stringify
@@ -1737,7 +1841,7 @@ def get_task_comments(task_id: str):
         response = supabase.table("task_comments")\
             .select("comment_id, comment_text, user_id, created_at, updated_at")\
             .eq("task_id", task_id)\
-            .order("created_at", desc=False)\
+            .order("created_at", desc=True)\
             .execute()
         
         if not response.data:

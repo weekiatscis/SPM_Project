@@ -296,8 +296,8 @@ export default {
             userCache.value[result.comment.user_id] = result.comment.user_name
           }
           
-          // Add the new comment to the list
-          comments.value.push(result.comment)
+          // Add the new comment to the beginning of the list (since backend returns latest first)
+          comments.value.unshift(result.comment)
           newComment.value = ''
           emit('comments-updated', comments.value.length)
         } else {

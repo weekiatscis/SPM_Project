@@ -272,6 +272,7 @@ export default {
     const isLoadingSubtasks = ref(false)
     const parentTask = ref(null)
     const isLoadingParentTask = ref(false)
+    const assigneeName = ref('Loading...')
 
     // Fetch audit logs when modal opens or task changes
     const fetchAuditLogs = async () => {
@@ -288,10 +289,8 @@ export default {
         
         const result = await response.json()
         
-        // Sort logs by created_at descending (latest first)
-        auditLogs.value = (result.logs || []).sort((a, b) => 
-          new Date(b.created_at) - new Date(a.created_at)
-        )
+        // Logs are already sorted by the backend (latest first)
+        auditLogs.value = result.logs || []
         
         // Fetch user names for all unique user_ids
         const userIds = [...new Set(auditLogs.value.map(log => log.user_id))]
@@ -302,6 +301,30 @@ export default {
         auditLogs.value = []
       } finally {
         isLoadingLogs.value = false
+      }
+    }
+
+    // Fetch assignee details
+    const fetchAssignee = async () => {
+      if (!props.task?.owner_id) {
+        assigneeName.value = 'Unassigned'
+        return
+      }
+
+      try {
+        const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
+        const response = await fetch(`${userServiceUrl}/users`)
+
+        if (response.ok) {
+          const result = await response.json()
+          const user = result.users.find(u => u.user_id === props.task.owner_id)
+          assigneeName.value = user?.name || `User ${props.task.owner_id.slice(0, 8)}`
+        } else {
+          assigneeName.value = `User ${props.task.owner_id.slice(0, 8)}`
+        }
+      } catch (error) {
+        console.error('Error fetching assignee:', error)
+        assigneeName.value = `User ${props.task.owner_id.slice(0, 8)}`
       }
     }
 
@@ -319,11 +342,20 @@ export default {
         return
       }
 
-      console.log(`   ✅ Found ${props.task.collaborators.length} collaborator(s), fetching details...`)
+      // Filter out the assignee from collaborators
+      const collaboratorIds = props.task.collaborators.filter(id => id !== props.task.owner_id)
+
+      if (collaboratorIds.length === 0) {
+        console.log('   ⚠️ All collaborators are the assignee, no additional collaborators to show')
+        collaborators.value = []
+        return
+      }
+
+      console.log(`   ✅ Found ${collaboratorIds.length} collaborator(s) (excluding assignee), fetching details...`)
       isLoadingCollaborators.value = true
       try {
         const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
-        const collaboratorPromises = props.task.collaborators.map(async (userId) => {
+        const collaboratorPromises = collaboratorIds.map(async (userId) => {
           try {
             // Try to get user details from the users service
             const response = await fetch(`${userServiceUrl}/users`)
@@ -338,10 +370,10 @@ export default {
             return { user_id: userId, name: `User ${userId.slice(0, 8)}`, role: 'Unknown' }
           }
         })
-        
+
         const results = await Promise.all(collaboratorPromises)
         collaborators.value = results.filter(Boolean) // Remove null values
-        
+
       } catch (error) {
         console.error('Failed to fetch collaborators:', error)
         collaborators.value = []
@@ -410,7 +442,8 @@ export default {
         fetchAuditLogs(),
         fetchCollaborators(),
         fetchSubtasks(),
-        fetchParentTask()
+        fetchParentTask(),
+        fetchAssignee()
       ])
     }
 

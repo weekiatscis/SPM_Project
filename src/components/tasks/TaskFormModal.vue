@@ -125,10 +125,10 @@
               Priority
             </label>
             <select id="priority" v-model="form.priority" class="input-field">
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-              <option value="Lowest">Lowest</option>
+              <option value="1">High</option>
+              <option value="2">Medium</option>
+              <option value="3">Low</option>
+              <option value="4">Lowest</option>
             </select>
           </div>
 
@@ -323,7 +323,7 @@ export default {
       description: '',
       dueDate: '',
       status: 'Unassigned',
-      priority: 'Medium',
+      priority: '2',
       assigneeId: '',
       collaborators: [],
       isSubtask: false,
@@ -407,11 +407,17 @@ export default {
       })
     })
 
-    // Get details of selected collaborators
+    // Get details of selected collaborators (excluding the assignee)
     const selectedCollaborators = computed(() => {
-      return form.value.collaborators.map(collaboratorId => {
-        return departmentMembers.value.find(member => member.user_id === collaboratorId)
-      }).filter(Boolean)
+      return form.value.collaborators
+        .filter(collaboratorId => {
+          // Don't show the assignee in the collaborators list
+          return collaboratorId !== form.value.assigneeId
+        })
+        .map(collaboratorId => {
+          return departmentMembers.value.find(member => member.user_id === collaboratorId)
+        })
+        .filter(Boolean)
     })
 
     // Fetch subordinates for Manager/Director users
@@ -607,7 +613,7 @@ export default {
           description: '',
           dueDate: '',
           status: isStaffRole.value ? 'Ongoing' : 'Unassigned',
-          priority: 'Medium',
+          priority: '2',
           assigneeId: defaultAssigneeId,
           collaborators: [],
           isSubtask: false,
@@ -801,7 +807,7 @@ export default {
           description: '',
           dueDate: '',
           status: isStaffRole.value ? 'Ongoing' : 'Unassigned',
-          priority: 'Medium',
+          priority: '2',
           assigneeId: defaultAssigneeId,
           collaborators: [],
           isSubtask: false,

@@ -235,8 +235,12 @@ def create_email_template(notification_type: str, data: dict) -> str:
         """
 
     else:
-        # Generic notification
+        # Generic notification - but only if we have a valid message
         message = data.get("message", "")
+        if not message or message.strip() == "":
+            # Don't send email if message is empty
+            return None, None
+            
         subject = f"📬 Notification: {task_title}"
 
         html_content = f"""
@@ -358,6 +362,11 @@ def send_notification_email(
 
     # Create email content
     subject, html_content = create_email_template(notification_type, data)
+
+    # Don't send email if template returns None (empty message)
+    if subject is None or html_content is None:
+        print(f"Skipping email send for {notification_type} - empty message")
+        return False
 
     # Send email
     return send_email(user_email, subject, html_content)

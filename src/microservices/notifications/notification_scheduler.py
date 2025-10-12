@@ -29,6 +29,7 @@ def check_notifications():
         print(f"[{timestamp}] Checking task notifications...")
         print(f"{'='*70}")
 
+        # Only check for due date reminders, not comment notifications
         response = requests.post(
             f"{TASK_SERVICE_URL}/check-all-tasks-notifications",
             timeout=30
@@ -36,8 +37,8 @@ def check_notifications():
 
         if response.ok:
             data = response.json()
-            print(f"✅ Successfully checked {data.get('tasks_processed', 0)} tasks")
-            print(f"   {data.get('message', 'Notifications processed')}")
+            print(f"✅ Successfully checked {data.get('tasks_processed', 0)} tasks for due date reminders")
+            print(f"   {data.get('message', 'Due date notifications processed')}")
         else:
             print(f"❌ Failed to check notifications: HTTP {response.status_code}")
             print(f"   {response.text}")

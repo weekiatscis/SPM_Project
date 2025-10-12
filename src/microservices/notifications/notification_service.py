@@ -336,6 +336,24 @@ def create_notification_endpoint():
     except Exception as e:
         return jsonify({"error": f"Failed to create notification: {str(e)}"}), 500
 
+@app.route("/notifications/realtime", methods=["POST"])
+def send_realtime_notification_endpoint():
+    """Send real-time notification via WebSocket without creating database entry"""
+    try:
+        body = request.get_json()
+        user_id = body.get('user_id')
+        
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+        
+        # Send real-time notification via WebSocket
+        send_realtime_notification(user_id, body)
+        
+        return jsonify({"message": "Real-time notification sent"}), 200
+    
+    except Exception as e:
+        return jsonify({"error": f"Failed to send real-time notification: {str(e)}"}), 500
+
 @app.route("/test-notifications/<user_id>", methods=["POST"])
 def test_notifications(user_id: str):
     """Test endpoint to create a sample notification"""

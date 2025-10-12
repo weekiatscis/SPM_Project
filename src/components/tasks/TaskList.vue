@@ -113,7 +113,9 @@ export default {
       id: row.task_id ?? row.id,
       title: row.title,
       dueDate: row.due_date || null,
-      status: normalizeStatus(row.status)
+      status: normalizeStatus(row.status),
+      assignee: row.assignee || null,
+      collaborators: row.collaborators || []
     })
 
     // Handle task saved from TaskFormModal
