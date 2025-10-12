@@ -210,7 +210,7 @@ export default {
     const router = useRouter()
     const route = useRoute()
     const authStore = useAuthStore()
-    const { onProjectCreated } = useProjectEvents()
+    const { onProjectCreated, onProjectUpdated, onProjectDeleted } = useProjectEvents()
 
     // Get user data directly from auth store
     const user = computed(() => authStore.user)
@@ -310,14 +310,24 @@ export default {
       }
     })
 
-    // Listen for project created events and reload
-    const cleanup = onProjectCreated(() => {
+    // Listen for project events and reload
+    const cleanupCreated = onProjectCreated(() => {
       loadUserProjects()
     })
 
-    // Cleanup listener on unmount
+    const cleanupUpdated = onProjectUpdated(() => {
+      loadUserProjects()
+    })
+
+    const cleanupDeleted = onProjectDeleted(() => {
+      loadUserProjects()
+    })
+
+    // Cleanup listeners on unmount
     onUnmounted(() => {
-      cleanup()
+      cleanupCreated()
+      cleanupUpdated()
+      cleanupDeleted()
     })
 
     return {
