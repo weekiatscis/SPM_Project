@@ -22,7 +22,14 @@ jobs:
   unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 1  # Fast tests should complete quickly
+    timeout-minutes: 3  # Fast tests should complete quickly
+
+    env:
+      # Set required environment variables for unit tests
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      RABBITMQ_URL: amqp://admin:admin123@localhost:5672
+      VITE_TASK_OWNER_ID: ${{ secrets.VITE_TASK_OWNER_ID }}
 
     steps:
       - name: Checkout code
