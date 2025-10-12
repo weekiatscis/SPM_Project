@@ -22,7 +22,7 @@ jobs:
   unit-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 3  # Fast tests should complete quickly
+    timeout-minutes: 1  # Fast tests should complete quickly
 
     env:
       # Set required environment variables for unit tests
@@ -51,14 +51,6 @@ jobs:
         run: |
           pytest tests/unit/ -v --tb=short --cov=src/microservices --cov-report=term --cov-report=xml
 
-      - name: Upload coverage to Codecov (optional)
-        if: success()
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.xml
-          flags: unittests
-          name: codecov-unit-tests
-        continue-on-error: true  # Don't fail if codecov upload fails
 
   validate-services:
     name: Validate All Microservices

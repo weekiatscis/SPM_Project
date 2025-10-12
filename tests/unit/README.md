@@ -174,25 +174,6 @@ class TestYourFeature:
         assert result is not None
 ```
 
-## Continuous Integration
-
-Unit tests run automatically in CI before integration tests:
-
-```yaml
-# In .github/workflows/your-workflow.yml
-- name: Run Unit Tests
-  run: |
-    pytest tests/unit/ -v --tb=short
-```
-
-## Test Metrics
-
-Current coverage (estimated):
-- **Task Service**: ~80% of helper functions
-- **User Service**: ~75% of business logic
-- **Project Service**: ~70% of validation logic
-- **Auth Service**: ~85% of security logic
-- **Notification Service**: ~70% of filtering logic
 
 ## Troubleshooting
 

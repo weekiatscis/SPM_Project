@@ -298,26 +298,13 @@ RABBITMQ_URL=amqp://admin:admin123@localhost:5672
 
 ---
 
-## NEW: Unit Testing
-
-### Unit Test Suite Added!
+### Unit Test 
 
 We've now added comprehensive **unit tests** to complement the existing integration tests.
 
 #### Location
 - **Unit Tests**: `tests/unit/`
 - **Integration Tests**: `tests/` (existing)
-
-#### What's New
-
-**5 New Unit Test Files:**
-- ✅ `test_task_service_unit.py` - 20+ tests for task logic
-- ✅ `test_user_service_unit.py` - 15+ tests for user/session logic
-- ✅ `test_project_service_unit.py` - 15+ tests for project logic  
-- ✅ `test_auth_service_unit.py` - 20+ tests for auth/security logic
-- ✅ `test_notification_service_unit.py` - 15+ tests for notification logic
-
-**Total**: 85+ unit tests covering business logic!
 
 #### Quick Start
 
@@ -364,33 +351,8 @@ See [tests/unit/README.md](tests/unit/README.md) for detailed documentation.
 
 ---
 
-## Testing Strategy
-
-### Test Pyramid
-
-```
-        /\
-       /  \      E2E Tests (Manual/Future)
-      /____\
-     /      \    Integration Tests (tests/)
-    / ______ \   - Test full services
-   /          \  - Real dependencies
-  /____________\ Unit Tests (tests/unit/)
-                 - Test functions
-                 - Mocked dependencies
 ```
 
-### When to Use Each
-
-| Scenario | Use Unit Tests | Use Integration Tests |
-|----------|---------------|----------------------|
-| Testing helper functions | ✅ Yes | ❌ No |
-| Testing business logic | ✅ Yes | ❌ No |
-| Testing API endpoints | ❌ No | ✅ Yes |
-| Testing database queries | ❌ No | ✅ Yes |
-| Testing service health | ❌ No | ✅ Yes |
-| Quick feedback during development | ✅ Yes | ❌ No |
-| Validate full system | ❌ No | ✅ Yes |
 
 ### Running Both Test Suites
 
