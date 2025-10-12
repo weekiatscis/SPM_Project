@@ -124,8 +124,7 @@ export default {
       if (key === 'logout') {
         await logout()
       } else if (key === 'profile') {
-        // TODO: Navigate to profile settings page
-        console.log('Navigate to profile settings')
+        router.push('/profile')
       } else if (key === 'preferences') {
         // TODO: Navigate to preferences page
         console.log('Navigate to preferences')

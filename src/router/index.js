@@ -5,6 +5,7 @@ import Projects from '../views/Projects.vue'
 import ProjectDetails from '../views/ProjectDetails.vue'
 import Login from '../views/Login.vue'
 import Signup from '../views/Signup.vue'
+import ProfileSettings from '../views/ProfileSettings.vue'
 
 const routes = [
   { path: '/', redirect: '/home' },
@@ -12,7 +13,8 @@ const routes = [
   { path: '/signup', name: 'Signup', component: Signup, meta: { requiresGuest: true } },
   { path: '/home', name: 'Home', component: Home, meta: { requiresAuth: true } },
   { path: '/projects', name: 'Projects', component: Projects, meta: { requiresAuth: true } },
-  { path: '/projects/:id', name: 'ProjectDetails', component: ProjectDetails, meta: { requiresAuth: true } }
+  { path: '/projects/:id', name: 'ProjectDetails', component: ProjectDetails, meta: { requiresAuth: true } },
+  { path: '/profile', name: 'ProfileSettings', component: ProfileSettings, meta: { requiresAuth: true } }
 ]
 
 const router = createRouter({
