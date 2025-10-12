@@ -174,11 +174,10 @@
               </div>
 
               <!-- If user is Manager/Director, show dropdown with subordinates -->
-              <select v-else-if="canAssignToOthers" id="assignee" v-model="form.assigneeId" required class="input-field"
+              <select v-else-if="canAssignToOthers" id="assignee" v-model="form.assigneeId" class="input-field"
                 :class="{ 'border-red-500': errors.assigneeId }">
-                <option value="">Select assignee...</option>
                 <option v-for="subordinate in subordinates" :key="subordinate.user_id" :value="subordinate.user_id">
-                  {{ subordinate.name }} ({{ subordinate.role }})
+                  {{ subordinate.name }}{{ subordinate.isSelf ? ' (You)' : '' }} - {{ subordinate.role }}
                 </option>
               </select>
 
@@ -535,7 +534,19 @@ export default {
 
         if (response.ok) {
           const data = await response.json()
-          subordinates.value = data.subordinates || []
+          const subordinatesList = data.subordinates || []
+
+          // Add current user (Manager/Director/HR) to the list so they can assign to themselves
+          const currentUser = {
+            user_id: authStore.user.user_id,
+            name: authStore.user.name,
+            role: authStore.user.role,
+            department: authStore.user.department,
+            isSelf: true  // Flag to identify it's the current user
+          }
+
+          // Put current user at the top of the list
+          subordinates.value = [currentUser, ...subordinatesList]
         } else {
           console.error('Failed to fetch subordinates:', response.status)
           subordinates.value = []
@@ -715,7 +726,8 @@ export default {
         }
       } else {
         // Reset form for new task
-        const defaultAssigneeId = isStaffRole.value ? authStore.user?.user_id || '' : ''
+        // Default assignee: always set to current user (Staff, Manager, Director, HR)
+        const defaultAssigneeId = authStore.user?.user_id || ''
 
         form.value = {
           title: '',
@@ -815,10 +827,10 @@ export default {
         // Staff always assigns to themselves
         finalAssigneeId = authStore.user?.user_id || ''
       } else if (canAssignToOthers.value) {
-        // Manager/Director must select an assignee
+        // Manager/Director: if no assignee selected, auto-assign to themselves
         if (!form.value.assigneeId) {
-          errors.value.assigneeId = 'Please select an assignee'
-          hasErrors = true
+          finalAssigneeId = authStore.user?.user_id || ''
+          console.log('No assignee selected - auto-assigning to current user:', finalAssigneeId)
         } else {
           finalAssigneeId = form.value.assigneeId
         }
@@ -920,7 +932,8 @@ export default {
         const result = await response.json()
 
         // Reset form after successful creation
-        const defaultAssigneeId = isStaffRole.value ? authStore.user?.user_id || '' : ''
+        // Default assignee: always set to current user (Staff, Manager, Director, HR)
+        const defaultAssigneeId = authStore.user?.user_id || ''
 
         form.value = {
           title: '',

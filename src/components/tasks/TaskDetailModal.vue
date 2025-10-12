@@ -38,7 +38,7 @@
           <div class="grid grid-cols-2 gap-6 mb-6">
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-1">Assignee</label>
-              <p class="text-gray-900 text-xs">{{ task.assignee }}</p>
+              <p class="text-gray-900 text-xs">{{ assigneeName }}</p>
             </div>
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-1">Project</label>
@@ -286,6 +286,7 @@ export default {
     const isLoadingSubtasks = ref(false)
     const parentTask = ref(null)
     const isLoadingParentTask = ref(false)
+    const assigneeName = ref('Unassigned')
 
     // Fetch audit logs when modal opens or task changes
     const fetchAuditLogs = async () => {
@@ -389,24 +390,52 @@ export default {
         parentTask.value = null
         return
       }
-      
+
       isLoadingParentTask.value = true
       try {
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const response = await fetch(`${taskServiceUrl}/tasks/${props.task.parent_task_id}`)
-        
+
         if (response.ok) {
           const result = await response.json()
           parentTask.value = result.task
         } else {
           parentTask.value = null
         }
-        
+
       } catch (error) {
         console.error('Failed to fetch parent task:', error)
         parentTask.value = null
       } finally {
         isLoadingParentTask.value = false
+      }
+    }
+
+    // Fetch assignee name from owner_id
+    const fetchAssigneeName = async () => {
+      if (!props.task?.owner_id) {
+        assigneeName.value = 'Unassigned'
+        return
+      }
+
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/users/${props.task.owner_id}`)
+
+        if (response.ok) {
+          const result = await response.json()
+          if (result.user && result.user.name) {
+            assigneeName.value = result.user.name
+          } else {
+            assigneeName.value = 'Unknown User'
+          }
+        } else {
+          assigneeName.value = 'Unknown User'
+        }
+
+      } catch (error) {
+        console.error('Failed to fetch assignee:', error)
+        assigneeName.value = 'Unknown User'
       }
     }
 
@@ -416,7 +445,8 @@ export default {
         fetchAuditLogs(),
         fetchCollaborators(),
         fetchSubtasks(),
-        fetchParentTask()
+        fetchParentTask(),
+        fetchAssigneeName()
       ])
     }
 
@@ -731,6 +761,7 @@ export default {
       isLoadingSubtasks,
       parentTask,
       isLoadingParentTask,
+      assigneeName,
       formatDate,
       formatLogDate,
       formatActivityDate,
