@@ -44,25 +44,39 @@
               {{ getStatusText(project.status) }}
             </a-tag>
           </div>
-          <div class="header-actions">
-            <a-button @click="handleGenerateReport" class="action-btn">
-              <template #icon>
-                <FileTextOutlined />
-              </template>
-              Report
-            </a-button>
-            <a-button type="primary" @click="handleEdit" class="action-btn">
-              <template #icon>
-                <EditOutlined />
-              </template>
-              Edit
-            </a-button>
-            <a-button danger @click="handleDelete" class="action-btn">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              Delete
-            </a-button>
+
+          <!-- Action Buttons Row -->
+          <div class="button-groups">
+            <div class="action-buttons-group">
+              <a-button @click="handleCreateTask" class="action-btn primary-action">
+                <template #icon>
+                  <PlusOutlined />
+                </template>
+                New Task
+              </a-button>
+              <a-button @click="handleGenerateReport" class="action-btn">
+                <template #icon>
+                  <FileTextOutlined />
+                </template>
+                Report
+              </a-button>
+            </div>
+
+            <!-- Management Buttons Row -->
+            <div class="management-buttons-group">
+              <a-button type="primary" @click="handleEdit" class="action-btn">
+                <template #icon>
+                  <EditOutlined />
+                </template>
+                Edit
+              </a-button>
+              <a-button danger @click="handleDelete" class="action-btn">
+                <template #icon>
+                  <DeleteOutlined />
+                </template>
+                Delete
+              </a-button>
+            </div>
           </div>
         </div>
 
@@ -274,6 +288,15 @@
       @update="handleTeamUpdate"
     />
 
+    <!-- Create Project Task Modal -->
+    <CreateProjectTaskModal
+      v-if="project"
+      :isOpen="showCreateTaskModal"
+      :project="project"
+      @close="showCreateTaskModal = false"
+      @save="handleTaskCreated"
+    />
+
     <!-- Delete Confirmation Modal -->
     <a-modal
       v-model:open="showDeleteModal"
@@ -357,7 +380,8 @@ import {
   CheckCircleOutlined,
   UnorderedListOutlined,
   MessageOutlined,
-  FlagOutlined
+  FlagOutlined,
+  PlusOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useProjectEvents } from '../composables/useProjectEvents'
@@ -365,6 +389,7 @@ import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
 import ProjectComments from '../components/projects/ProjectComments.vue'
 import TeamMembersModal from '../components/projects/TeamMembersModal.vue'
+import CreateProjectTaskModal from '../components/projects/CreateProjectTaskModal.vue'
 
 export default {
   name: 'ProjectDetails',
@@ -373,6 +398,7 @@ export default {
     TaskDetailModal,
     ProjectComments,
     TeamMembersModal,
+    CreateProjectTaskModal,
     FileTextOutlined,
     EditOutlined,
     DeleteOutlined,
@@ -386,7 +412,8 @@ export default {
     CheckCircleOutlined,
     UnorderedListOutlined,
     MessageOutlined,
-    FlagOutlined
+    FlagOutlined,
+    PlusOutlined
   },
   setup() {
     const route = useRoute()
@@ -412,6 +439,9 @@ export default {
 
     // Team members modal state
     const showTeamMembersModal = ref(false)
+
+    // Create task modal state
+    const showCreateTaskModal = ref(false)
 
     // Helper functions
     const formatDate = (dateString) => {
@@ -804,6 +834,24 @@ export default {
       loadProject()
     }
 
+    const handleCreateTask = () => {
+      showCreateTaskModal.value = true
+    }
+
+    const handleTaskCreated = (newTask) => {
+      showCreateTaskModal.value = false
+
+      notification.success({
+        message: 'Task Created',
+        description: `"${newTask.title}" has been added to ${project.value.project_name}.`,
+        placement: 'topRight',
+        duration: 3
+      })
+
+      // Reload project tasks to show the new task
+      loadProjectTasks()
+    }
+
     watch(() => route.params.id, (newId, oldId) => {
       if (newId && newId !== oldId) {
         loadProject()
@@ -827,7 +875,10 @@ export default {
       deleteConfirmText,
       isDeletingProject,
       showTeamMembersModal,
+      showCreateTaskModal,
       handleTeamUpdate,
+      handleCreateTask,
+      handleTaskCreated,
       formatDate,
       formatTaskDate,
       isOverdue,
@@ -960,8 +1011,16 @@ export default {
   margin: 0 0 32px 0;
 }
 
-/* Header Actions */
-.header-actions {
+/* Button Groups */
+.button-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.action-buttons-group,
+.management-buttons-group {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
@@ -978,6 +1037,17 @@ export default {
 
 .action-btn:hover {
   transform: translateY(-1px);
+}
+
+.action-btn.primary-action {
+  background: #10b981;
+  border-color: #10b981;
+  color: white;
+}
+
+.action-btn.primary-action:hover {
+  background: #059669;
+  border-color: #059669;
 }
 
 /* Meta Info and Progress Container */

@@ -57,6 +57,8 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     owner_id: Optional[str] = None
     collaborators: Optional[str] = None
+    project_id: Optional[str] = None  # Project association
+    project: Optional[str] = None  # Project name (for display purposes)
     isSubtask: Optional[bool] = False
     parent_task_id: Optional[str] = None
     reminder_days: Optional[List[int]] = None  # Custom reminder days (e.g., [7, 3, 1])
@@ -914,8 +916,9 @@ def create_task():
         except ValidationError as e:
             return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
-        # Prepare data for database (exclude reminder_days, email_enabled, in_app_enabled, created_by from task table)
-        db_data = task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled", "created_by"})
+        # Prepare data for database (exclude reminder_days, email_enabled, in_app_enabled, created_by, project from task table)
+        # Note: 'project' is just the project name for display, not stored in DB. Only 'project_id' is stored.
+        db_data = task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled", "created_by", "project"})
         db_data["created_at"] = datetime.utcnow().isoformat()
 
         # Handle automatic collaborator assignment when manager creates task for staff
