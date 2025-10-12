@@ -497,15 +497,16 @@ def get_main_tasks():
     try:
         # Query tasks where isSubtask is false or null
         response = supabase.table("task").select("*").or_("isSubtask.is.null,isSubtask.eq.false").execute()
-        
+
         if not response.data:
             return jsonify({"tasks": [], "count": 0}), 200
-        
+
         rows: List[Dict[str, Any]] = response.data or []
-        
-        # Map to API format with subtasks count
-        tasks = [map_db_row_to_api(row, include_subtasks_count=True) for row in rows]
-        
+
+        # Map to API format - removed include_subtasks_count to prevent N+1 query problem
+        # Subtask counts can be fetched separately via /tasks/<task_id>/subtasks/count if needed
+        tasks = [map_db_row_to_api(row) for row in rows]
+
         return jsonify({"tasks": tasks, "count": len(tasks)}), 200
 
     except Exception as exc:
