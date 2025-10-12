@@ -129,7 +129,7 @@ def get_all_users():
         response = supabase.table("user").select(
             "user_id, name, email, role, department, superior"
         ).eq("is_active", True).order("name").execute()
-        
+
         users = []
         for user in response.data or []:
             users.append({
@@ -140,11 +140,31 @@ def get_all_users():
                 "department": user.get("department"),
                 "superior": user.get("superior")
             })
-        
+
         return jsonify({"users": users}), 200
-        
+
     except Exception as e:
         return jsonify({"error": f"Failed to fetch users: {str(e)}"}), 500
+
+
+@app.get("/users/<user_id>")
+def get_user_by_id(user_id: str):
+    """Get a specific user by their ID"""
+    try:
+        response = supabase.table("user").select(
+            "user_id, name, email, role, department, superior, is_active, created_at, updated_at"
+        ).eq("user_id", user_id).execute()
+
+        if not response.data or len(response.data) == 0:
+            return jsonify({"error": "User not found"}), 404
+
+        user_data = response.data[0]
+        user_info = map_db_row_to_api(user_data)
+
+        return jsonify({"user": user_info}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch user: {str(e)}"}), 500
 
 
 @app.get("/users/<user_id>/possible-superiors")

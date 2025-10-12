@@ -82,9 +82,9 @@
             </div>
             <div class="meta-divider"></div>
             <div class="meta-item">
-              <UserOutlined class="meta-icon" />
+              <UserOutlined class="meta-icon" />  
               <div class="meta-content">
-                <span class="meta-label">Created By</span>
+                <span class="meta-label">Owned By</span>
                 <span class="meta-value">{{ project.created_by || 'Unknown' }}</span>
               </div>
             </div>
@@ -97,7 +97,7 @@
               </div>
             </div>
             <div class="meta-divider"></div>
-            <div class="meta-item">
+            <div class="meta-item meta-item-clickable" @click="showTeamMembersModal = true">
               <TeamOutlined class="meta-icon" />
               <div class="meta-content">
                 <span class="meta-label">Team Members</span>
@@ -265,6 +265,15 @@
       @close="closeTaskDetailModal"
     />
 
+    <!-- Team Members Modal -->
+    <TeamMembersModal
+      v-if="project"
+      :isOpen="showTeamMembersModal"
+      :project="project"
+      @close="showTeamMembersModal = false"
+      @update="handleTeamUpdate"
+    />
+
     <!-- Delete Confirmation Modal -->
     <a-modal
       v-model:open="showDeleteModal"
@@ -355,6 +364,7 @@ import { useProjectEvents } from '../composables/useProjectEvents'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
 import ProjectComments from '../components/projects/ProjectComments.vue'
+import TeamMembersModal from '../components/projects/TeamMembersModal.vue'
 
 export default {
   name: 'ProjectDetails',
@@ -362,6 +372,7 @@ export default {
     ProjectFormModal,
     TaskDetailModal,
     ProjectComments,
+    TeamMembersModal,
     FileTextOutlined,
     EditOutlined,
     DeleteOutlined,
@@ -398,6 +409,9 @@ export default {
     const showDeleteModal = ref(false)
     const deleteConfirmText = ref('')
     const isDeletingProject = ref(false)
+
+    // Team members modal state
+    const showTeamMembersModal = ref(false)
 
     // Helper functions
     const formatDate = (dateString) => {
@@ -486,14 +500,15 @@ export default {
     }
 
     const getTeamMembersCount = () => {
-      const members = new Set()
-      projectTasks.value.forEach(task => {
-        if (task.owner_id) members.add(task.owner_id)
-        if (task.collaborators && Array.isArray(task.collaborators)) {
-          task.collaborators.forEach(c => members.add(c))
-        }
-      })
-      return members.size || 1
+      // Team members = Project creator (1) + Project collaborators
+      if (!project.value) return 1
+
+      // 1 for project creator + number of collaborators
+      const collaboratorsCount = Array.isArray(project.value.collaborators)
+        ? project.value.collaborators.length
+        : 0
+
+      return 1 + collaboratorsCount
     }
 
     const getCompletedTasksCount = () => {
@@ -662,7 +677,8 @@ export default {
           created_by: createdByName,
           created_by_id: foundProject.created_by,
           due_date: foundProject.due_date,
-          status: 'Active'
+          status: 'Active',
+          collaborators: foundProject.collaborators || []
         }
 
         await loadProjectTasks()
@@ -777,6 +793,17 @@ export default {
       selectedTask.value = null
     }
 
+    const handleTeamUpdate = (updatedProject) => {
+      // Update local project data
+      project.value = {
+        ...project.value,
+        ...updatedProject
+      }
+
+      // Reload project to ensure consistency
+      loadProject()
+    }
+
     watch(() => route.params.id, (newId, oldId) => {
       if (newId && newId !== oldId) {
         loadProject()
@@ -799,6 +826,8 @@ export default {
       showDeleteModal,
       deleteConfirmText,
       isDeletingProject,
+      showTeamMembersModal,
+      handleTeamUpdate,
       formatDate,
       formatTaskDate,
       isOverdue,
@@ -974,9 +1003,30 @@ export default {
   gap: 12px;
 }
 
+.meta-item-clickable {
+  cursor: pointer;
+  padding: 8px;
+  margin: -8px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.meta-item-clickable:hover {
+  background: #f3f4f6;
+}
+
+.meta-item-clickable:hover .meta-icon {
+  color: #5568d3;
+}
+
+.meta-item-clickable:hover .meta-value {
+  color: #667eea;
+}
+
 .meta-icon {
   font-size: 20px;
   color: #667eea;
+  transition: all 0.2s ease;
 }
 
 .meta-content {
