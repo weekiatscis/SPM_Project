@@ -46,6 +46,13 @@ jobs:
           echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> .env
           echo "RABBITMQ_URL=amqp://admin:admin123@localhost:5672" >> .env
           echo "VITE_TASK_OWNER_ID=${{ secrets.VITE_TASK_OWNER_ID }}" >> .env
+          echo "SMTP_HOST=smtp.example.com" >> .env
+          echo "SMTP_PORT=587" >> .env
+          echo "SMTP_USER=test@example.com" >> .env
+          echo "SMTP_PASSWORD=dummy_password" >> .env
+          echo "FROM_EMAIL=noreply@example.com" >> .env
+          echo "FROM_NAME=Test Notifications" >> .env
+          echo "FRONTEND_URL=http://localhost:3000" >> .env
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
