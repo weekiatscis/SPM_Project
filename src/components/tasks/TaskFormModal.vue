@@ -860,15 +860,11 @@ export default {
             parent_task_id: form.value.isSubtask ? form.value.parentTaskId : null,
             reminder_days: form.value.reminderDays,
             email_enabled: form.value.emailEnabled,
-            in_app_enabled: form.value.inAppEnabled
+            in_app_enabled: form.value.inAppEnabled,
+            // Always include collaborators to preserve them - backend handles permissions
+            collaborators: JSON.stringify(form.value.collaborators)
             // Note: recurrence is NOT included - it cannot be changed after task creation
           }
-
-          // Only include collaborators if user has permission to manage them (Manager/Director)
-          if (canAssignToOthers.value) {
-            updatePayload.collaborators = JSON.stringify(form.value.collaborators)
-          }
-          // Staff members should not be able to modify collaborators, so we don't send this field
 
           const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}`, {
             method: 'PUT',

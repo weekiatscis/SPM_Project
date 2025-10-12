@@ -235,6 +235,14 @@ def get_subtasks_count(task_id: str) -> int:
         return 0
 
 def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False) -> Dict[str, Any]:
+    # Parse collaborators if it's a JSON string
+    collaborators = row.get("collaborators") or []
+    if isinstance(collaborators, str):
+        try:
+            collaborators = json.loads(collaborators)
+        except:
+            collaborators = []
+    
     task_data = {
         "id": row.get("task_id") or row.get("id"),
         "title": row.get("title"),
@@ -244,7 +252,7 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
         "priority": row.get("priority") or 5,  # Default to 5 (medium) if null
         "owner_id": row.get("owner_id"),
         "project_id": row.get("project_id"),
-        "collaborators": row.get("collaborators") or [],
+        "collaborators": collaborators,
         "isSubtask": row.get("isSubtask", False),
         "parent_task_id": row.get("parent_task_id"),
         "recurrence": row.get("recurrence"),  # Add recurrence field
