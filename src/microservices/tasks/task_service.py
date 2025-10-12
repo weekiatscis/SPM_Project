@@ -931,15 +931,16 @@ def get_main_tasks():
     try:
         # Query tasks where isSubtask is false or null
         response = supabase.table("task").select("*").or_("isSubtask.is.null,isSubtask.eq.false").execute()
-        
+
         if not response.data:
             return jsonify({"tasks": [], "count": 0}), 200
-        
+
         rows: List[Dict[str, Any]] = response.data or []
-        
-        # Map to API format with subtasks count
-        tasks = [map_db_row_to_api(row, include_subtasks_count=True) for row in rows]
-        
+
+        # Map to API format - removed include_subtasks_count to prevent N+1 query problem
+        # Subtask counts can be fetched separately via /tasks/<task_id>/subtasks/count if needed
+        tasks = [map_db_row_to_api(row) for row in rows]
+
         return jsonify({"tasks": tasks, "count": len(tasks)}), 200
 
     except Exception as exc:
@@ -1914,12 +1915,12 @@ def get_recurring_preview(task_id: str):
         instances = []
         current_date = due_date
         count = int(request.args.get("count", 5))  # Default to 5 instances
-        
+
         for i in range(count):
             next_date = calculate_next_due_date(current_date, recurrence)
             if not next_date:
                 break
-            
+
             instances.append({
                 "instance_number": i + 1,
                 "due_date": next_date,
@@ -1954,7 +1955,7 @@ def stop_task_recurrence(task_id: str):
 
         # Update task to remove recurrence
         response = supabase.table("task").update({"recurrence": None}).eq("task_id", task_id).execute()
-        
+
         if not response.data:
             return jsonify({"error": "Failed to stop recurrence"}), 500
 

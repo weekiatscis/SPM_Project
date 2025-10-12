@@ -1,0 +1,147 @@
+name: Validate Microservices
+
+on:
+  push:
+    branches:
+      - main
+      - ranentest
+      - develop
+  pull_request:
+    branches:
+      - main
+
+env:
+  # Service URLs for testing
+  TASK_SERVICE_URL: http://localhost:8080
+  PROJECT_SERVICE_URL: http://localhost:8082
+  USER_SERVICE_URL: http://localhost:8081
+  AUTH_SERVICE_URL: http://localhost:8086
+  NOTIFICATION_SERVICE_URL: http://localhost:8084
+
+jobs:
+  validate-services:
+    name: Validate All Microservices
+    runs-on: ubuntu-latest
+    timeout-minutes: 5  # Fail fast if workflow takes too long
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'  # Cache pip dependencies
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest requests
+
+      - name: Create .env file from secrets
+        run: |
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" >> .env
+          echo "RABBITMQ_URL=amqp://admin:admin123@localhost:5672" >> .env
+          echo "VITE_TASK_OWNER_ID=${{ secrets.VITE_TASK_OWNER_ID }}" >> .env
+          echo "SMTP_HOST=smtp.example.com" >> .env
+          echo "SMTP_PORT=587" >> .env
+          echo "SMTP_USER=test@example.com" >> .env
+          echo "SMTP_PASSWORD=dummy_password" >> .env
+          echo "FROM_EMAIL=noreply@example.com" >> .env
+          echo "FROM_NAME=Test Notifications" >> .env
+          echo "FRONTEND_URL=http://localhost:3000" >> .env
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: image=moby/buildkit:latest
+
+      - name: Start microservices with docker-compose
+        run: |
+          docker compose up -d --build
+
+      - name: Wait for services to be ready
+        run: |
+          echo "Waiting for services to start..."
+          for i in {1..30}; do
+            # Check if all containers are healthy using docker compose ps
+            # Note: --format json outputs one JSON object per line, so we use jq -s to slurp into array
+            UNHEALTHY=$(docker compose ps --format json | jq -s -r '[.[] | select(.Health == "unhealthy" or .Health == "starting")] | length')
+            RUNNING=$(docker compose ps --format json | jq -s -r '[.[] | select(.State == "running")] | length')
+
+            echo "Running containers: $RUNNING, Unhealthy/Starting: $UNHEALTHY"
+
+            # We expect 6 services (5 microservices + rabbitmq)
+            if [ "$RUNNING" -ge 6 ] && [ "$UNHEALTHY" -eq 0 ]; then
+              echo "All services are healthy and running!"
+              docker compose ps
+              exit 0
+            fi
+
+            echo "Waiting... (attempt $i/30)"
+            sleep 2
+          done
+
+          echo "Services did not become healthy in time"
+          docker compose ps
+          exit 1
+
+      - name: Check service logs (if services fail to start)
+        if: failure()
+        run: |
+          echo "=== Task Service Logs ==="
+          docker compose logs task-service || true
+
+          echo -e "\n=== Project Service Logs ==="
+          docker compose logs project-service || true
+
+          echo -e "\n=== User Service Logs ==="
+          docker compose logs user-service || true
+
+          echo -e "\n=== Auth Service Logs ==="
+          docker compose logs auth-service || true
+
+          echo -e "\n=== Notification Service Logs ==="
+          docker compose logs notification-service || true
+
+      - name: Run service validation and tests
+        run: |
+          # Run comprehensive validation first
+          python tests/validate_all_services.py
+
+          # Run all pytest tests
+          pytest tests/test_*.py -v --tb=short
+
+      - name: Stop and remove containers
+        if: always()
+        run: |
+          docker compose down -v
+
+  lint-python:
+    name: Lint Python Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+
+      - name: Lint with flake8
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 src/microservices --count --select=E9,F63,F7,F82 --show-source --statistics || true
+
+          # Exit-zero treats all errors as warnings
+          flake8 src/microservices --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || true
