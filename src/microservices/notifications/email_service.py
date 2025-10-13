@@ -234,6 +234,84 @@ def create_email_template(notification_type: str, data: dict) -> str:
         </html>
         """
 
+    elif notification_type == "project_created":
+        subject = f"📁 New Project Created: {task_title}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">📁 Project Created</h1>
+                </div>
+                <div class="content">
+                    <p>Hi there,</p>
+                    <p>You have successfully created a new project:</p>
+
+                    <div class="task-card">
+                        <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
+                        {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
+                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
+                    </div>
+
+                    <center>
+                        <a href="{task_link}" class="button">View Project Details</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> You can now add tasks, collaborate with team members, and track progress.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this as the project creator.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    elif notification_type == "project_assigned":
+        subject = f"📁 New Project Assigned: {task_title}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">📁 Project Assigned</h1>
+                </div>
+                <div class="content">
+                    <p>Hi there,</p>
+                    <p>You have been assigned to a new project:</p>
+
+                    <div class="task-card">
+                        <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
+                        {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
+                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
+                    </div>
+
+                    <center>
+                        <a href="{task_link}" class="button">View Project Details</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> Check the project details and start collaborating with your team.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this as a project collaborator.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
     else:
         # Generic notification - but only if we have a valid message
         message = data.get("message", "")

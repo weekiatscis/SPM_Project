@@ -2,7 +2,7 @@ import os
 import json
 import requests
 from typing import Optional, Dict, Any, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -108,28 +108,48 @@ def notify_project_comment(project_data: dict, comment_text: str, commenter_id: 
                 "message": f"{commenter_name} commented: {truncated_comment}",
                 "type": "project_comment",
                 "task_id": None,  # This is a project comment, not a task comment
+                "project_id": project_data.get("project_id"),  # Add project_id for navigation
                 "due_date": project_data.get("due_date"),
                 "priority": "Medium",
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "is_read": False
             }
 
+            # Check for existing notification to prevent duplicates (check within last 2 minutes)
+            try:
+                existing_check = supabase.table("notifications").select("id").eq("user_id", stakeholder_id).eq("type", "project_comment").gte("created_at", (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()).execute()
+                
+                if existing_check.data and len(existing_check.data) > 0:
+                    print(f"⏭️  Duplicate project comment notification detected for user {stakeholder_id}, skipping...")
+                    continue
+            except Exception as e:
+                print(f"Error checking existing notifications: {e}")
+                # Continue anyway to avoid blocking notifications
+
             # Store in-app notification (project comments don't have individual notification preferences)
             response = supabase.table("notifications").insert(notification_data).execute()
             if response.data:
                 print(f"✅ Sent project comment notification to stakeholder {stakeholder_id}")
 
-                # Try to send via notification service for real-time
+                # Send real-time notification via WebSocket (without creating duplicate database entry)
                 try:
                     notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                    realtime_data = {
+                        "user_id": stakeholder_id,
+                        "title": notification_data["title"],
+                        "message": notification_data["message"],
+                        "type": notification_data["type"],
+                        "project_id": notification_data.get("project_id"),
+                        "created_at": notification_data["created_at"]
+                    }
                     requests.post(
-                        f"{notification_service_url}/notifications/create",
-                        json=notification_data,
+                        f"{notification_service_url}/notifications/realtime",
+                        json=realtime_data,
                         timeout=5,
                         headers={'Content-Type': 'application/json'}
                     )
                 except Exception as e:
-                    print(f"Failed to notify stakeholder via notification service: {e}")
+                    print(f"Failed to send real-time notification: {e}")
 
             # Send email notification (always enabled for project comments)
             if EMAIL_SERVICE_AVAILABLE:
@@ -195,6 +215,58 @@ def create_project():
 
         created_project = response.data[0]
         print(f"DEBUG: Project created successfully! Collaborators saved: {created_project.get('collaborators')}")
+
+        # Send project assignment notifications to all stakeholders
+        try:
+            stakeholders = get_project_stakeholders(created_project)
+            project_creator = created_project.get("created_by")
+            
+            for stakeholder_id in stakeholders:
+                # Determine notification type based on role
+                if stakeholder_id == project_creator:
+                    # This is the creator - they get "created" notification
+                    notification_data = {
+                        "user_id": stakeholder_id,
+                        "title": f"New project created: '{created_project['project_name']}'",
+                        "message": f"You have created a new project: '{created_project['project_name']}'",
+                        "type": "project_created",
+                        "task_id": None,
+                        "due_date": created_project.get("due_date"),
+                        "priority": "Medium",
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "is_read": False
+                    }
+                else:
+                    # This is a collaborator - they get "assigned" notification
+                    notification_data = {
+                        "user_id": stakeholder_id,
+                        "title": f"New project assigned: '{created_project['project_name']}'",
+                        "message": f"You have been assigned to a new project: '{created_project['project_name']}'",
+                        "type": "project_assigned",
+                        "task_id": None,
+                        "due_date": created_project.get("due_date"),
+                        "priority": "Medium",
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "is_read": False
+                    }
+                
+                # Store in-app notification
+                supabase.table("notifications").insert(notification_data).execute()
+                
+                # Send email notification if enabled
+                if EMAIL_SERVICE_AVAILABLE:
+                    user_email = get_user_email(stakeholder_id)
+                    if user_email:
+                        notification_type = "project_created" if stakeholder_id == project_creator else "project_assigned"
+                        send_notification_email(
+                            user_email=user_email,
+                            notification_type=notification_type,
+                            project_name=created_project["project_name"],
+                            project_id=created_project.get("project_id"),
+                            due_date=created_project.get("due_date")
+                        )
+        except Exception as e:
+            print(f"Failed to send project assignment notifications: {e}")
 
         return jsonify({"project": created_project}), 201
 
