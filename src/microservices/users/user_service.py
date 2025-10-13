@@ -1,4 +1,5 @@
 import os
+import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from flask import Flask, jsonify, request
@@ -21,10 +22,28 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:3000", "http://localhost:5173"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"],
+        "supports_credentials": True,
+        "max_age": 3600
+    }
+})
+
 
 # Session timeout constant
 SESSION_TIMEOUT = timedelta(minutes=15)
+
+
+def is_valid_uuid(value: str) -> bool:
+    """Validate if a string is a valid UUID"""
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 def validate_session(session_token: str) -> Optional[Dict[str, Any]]:
@@ -129,7 +148,7 @@ def get_all_users():
         response = supabase.table("user").select(
             "user_id, name, email, role, department, superior"
         ).eq("is_active", True).order("name").execute()
-        
+
         users = []
         for user in response.data or []:
             users.append({
@@ -140,11 +159,31 @@ def get_all_users():
                 "department": user.get("department"),
                 "superior": user.get("superior")
             })
-        
+
         return jsonify({"users": users}), 200
-        
+
     except Exception as e:
         return jsonify({"error": f"Failed to fetch users: {str(e)}"}), 500
+
+
+@app.get("/users/<user_id>")
+def get_user_by_id(user_id: str):
+    """Get a specific user by their ID"""
+    try:
+        response = supabase.table("user").select(
+            "user_id, name, email, role, department, superior, is_active, created_at, updated_at"
+        ).eq("user_id", user_id).execute()
+
+        if not response.data or len(response.data) == 0:
+            return jsonify({"error": "User not found"}), 404
+
+        user_data = response.data[0]
+        user_info = map_db_row_to_api(user_data)
+
+        return jsonify({"user": user_info}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch user: {str(e)}"}), 500
 
 
 @app.get("/users/<user_id>/possible-superiors")
@@ -299,6 +338,71 @@ def get_user_subordinates(user_id: str):
         
     except Exception as e:
         return jsonify({"error": f"Failed to fetch subordinates: {str(e)}"}), 500
+
+
+@app.put("/users/<user_id>")
+def update_user(user_id: str):
+    """Update user information (currently supports updating name only)"""
+    try:
+        # Get session token from Authorization header
+        session_token = request.headers.get('Authorization')
+
+        if not session_token or not session_token.startswith('Bearer '):
+            return jsonify({"error": "No valid session token provided"}), 401
+
+        # Extract session token
+        session_token = session_token[7:]  # Remove 'Bearer ' prefix
+
+        # Validate session and get user data
+        current_user = validate_session(session_token)
+
+        if not current_user:
+            return jsonify({"error": "Invalid or expired session"}), 401
+
+        # Check if user is updating their own profile
+        if current_user.get('user_id') != user_id:
+            return jsonify({"error": "You can only update your own profile"}), 403
+
+        # Get update data from request
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        # Only allow updating certain fields
+        allowed_fields = ['name']
+        update_data = {}
+
+        for field in allowed_fields:
+            if field in data:
+                # Validate name
+                if field == 'name':
+                    name = data[field].strip() if data[field] else ''
+                    if not name:
+                        return jsonify({"error": "Name cannot be empty"}), 400
+                    if len(name) > 20:
+                        return jsonify({"error": "Name must not exceed 20 characters"}), 400
+                    update_data[field] = name
+
+        if not update_data:
+            return jsonify({"error": "No valid fields to update"}), 400
+
+        # Add updated_at timestamp
+        update_data['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+        # Update user in database
+        response = supabase.table("user").update(update_data).eq("user_id", user_id).execute()
+
+        if not response.data or len(response.data) == 0:
+            return jsonify({"error": "User not found or update failed"}), 404
+
+        updated_user = response.data[0]
+        user_info = map_db_row_to_api(updated_user)
+
+        return jsonify({"user": user_info, "message": "User updated successfully"}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to update user: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

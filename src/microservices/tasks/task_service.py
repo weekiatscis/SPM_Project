@@ -3,6 +3,7 @@ import sys
 import json
 import traceback
 import logging
+import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
 
@@ -53,22 +54,25 @@ class TaskCreate(BaseModel):
     title: str
     due_date: Optional[str] = None
     status: Optional[str] = "Unassigned"
-    priority: Optional[str] = None
+    priority: Optional[int] = 5  # Priority from 1-10, default to 5 (medium)
     description: Optional[str] = None
     owner_id: Optional[str] = None
     collaborators: Optional[str] = None
+    project_id: Optional[str] = None  # Project association
+    project: Optional[str] = None  # Project name (for display purposes)
     isSubtask: Optional[bool] = False
     parent_task_id: Optional[str] = None
     reminder_days: Optional[List[int]] = None  # Custom reminder days (e.g., [7, 3, 1])
     email_enabled: Optional[bool] = True  # Email notifications enabled
     in_app_enabled: Optional[bool] = True  # In-app notifications enabled
     created_by: Optional[str] = None  # NEW: Track who actually created the task (for manager assignments)
+    recurrence: Optional[str] = None  # e.g., 'daily', 'weekly', 'monthly'
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
     due_date: Optional[str] = None
     status: Optional[str] = None
-    priority: Optional[str] = None
+    priority: Optional[int] = None  # Priority from 1-10
     description: Optional[str] = None
     collaborators: Optional[str] = None
     project_id: Optional[str] = None
@@ -80,6 +84,7 @@ class TaskUpdate(BaseModel):
     email_enabled: Optional[bool] = None  # Email notifications enabled
     in_app_enabled: Optional[bool] = None  # In-app notifications enabled
     updated_by: Optional[str] = None  # Track who is making the update
+    recurrence: Optional[str] = None
 
 
 # Pydantic model for rescheduling a task
@@ -139,6 +144,14 @@ class NotificationPublisher:
 notification_publisher = NotificationPublisher()
 
 # Helper functions
+def is_valid_uuid(value: str) -> bool:
+    """Validate if a string is a valid UUID"""
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
 def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
     """Convert database row to API response format"""
     # Parse collaborators if it's a JSON string
@@ -244,7 +257,7 @@ def get_subtasks_count(task_id: str) -> int:
 
 def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False) -> Dict[str, Any]:
     # Parse collaborators to ensure it's always an array
-    collaborators = row.get("collaborators")
+    collaborators = row.get("collaborators") or []
     if isinstance(collaborators, str):
         try:
             collaborators = json.loads(collaborators)
@@ -252,19 +265,20 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
             collaborators = []
     elif collaborators is None:
         collaborators = []
-
+    
     task_data = {
         "id": row.get("task_id") or row.get("id"),
         "title": row.get("title"),
         "description": row.get("description", ""),
         "dueDate": to_yyyy_mm_dd(row.get("due_date")),  # normalize for FE
         "status": row.get("status"),
-        "priority": row.get("priority") or "Medium",  # Default to Medium if null
+        "priority": row.get("priority") or 5,  # Default to 5 (medium) if null
         "owner_id": row.get("owner_id"),
         "project_id": row.get("project_id"),
         "collaborators": collaborators,  # Always an array
         "isSubtask": row.get("isSubtask", False),
         "parent_task_id": row.get("parent_task_id"),
+        "recurrence": row.get("recurrence"),  # Add recurrence field
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at")),
     }
@@ -585,6 +599,297 @@ def notify_task_comment(task_data: dict, comment_text: str, commenter_id: str, c
         traceback.print_exc()
         print(f"{'='*80}\n")
 
+def calculate_next_due_date(current_due_date: str, recurrence: str) -> Optional[str]:
+    """Calculate the next due date based on recurrence pattern"""
+    try:
+        # Parse current due date
+        if isinstance(current_due_date, str):
+            current_date = datetime.strptime(current_due_date[:10], "%Y-%m-%d").date()
+        else:
+            current_date = current_due_date
+
+        # Calculate next date based on recurrence type
+        if recurrence == "daily":
+            next_date = current_date + timedelta(days=1)
+        elif recurrence == "weekly":
+            next_date = current_date + timedelta(weeks=1)
+        elif recurrence == "biweekly":
+            next_date = current_date + timedelta(weeks=2)
+        elif recurrence == "monthly":
+            # Add one month (handle month overflow)
+            month = current_date.month
+            year = current_date.year
+            if month == 12:
+                next_date = current_date.replace(year=year + 1, month=1)
+            else:
+                try:
+                    next_date = current_date.replace(month=month + 1)
+                except ValueError:
+                    # Handle day overflow (e.g., Jan 31 -> Feb 28/29)
+                    next_month = month + 1
+                    next_year = year
+                    if next_month > 12:
+                        next_month = 1
+                        next_year += 1
+                    # Get last day of next month
+                    if next_month == 12:
+                        last_day = 31
+                    else:
+                        last_day = (datetime(next_year, next_month + 1, 1) - timedelta(days=1)).day
+                    next_date = current_date.replace(year=next_year, month=next_month, day=min(current_date.day, last_day))
+        elif recurrence == "quarterly":
+            # Add 3 months
+            month = current_date.month
+            year = current_date.year
+            new_month = month + 3
+            new_year = year
+            while new_month > 12:
+                new_month -= 12
+                new_year += 1
+            try:
+                next_date = current_date.replace(year=new_year, month=new_month)
+            except ValueError:
+                # Handle day overflow
+                last_day = (datetime(new_year, new_month + 1 if new_month < 12 else 1, 1) - timedelta(days=1)).day
+                next_date = current_date.replace(year=new_year, month=new_month, day=min(current_date.day, last_day))
+        elif recurrence == "yearly":
+            next_date = current_date.replace(year=current_date.year + 1)
+        else:
+            return None
+
+        return next_date.strftime("%Y-%m-%d")
+    except Exception as e:
+        print(f"Error calculating next due date: {e}")
+        return None
+
+def create_recurring_task_instance(original_task: dict) -> Optional[dict]:
+    """Create a new instance of a recurring task with the next due date"""
+    try:
+        recurrence = original_task.get("recurrence")
+        if not recurrence:
+            return None
+
+        current_due_date = original_task.get("due_date")
+        if not current_due_date:
+            return None
+
+        # Calculate next due date
+        next_due_date = calculate_next_due_date(current_due_date, recurrence)
+        if not next_due_date:
+            return None
+
+        # Create new task data (copy from original but with new due date and reset status)
+        new_task_data = {
+            "title": original_task.get("title"),
+            "description": original_task.get("description"),
+            "due_date": next_due_date,
+            "status": "Unassigned",  # Reset status for new instance
+            "priority": original_task.get("priority", 5),
+            "owner_id": original_task.get("owner_id"),
+            "project_id": original_task.get("project_id"),
+            "collaborators": original_task.get("collaborators"),
+            "recurrence": recurrence,  # Preserve recurrence pattern
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Insert new task instance
+        response = supabase.table("task").insert(new_task_data).execute()
+        
+        if response.data:
+            created_task = response.data[0]
+            task_id = created_task.get("task_id")
+            
+            print(f"✅ Created recurring task instance: {task_id} with due date {next_due_date}")
+            
+            # Copy notification preferences from original task
+            try:
+                original_prefs = get_notification_preferences(
+                    original_task.get("owner_id"), 
+                    original_task.get("task_id")
+                )
+                save_notification_preferences(
+                    original_task.get("owner_id"),
+                    task_id,
+                    original_prefs.get("email_enabled", True),
+                    original_prefs.get("in_app_enabled", True)
+                )
+            except Exception as e:
+                print(f"Failed to copy notification preferences: {e}")
+            
+            # Copy reminder preferences from original task
+            try:
+                reminder_response = supabase.table("task_reminder_preferences").select("reminder_days").eq("task_id", original_task.get("task_id")).execute()
+                if reminder_response.data:
+                    reminder_days = reminder_response.data[0].get("reminder_days", [7, 3, 1])
+                    save_reminder_preferences(task_id, reminder_days)
+            except Exception as e:
+                print(f"Failed to copy reminder preferences: {e}")
+            
+            # Log the creation
+            log_task_change(
+                task_id=task_id,
+                action="create",
+                field="recurring_instance",
+                user_id="system",
+                old_value=None,
+                new_value={
+                    "parent_recurrence_id": original_task.get("task_id"),
+                    "recurrence_type": recurrence,
+                    "due_date": next_due_date
+                }
+            )
+            
+            # Check and send due date notifications for the new instance
+            check_and_send_due_date_notifications(created_task)
+            
+            return created_task
+        
+        return None
+    except Exception as e:
+        print(f"Error creating recurring task instance: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new_due_date: str, updated_by: str = None):
+    """Send notification to all stakeholders (owner + collaborators) when due date changes"""
+    try:
+        # Validate required task fields
+        required_fields = ['task_id', 'title', 'owner_id']
+        missing_fields = [field for field in required_fields if field not in task_data or not task_data[field]]
+        if missing_fields:
+            print(f"❌ ERROR: Missing required task fields: {missing_fields}")
+            print(f"Task data received: {task_data}")
+            return
+
+        # Get all stakeholders (owner + collaborators)
+        print(f"🔍 Getting stakeholders for task {task_data.get('task_id')}...")
+        stakeholders = get_task_stakeholders(task_data)
+        print(f"👥 Stakeholders found: {stakeholders} (count: {len(stakeholders) if stakeholders else 0})")
+
+        if not stakeholders:
+            print("❌ No stakeholders found for comment notification")
+            print(f"   Task owner_id: {task_data.get('owner_id')}")
+            print(f"   Task collaborators: {task_data.get('collaborators')}")
+            return
+
+        print(f"✅ Notifying {len(stakeholders)} stakeholder(s) about new comment on task {task_data.get('task_id')}")
+
+        notifications_created = 0
+        for stakeholder_id in stakeholders:
+            print(f"\n--- Processing stakeholder: {stakeholder_id} ---")
+
+            # Skip the person who made the comment
+            if stakeholder_id == commenter_id:
+                print(f"⏭️  Skipping notification for user {stakeholder_id} (they made the comment)")
+                continue
+
+            # Truncate comment for notification if too long
+            truncated_comment = comment_text[:100] + "..." if len(comment_text) > 100 else comment_text
+
+            notification_data = {
+                "user_id": stakeholder_id,
+                "title": f"New comment on '{task_data['title']}'",
+                "message": f"{commenter_name} commented: {truncated_comment}",
+                "type": "task_comment",
+                "task_id": task_data["task_id"],
+                "due_date": task_data.get("due_date"),
+                "priority": task_data.get("priority", "Medium"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "is_read": False
+            }
+
+            print(f"📝 Notification data prepared: {notification_data}")
+
+            # Check notification preferences
+            prefs = get_notification_preferences(stakeholder_id, task_data["task_id"])
+            print(f"⚙️  Notification preferences: email={prefs.get('email_enabled')}, in_app={prefs.get('in_app_enabled')}")
+
+            # Store in-app notification if enabled
+            if prefs.get("in_app_enabled", True):
+                try:
+                    # Check for existing notification to prevent duplicates (check within last 2 minutes)
+                    existing_check = supabase.table("notifications").select("id").eq("user_id", stakeholder_id).eq("task_id", task_data["task_id"]).eq("type", "task_comment").gte("created_at", (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()).execute()
+                    
+                    if existing_check.data and len(existing_check.data) > 0:
+                        print(f"⏭️  Duplicate comment notification detected for user {stakeholder_id}, skipping...")
+                        continue
+                    
+                    print(f"💾 Inserting notification into database for user {stakeholder_id}...")
+                    response = supabase.table("notifications").insert(notification_data).execute()
+
+                    if response.data:
+                        notifications_created += 1
+                        print(f"✅ SUCCESS: Notification inserted! ID: {response.data[0].get('id')}")
+                        print(f"   Notification title: {notification_data['title']}")
+                        print(f"   For user: {stakeholder_id}")
+
+                        # Send real-time notification via WebSocket (if notification service is available)
+                        try:
+                            notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                            print(f"📡 Sending real-time notification via WebSocket")
+                            # Only send real-time notification, don't create another database entry
+                            realtime_data = {
+                                "user_id": stakeholder_id,
+                                "title": notification_data["title"],
+                                "message": notification_data["message"],
+                                "type": notification_data["type"],
+                                "task_id": notification_data.get("task_id"),
+                                "created_at": notification_data["created_at"]
+                            }
+                            # Send via WebSocket without creating duplicate database entry
+                            notif_response = requests.post(
+                                f"{notification_service_url}/notifications/realtime",
+                                json=realtime_data,
+                                timeout=5,
+                                headers={'Content-Type': 'application/json'}
+                            )
+                            print(f"   Real-time notification response: {notif_response.status_code}")
+                        except Exception as e:
+                            print(f"⚠️  Failed to send real-time notification: {e}")
+                    else:
+                        print(f"❌ ERROR: Supabase insert returned no data!")
+                        print(f"   Response: {response}")
+
+                except Exception as insert_error:
+                    print(f"❌ EXCEPTION during database insert: {insert_error}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"⏭️  In-app notifications disabled for stakeholder {stakeholder_id}")
+
+            # Send email if enabled
+            if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
+                user_email = get_user_email(stakeholder_id)
+                if user_email:
+                    try:
+                        print(f"📧 Sending email to {user_email}...")
+                        send_notification_email(
+                            user_email=user_email,
+                            notification_type="task_comment",
+                            task_title=task_data["title"],
+                            comment_text=truncated_comment,
+                            commenter_name=commenter_name,
+                            task_id=task_data["task_id"],
+                            due_date=task_data.get("due_date"),
+                            priority=task_data.get("priority", "Medium")
+                        )
+                        print(f"✅ Email sent successfully to {user_email}")
+                    except Exception as e:
+                        print(f"❌ Failed to send email: {e}")
+                else:
+                    print(f"⚠️  No email found for stakeholder {stakeholder_id}")
+
+        print(f"\n{'='*80}")
+        print(f"📊 SUMMARY: Created {notifications_created} notification(s) for task comment")
+        print(f"{'='*80}\n")
+
+    except Exception as e:
+        print(f"❌❌❌ CRITICAL ERROR in notify_task_comment: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*80}\n")
+
 def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new_due_date: str, updated_by: str = None):
     """Send notification to all stakeholders (owner + collaborators) when due date changes"""
     try:
@@ -610,7 +915,7 @@ def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new
                 "type": "due_date_change",
                 "task_id": task_data["task_id"],
                 "due_date": new_due_date,
-                "priority": task_data.get("priority", "Medium"),
+                "priority": task_data.get("priority", 5),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "is_read": False
             }
@@ -662,7 +967,6 @@ def notify_collaborators_due_date_change(task_data: dict, old_due_date: str, new
                         print(f"📧 Email notification sent to stakeholder {user_email}")
                     except Exception as e:
                         print(f"Failed to send email to stakeholder: {e}")
-
     except Exception as e:
         print(f"Failed to notify stakeholders: {e}")
         import traceback
@@ -742,7 +1046,7 @@ def check_and_send_due_date_notifications(task_data: dict):
                             "type": f"reminder_{reminder_day}_days",
                             "task_id": task_data["task_id"],
                             "due_date": task_data["due_date"],
-                            "priority": task_data.get("priority", "Medium"),
+                            "priority": task_data.get("priority", 5),
                             "created_at": datetime.now(timezone.utc).isoformat(),
                             "is_read": False
                         }
@@ -801,7 +1105,7 @@ def check_and_send_due_date_notifications(task_data: dict):
                                         notification_type=f"reminder_{reminder_day}_days",
                                         task_title=task_data["title"],
                                         due_date=due_date.strftime('%B %d, %Y'),
-                                        priority=task_data.get("priority", "Medium"),
+                                        priority=task_data.get("priority", 5),
                                         task_id=task_data["task_id"]
                                     )
                                     print(f"✅ Email notification sent successfully to {user_email}")
@@ -840,11 +1144,11 @@ def get_tasks():
         priority = request.args.get("priority", default=None, type=str)
         project_id = request.args.get("project_id", default=None, type=str)
 
-        # Build query - only select fields that definitely exist in the database
+        # Build query - select all necessary fields including recurrence
         query = (
             supabase
             .table("task")
-            .select("task_id,title,due_date,status,priority,description,created_at,owner_id,project_id,collaborators")
+            .select("task_id,title,due_date,status,priority,description,created_at,updated_at,owner_id,project_id,collaborators,isSubtask,parent_task_id,recurrence")
             .order("created_at", desc=True)
         )
 
@@ -1010,15 +1314,16 @@ def get_main_tasks():
     try:
         # Query tasks where isSubtask is false or null
         response = supabase.table("task").select("*").or_("isSubtask.is.null,isSubtask.eq.false").execute()
-        
+
         if not response.data:
             return jsonify({"tasks": [], "count": 0}), 200
-        
+
         rows: List[Dict[str, Any]] = response.data or []
-        
-        # Map to API format with subtasks count
-        tasks = [map_db_row_to_api(row, include_subtasks_count=True) for row in rows]
-        
+
+        # Map to API format - removed include_subtasks_count to prevent N+1 query problem
+        # Subtask counts can be fetched separately via /tasks/<task_id>/subtasks/count if needed
+        tasks = [map_db_row_to_api(row) for row in rows]
+
         return jsonify({"tasks": tasks, "count": len(tasks)}), 200
 
     except Exception as exc:
@@ -1150,8 +1455,9 @@ def create_task():
         except ValidationError as e:
             return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
-        # Prepare data for database (exclude reminder_days, email_enabled, in_app_enabled, created_by from task table)
-        db_data = task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled", "created_by"})
+        # Prepare data for database (exclude reminder_days, email_enabled, in_app_enabled, created_by, project from task table)
+        # Note: 'project' is just the project name for display, not stored in DB. Only 'project_id' is stored.
+        db_data = task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled", "created_by", "project"})
         db_data["created_at"] = datetime.utcnow().isoformat()
 
         # Handle automatic collaborator assignment when manager creates task for staff
@@ -1496,6 +1802,16 @@ def update_task(task_id: str):
             delete_old_notifications(task_id)
             check_and_send_due_date_notifications(response.data[0])
 
+        # Check if task was just completed and has recurrence - create next instance
+        if "status" in update_data and update_data["status"] == "Completed":
+            task_recurrence = response.data[0].get("recurrence")
+            if task_recurrence:
+                print(f"Task {task_id} completed with recurrence '{task_recurrence}' - creating next instance")
+                new_instance = create_recurring_task_instance(response.data[0])
+                if new_instance:
+                    print(f"✅ Created recurring task instance: {new_instance.get('task_id')}")
+                else:
+                    print(f"❌ Failed to create recurring task instance")
                 
         # Log changes for audit trail - only log ACTUAL changes
         changes_made = False
@@ -2035,6 +2351,91 @@ def get_task_reminder_preferences(task_id: str):
             return jsonify({"reminder_days": [7, 3, 1]}), 200
     except Exception as e:
         return jsonify({"error": f"Failed to get reminder preferences: {str(e)}"}), 500
+
+@app.route("/tasks/<task_id>/recurring-preview", methods=["GET"])
+def get_recurring_preview(task_id: str):
+    """Preview the next N instances of a recurring task"""
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        task_data = get_task_by_id(task_id)
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+
+        recurrence = task_data.get("recurrence")
+        if not recurrence:
+            return jsonify({"error": "Task is not recurring"}), 400
+
+        due_date = task_data.get("due_date")
+        if not due_date:
+            return jsonify({"error": "Task has no due date"}), 400
+
+        # Generate next 5 instances
+        instances = []
+        current_date = due_date
+        count = int(request.args.get("count", 5))  # Default to 5 instances
+
+        for i in range(count):
+            next_date = calculate_next_due_date(current_date, recurrence)
+            if not next_date:
+                break
+
+            instances.append({
+                "instance_number": i + 1,
+                "due_date": next_date,
+                "recurrence_type": recurrence
+            })
+            current_date = next_date
+
+        return jsonify({
+            "task_id": task_id,
+            "title": task_data.get("title"),
+            "recurrence": recurrence,
+            "current_due_date": due_date,
+            "next_instances": instances
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate recurring preview: {str(e)}"}), 500
+
+@app.route("/tasks/<task_id>/stop-recurrence", methods=["POST"])
+def stop_task_recurrence(task_id: str):
+    """Stop recurrence for a task"""
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        task_data = get_task_by_id(task_id)
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+
+        if not task_data.get("recurrence"):
+            return jsonify({"error": "Task is not recurring"}), 400
+
+        # Update task to remove recurrence
+        response = supabase.table("task").update({"recurrence": None}).eq("task_id", task_id).execute()
+
+        if not response.data:
+            return jsonify({"error": "Failed to stop recurrence"}), 500
+
+        # Log the change
+        log_task_change(
+            task_id=task_id,
+            action="update",
+            field="recurrence",
+            user_id=request.json.get("user_id", "system") if request.json else "system",
+            old_value=task_data.get("recurrence"),
+            new_value=None
+        )
+
+        return jsonify({
+            "message": "Recurrence stopped successfully",
+            "task_id": task_id
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to stop recurrence: {str(e)}"}), 500
 
 # Error handlers
 @app.errorhandler(404)

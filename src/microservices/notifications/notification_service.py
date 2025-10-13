@@ -366,18 +366,24 @@ def test_notifications(user_id: str):
             "task_id": None,
             "due_date": None
         }
-        
+
         stored_notification = create_notification(notification_data)
-        
+
         if stored_notification:
             # Send real-time notification via WebSocket
             send_realtime_notification(user_id, stored_notification)
             return jsonify({"notification": stored_notification, "message": "Test notification sent"}), 201
         else:
             return jsonify({"error": "Failed to create test notification"}), 500
-    
+
     except Exception as e:
         return jsonify({"error": f"Failed to create test notification: {str(e)}"}), 500
+
+
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Simple health check endpoint for Docker and CI/CD"""
+    return jsonify({"status": "healthy", "service": "notification-service"}), 200
 
 
 if __name__ == "__main__":

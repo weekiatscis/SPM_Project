@@ -123,7 +123,41 @@ export const useAuthStore = defineStore('auth', () => {
       }
     }
   }
-  
+
+  const updateProfile = async (profileData) => {
+    if (!sessionToken.value) {
+      throw new Error('Not authenticated')
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken.value}`,
+        },
+        body: JSON.stringify(profileData),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Profile update failed')
+      }
+
+      // Update local user data
+      user.value = { ...user.value, ...data.user }
+
+      // Reset session timer on activity
+      resetSessionTimer()
+
+      return data
+    } catch (error) {
+      console.error('Profile update error:', error)
+      throw error
+    }
+  }
+
   return {
     user,
     sessionToken,
@@ -132,6 +166,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     validateSession,
     initializeAuth,
-    resetSessionTimer
+    resetSessionTimer,
+    updateProfile
   }
 })

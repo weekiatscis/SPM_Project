@@ -267,6 +267,16 @@ def validate_session_endpoint():
         return jsonify({"error": "An error occurred during session validation"}), 500
 
 
+@app.route("/health", methods=["GET"])
+def health_check():
+    """Health check endpoint for container orchestration"""
+    try:
+        # Simple check - just return 200 if service is responding
+        return jsonify({"status": "healthy", "service": "auth-service"}), 200
+    except Exception as e:
+        return jsonify({"status": "unhealthy", "error": str(e)}), 503
+
+
 @app.route("/auth/register", methods=["POST"])
 def register():
     """Register new user (for testing purposes)"""

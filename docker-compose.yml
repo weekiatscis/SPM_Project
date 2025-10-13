@@ -15,9 +15,10 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # Notification Service
   notification-service:
@@ -34,7 +35,14 @@ services:
     command: ["python", "notification_service.py"]
     restart: unless-stopped
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8084/notifications?user_id=test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
 
   task-service:
@@ -57,10 +65,18 @@ services:
       - FROM_NAME=${FROM_NAME}
       - FRONTEND_URL=${FRONTEND_URL}
     depends_on:
-      - rabbitmq
-      - notification-service
+      rabbitmq:
+        condition: service_healthy
+      notification-service:
+        condition: service_started
     command: ["python", "task_service.py"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/tasks"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   project-service:
     build:
@@ -83,8 +99,16 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
     command: ["python", "project_service.py"]
     depends_on:
-      - rabbitmq
-      - notification-service
+      rabbitmq:
+        condition: service_healthy
+      notification-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8082/projects"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   user-service:
     build:
@@ -101,7 +125,14 @@ services:
     command: ["python", "user_service.py"]
     restart: unless-stopped
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8081/users"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
   auth-service:
     build:
@@ -115,6 +146,12 @@ services:
       - PORT=8086
     command: ["python", "userAuthentication.py"]
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8086/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
 volumes:
   rabbitmq_data:

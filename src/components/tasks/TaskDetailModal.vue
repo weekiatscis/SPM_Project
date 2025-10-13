@@ -38,7 +38,7 @@
           <div class="grid grid-cols-2 gap-6 mb-6">
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-1">Assignee</label>
-              <p class="text-gray-900 text-xs">{{ task.assignee }}</p>
+              <p class="text-gray-900 text-xs">{{ assigneeName }}</p>
             </div>
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-1">Project</label>
@@ -50,7 +50,21 @@
             </div>
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-1">Priority</label>
-              <p class="text-gray-900 text-xs capitalize">{{ task.priority || 'Medium' }}</p>
+              <p class="text-gray-900 text-xs">{{ task.priority || 5 }}/10</p>
+            </div>
+            <div v-if="task.recurrence" class="col-span-2">
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Recurrence</label>
+              <div class="flex items-center space-x-2">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <p class="text-gray-900 text-xs capitalize">
+                  Repeats {{ task.recurrence }}
+                </p>
+              </div>
+              <p class="text-xs text-gray-500 mt-1">
+                A new task will be created automatically when this task is completed
+              </p>
             </div>
           </div>
 
@@ -132,7 +146,7 @@
                             Due: {{ formatDate(subtask.dueDate) }}
                           </span>
                           <span class="text-xs text-gray-500">
-                            Priority: {{ subtask.priority || 'Medium' }}
+                            Priority: {{ subtask.priority || 5 }}/10
                           </span>
                         </div>
                       </div>
@@ -272,7 +286,7 @@ export default {
     const isLoadingSubtasks = ref(false)
     const parentTask = ref(null)
     const isLoadingParentTask = ref(false)
-    const assigneeName = ref('Loading...')
+    const assigneeName = ref('Unassigned')
 
     // Fetch audit logs when modal opens or task changes
     const fetchAuditLogs = async () => {
@@ -415,24 +429,52 @@ export default {
         parentTask.value = null
         return
       }
-      
+
       isLoadingParentTask.value = true
       try {
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const response = await fetch(`${taskServiceUrl}/tasks/${props.task.parent_task_id}`)
-        
+
         if (response.ok) {
           const result = await response.json()
           parentTask.value = result.task
         } else {
           parentTask.value = null
         }
-        
+
       } catch (error) {
         console.error('Failed to fetch parent task:', error)
         parentTask.value = null
       } finally {
         isLoadingParentTask.value = false
+      }
+    }
+
+    // Fetch assignee name from owner_id
+    const fetchAssigneeName = async () => {
+      if (!props.task?.owner_id) {
+        assigneeName.value = 'Unassigned'
+        return
+      }
+
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/users/${props.task.owner_id}`)
+
+        if (response.ok) {
+          const result = await response.json()
+          if (result.user && result.user.name) {
+            assigneeName.value = result.user.name
+          } else {
+            assigneeName.value = 'Unknown User'
+          }
+        } else {
+          assigneeName.value = 'Unknown User'
+        }
+
+      } catch (error) {
+        console.error('Failed to fetch assignee:', error)
+        assigneeName.value = 'Unknown User'
       }
     }
 
@@ -443,7 +485,7 @@ export default {
         fetchCollaborators(),
         fetchSubtasks(),
         fetchParentTask(),
-        fetchAssignee()
+        fetchAssigneeName()
       ])
     }
 
@@ -656,12 +698,13 @@ export default {
     }
 
     const getPriorityColor = (priority) => {
-      const colors = {
-        low: 'bg-green-400',
-        medium: 'bg-yellow-400',
-        high: 'bg-red-400'
-      }
-      return colors[priority] || colors.medium
+      // Convert priority to number if it's a string (for backwards compatibility)
+      const priorityNum = typeof priority === 'string' ? parseInt(priority) : priority
+      
+      // Map 1-10 scale to colors
+      if (priorityNum >= 8) return 'bg-red-400'       // 8-10: High priority (red)
+      if (priorityNum >= 5) return 'bg-yellow-400'    // 5-7: Medium priority (yellow)
+      return 'bg-green-400'                            // 1-4: Low priority (green)
     }
 
     const editTask = () => {
@@ -757,6 +800,7 @@ export default {
       isLoadingSubtasks,
       parentTask,
       isLoadingParentTask,
+      assigneeName,
       formatDate,
       formatLogDate,
       formatActivityDate,

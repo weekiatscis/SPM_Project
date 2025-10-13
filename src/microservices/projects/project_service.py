@@ -1,6 +1,7 @@
 import os
 import json
 import requests
+import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
 
@@ -175,6 +176,14 @@ def notify_project_comment(project_data: dict, comment_text: str, commenter_id: 
         print(f"Failed to notify stakeholders about project comment: {e}")
         import traceback
         traceback.print_exc()
+
+def is_valid_uuid(value: str) -> bool:
+    """Validate if a string is a valid UUID"""
+    try:
+        uuid.UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 @app.route("/projects", methods=["POST"])
