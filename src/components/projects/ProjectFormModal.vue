@@ -341,8 +341,8 @@ export default {
         const deptSet = new Set(users.map(u => u.department).filter(Boolean))
         departments.value = Array.from(deptSet).sort()
 
-        // Initialize filtered users
-        filteredUsers.value = allUsers.value
+        // Initialize filtered users and apply filters to exclude already selected collaborators
+        filterUsers()
       } catch (error) {
         console.error('Failed to fetch users:', error)
         notification.error({
@@ -419,14 +419,44 @@ export default {
     }
 
     // Watch for modal open to fetch users
-    watch(() => props.isOpen, (newVal) => {
+    watch(() => props.isOpen, async (newVal) => {
       if (newVal) {
-        fetchUsers()
+        // If editing a project with collaborators, load them first
+        if (props.project?.collaborators && Array.isArray(props.project.collaborators)) {
+          try {
+            const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+            const collaboratorDetails = []
+
+            // Fetch details for each collaborator
+            for (const userId of props.project.collaborators) {
+              try {
+                const response = await fetch(`${taskServiceUrl}/users/${userId}`)
+                if (response.ok) {
+                  const data = await response.json()
+                  if (data.user) {
+                    collaboratorDetails.push(data.user)
+                  }
+                }
+              } catch (error) {
+                console.error(`Failed to fetch user ${userId}:`, error)
+              }
+            }
+
+            selectedCollaborators.value = collaboratorDetails
+          } catch (error) {
+            console.error('Failed to load existing collaborators:', error)
+          }
+        } else {
+          selectedCollaborators.value = []
+        }
+
+        // Now fetch all users, which will automatically exclude selected collaborators
+        await fetchUsers()
       }
     })
 
     // Watch for project changes to populate form
-    watch(() => props.project, (newProject) => {
+    watch(() => props.project, async (newProject) => {
       if (newProject) {
         form.value = {
           project_name: newProject.project_name || '',
@@ -491,7 +521,9 @@ export default {
             project_name: form.value.project_name.trim(),
             project_description: form.value.project_description?.trim() || '',
             due_date: form.value.due_date,
-            created_by: form.value.created_by?.trim() || 'Unknown'
+            created_by: props.project.created_by_id || currentUserId.value, // Use the user_id, not the display name
+            user_id: currentUserId.value, // Add user_id for authorization
+            collaborators: selectedCollaborators.value.map(u => u.user_id) // Include updated collaborators
           }
 
           const response = await fetch(`${updateProjectUrl}/projects/${props.project.project_id}`, {
@@ -519,6 +551,17 @@ export default {
           emitProjectUpdated(updatedProjectData)
 
           emit('save', updatedProjectData)
+
+          // Show success notification for update
+          notification.success({
+            message: 'Project Updated',
+            description: `${result.project.project_name} has been updated successfully.`,
+            placement: 'topRight',
+            duration: 3
+          })
+
+          // Close modal
+          handleClose()
           return
         }
 

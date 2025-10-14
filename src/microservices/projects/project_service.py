@@ -345,6 +345,22 @@ def update_project(project_id):
         if not body.get("project_name", "").strip():
             return jsonify({"error": "project_name is required"}), 400
 
+        # Get the user making the request
+        requesting_user_id = body.get("user_id", "").strip()
+        if not requesting_user_id:
+            return jsonify({"error": "user_id is required for authorization"}), 400
+
+        # Check if project exists and get current project data
+        project_response = supabase.table("project").select("*").eq("project_id", project_id).execute()
+        if not project_response.data:
+            return jsonify({"error": "Project not found"}), 404
+
+        current_project = project_response.data[0]
+
+        # Verify ownership - only the creator can edit the project
+        if current_project.get("created_by") != requesting_user_id:
+            return jsonify({"error": "Only the project owner can edit this project"}), 403
+
         # Prepare update data
         update_data = {}
 
@@ -382,6 +398,22 @@ def update_project(project_id):
 @app.route("/projects/<project_id>", methods=["DELETE"])
 def delete_project(project_id):
     try:
+        # Get the user making the request from query parameter
+        requesting_user_id = request.args.get("user_id", "").strip()
+        if not requesting_user_id:
+            return jsonify({"error": "user_id is required for authorization"}), 400
+
+        # Check if project exists and get current project data
+        project_response = supabase.table("project").select("*").eq("project_id", project_id).execute()
+        if not project_response.data:
+            return jsonify({"error": "Project not found"}), 404
+
+        current_project = project_response.data[0]
+
+        # Verify ownership - only the creator can delete the project
+        if current_project.get("created_by") != requesting_user_id:
+            return jsonify({"error": "Only the project owner can delete this project"}), 403
+
         # Delete the project from Supabase
         response = supabase.table("project").delete().eq("project_id", project_id).execute()
 

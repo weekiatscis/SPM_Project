@@ -62,8 +62,8 @@
               </a-button>
             </div>
 
-            <!-- Management Buttons Row -->
-            <div class="management-buttons-group">
+            <!-- Management Buttons Row - Only show to project owner -->
+            <div class="management-buttons-group" v-if="isProjectOwner">
               <a-button type="primary" @click="handleEdit" class="action-btn">
                 <template #icon>
                   <EditOutlined />
@@ -443,6 +443,12 @@ export default {
     // Create task modal state
     const showCreateTaskModal = ref(false)
 
+    // Check if current user is the project owner
+    const isProjectOwner = computed(() => {
+      if (!project.value || !authStore.user) return false
+      return project.value.created_by_id === authStore.user.user_id
+    })
+
     // Helper functions
     const formatDate = (dateString) => {
       if (!dateString) return 'Not set'
@@ -750,8 +756,13 @@ export default {
       isDeletingProject.value = true
 
       try {
+        const userId = authStore.user?.user_id
+        if (!userId) {
+          throw new Error('User not authenticated')
+        }
+
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
-        const response = await fetch(`${baseUrl}/projects/${project.value.project_id}`, {
+        const response = await fetch(`${baseUrl}/projects/${project.value.project_id}?user_id=${encodeURIComponent(userId)}`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json'
@@ -876,6 +887,7 @@ export default {
       isDeletingProject,
       showTeamMembersModal,
       showCreateTaskModal,
+      isProjectOwner,
       handleTeamUpdate,
       handleCreateTask,
       handleTaskCreated,
