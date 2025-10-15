@@ -1143,11 +1143,13 @@ export default {
   align-items: center;
   gap: 24px;
   flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 
 .stat-item-inline {
   text-align: center;
   min-width: 60px;
+  flex-shrink: 0;
 }
 
 .stat-number-inline {
@@ -1156,6 +1158,7 @@ export default {
   color: #111827;
   line-height: 1;
   margin-bottom: 4px;
+  white-space: nowrap;
 }
 
 .stat-item-inline.completed .stat-number-inline { color: #10b981; }
@@ -1168,6 +1171,7 @@ export default {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .progress-inline {
@@ -1177,6 +1181,7 @@ export default {
   min-width: 140px;
   padding-left: 24px;
   border-left: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .progress-percentage-inline {
@@ -1184,6 +1189,7 @@ export default {
   font-weight: 700;
   color: #667eea;
   text-align: right;
+  white-space: nowrap;
 }
 
 .progress-bar-inline {
@@ -1552,7 +1558,7 @@ export default {
   }
 
   .stat-item-inline {
-    min-width: 50px;
+    min-width: 55px;
   }
 
   .stat-number-inline {
@@ -1565,6 +1571,32 @@ export default {
 
   .progress-percentage-inline {
     font-size: 20px;
+  }
+}
+
+@media (max-width: 900px) {
+  .progress-stats-inline {
+    gap: 12px;
+  }
+
+  .stat-item-inline {
+    min-width: 45px;
+  }
+
+  .stat-number-inline {
+    font-size: 20px;
+  }
+
+  .stat-label-inline {
+    font-size: 10px;
+  }
+
+  .progress-inline {
+    min-width: 100px;
+  }
+
+  .progress-percentage-inline {
+    font-size: 18px;
   }
 }
 

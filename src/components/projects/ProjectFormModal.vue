@@ -80,7 +80,7 @@
           <a-date-picker
             v-model:value="dueDateValue"
             size="large"
-            format="YYYY-MM-DD"
+            format="DD/MM/YYYY"
             :style="{ width: '100%' }"
             placeholder="Select target date"
             :disabled-date="disabledDate"
