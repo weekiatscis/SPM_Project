@@ -87,6 +87,11 @@
       <a-col :span="12">
         <TaskList ref="taskListRef" />
       </a-col>
+
+      <!-- Report Generator Section -->
+      <a-col :span="12">
+        <ReportGenerator />
+      </a-col>
     </a-row>
   </div>
 </template>
@@ -96,6 +101,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useTaskTimeline } from '../composables/useTaskTimeline.js'
 import TaskList from '../components/tasks/TaskList.vue'
+import ReportGenerator from '../components/reports/ReportGenerator.vue'
 import NotificationTester from '../components/NotificationTester.vue' // Add this import
 import TaskTimelineChart from '../components/charts/TaskTimelineChart.vue'
 import { LeftOutlined, RightOutlined } from '@ant-design/icons-vue'
@@ -104,6 +110,7 @@ export default {
   name: 'Home',
   components: {
     TaskList,
+    ReportGenerator,
     NotificationTester, // Add this component
     TaskTimelineChart,
     LeftOutlined,
