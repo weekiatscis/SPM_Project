@@ -57,6 +57,17 @@
         Home
       </a-menu-item>
 
+      <!-- Manager Dashboard (Only visible to Manager and Director) -->
+      <a-menu-item 
+        v-if="isManagerOrDirector" 
+        key="manager-dashboard"
+      >
+        <template #icon>
+          <DashboardIcon />
+        </template>
+        Manager Dashboard
+      </a-menu-item>
+
       <!-- Projects with submenu -->
       <a-sub-menu key="projects" @titleClick="handleProjectsTitleClick">
         <template #icon>
@@ -215,6 +226,12 @@ export default {
     // Get user data directly from auth store
     const user = computed(() => authStore.user)
 
+    // Check if user is Manager or Director
+    const isManagerOrDirector = computed(() => {
+      const role = user.value?.role
+      return role === 'Manager' || role === 'Director'
+    })
+
     // Ant Design menu state
     const selectedKeys = ref(['home'])
     const openKeys = ref([])
@@ -234,6 +251,8 @@ export default {
     const handleMenuClick = ({ key }) => {
       if (key === 'home') {
         handleNavigation('/home')
+      } else if (key === 'manager-dashboard') {
+        handleNavigation('/manager-dashboard')
       } else if (key.startsWith('project-')) {
         const projectId = key.replace('project-', '')
         handleNavigation(`/projects/${projectId}`)
@@ -282,6 +301,9 @@ export default {
       const path = route.path
       if (path === '/home' || path === '/') {
         selectedKeys.value = ['home']
+        openKeys.value = []
+      } else if (path === '/manager-dashboard') {
+        selectedKeys.value = ['manager-dashboard']
         openKeys.value = []
       } else if (path === '/projects') {
         selectedKeys.value = []
@@ -332,6 +354,7 @@ export default {
 
     return {
       user,
+      isManagerOrDirector,
       selectedKeys,
       openKeys,
       collapsed,
