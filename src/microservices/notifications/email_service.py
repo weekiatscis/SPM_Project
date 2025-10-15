@@ -154,9 +154,180 @@ def create_email_template(notification_type: str, data: dict) -> str:
         </html>
         """
 
+    elif notification_type == "task_comment":
+        comment_text = data.get("comment_text", "")
+        commenter_name = data.get("commenter_name", "Someone")
+        subject = f"💬 New Comment: {task_title}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">💬 New Comment</h1>
+                </div>
+                <div class="content">
+                    <p>Hi there,</p>
+                    <p><strong>{commenter_name}</strong> commented on a task you're collaborating on:</p>
+
+                    <div class="task-card">
+                        <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
+                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
+                        {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
+                        <div style="background: #f0f5ff; padding: 15px; border-radius: 6px; margin: 15px 0; border-left: 3px solid #1890ff;">
+                            <p style="margin: 0; color: #555; font-style: italic;">"{comment_text}"</p>
+                        </div>
+                    </div>
+
+                    <center>
+                        <a href="{task_link}" class="button">View Comment & Reply</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> Stay engaged with your team by responding to comments promptly.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this as a collaborator on this task.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    elif notification_type == "project_comment":
+        comment_text = data.get("comment_text", "")
+        commenter_name = data.get("commenter_name", "Someone")
+        project_name = data.get("project_name", "Untitled Project")
+        project_id = data.get("project_id", "")
+        project_link = f"{FRONTEND_URL}/projects?projectId={project_id}" if project_id else FRONTEND_URL
+        subject = f"💬 New Comment on Project: {project_name}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">💬 New Project Comment</h1>
+                </div>
+                <div class="content">
+                    <p>Hi there,</p>
+                    <p><strong>{commenter_name}</strong> commented on a project you're collaborating on:</p>
+
+                    <div class="task-card">
+                        <h2 style="margin-top: 0; color: #333;">{project_name}</h2>
+                        <div style="background: #f0f5ff; padding: 15px; border-radius: 6px; margin: 15px 0; border-left: 3px solid #1890ff;">
+                            <p style="margin: 0; color: #555; font-style: italic;">"{comment_text}"</p>
+                        </div>
+                    </div>
+
+                    <center>
+                        <a href="{project_link}" class="button">View Comment & Reply</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> Stay engaged with your team by responding to comments promptly.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this as a collaborator on this project.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    elif notification_type == "project_created":
+        subject = f"📁 New Project Created: {task_title}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">📁 Project Created</h1>
+                </div>
+                <div class="content">
+                    <p>Hi there,</p>
+                    <p>You have successfully created a new project:</p>
+
+                    <div class="task-card">
+                        <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
+                        {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
+                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
+                    </div>
+
+                    <center>
+                        <a href="{task_link}" class="button">View Project Details</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> You can now add tasks, collaborate with team members, and track progress.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this as the project creator.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    elif notification_type == "project_assigned":
+        subject = f"📁 New Project Assigned: {task_title}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">📁 Project Assigned</h1>
+                </div>
+                <div class="content">
+                    <p>Hi there,</p>
+                    <p>You have been assigned to a new project:</p>
+
+                    <div class="task-card">
+                        <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
+                        {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
+                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
+                    </div>
+
+                    <center>
+                        <a href="{task_link}" class="button">View Project Details</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> Check the project details and start collaborating with your team.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this as a project collaborator.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
     else:
-        # Generic notification
+        # Generic notification - but only if we have a valid message
         message = data.get("message", "")
+        if not message or message.strip() == "":
+            # Don't send email if message is empty
+            return None, None
+            
         subject = f"📬 Notification: {task_title}"
 
         html_content = f"""
@@ -227,20 +398,24 @@ def send_email(to_email: str, subject: str, html_content: str) -> bool:
 def send_notification_email(
     user_email: str,
     notification_type: str,
-    task_title: str,
-    due_date: str,
+    task_title: str = None,
+    due_date: str = None,
     priority: str = "Medium",
     task_id: Optional[str] = None,
     old_due_date: Optional[str] = None,
     new_due_date: Optional[str] = None,
-    message: Optional[str] = None
+    message: Optional[str] = None,
+    comment_text: Optional[str] = None,
+    commenter_name: Optional[str] = None,
+    project_name: Optional[str] = None,
+    project_id: Optional[str] = None
 ) -> bool:
     """
-    Send notification email for a task
+    Send notification email for a task or project
 
     Args:
         user_email: Recipient email address
-        notification_type: Type of notification (e.g., 'reminder_7_days', 'due_date_change')
+        notification_type: Type of notification (e.g., 'reminder_7_days', 'due_date_change', 'task_comment', 'project_comment')
         task_title: Title of the task
         due_date: Due date of the task
         priority: Task priority (High, Medium, Low, Lowest)
@@ -248,6 +423,10 @@ def send_notification_email(
         old_due_date: Old due date (for due_date_change notifications)
         new_due_date: New due date (for due_date_change notifications)
         message: Custom message (for generic notifications)
+        comment_text: Comment text (for comment notifications)
+        commenter_name: Name of person who commented (for comment notifications)
+        project_name: Project name (for project comment notifications)
+        project_id: Project ID (for project comment notifications)
 
     Returns:
         bool: True if email sent successfully, False otherwise
@@ -261,11 +440,20 @@ def send_notification_email(
         "task_id": task_id,
         "old_due_date": old_due_date,
         "new_due_date": new_due_date,
-        "message": message
+        "message": message,
+        "comment_text": comment_text,
+        "commenter_name": commenter_name,
+        "project_name": project_name,
+        "project_id": project_id
     }
 
     # Create email content
     subject, html_content = create_email_template(notification_type, data)
+
+    # Don't send email if template returns None (empty message)
+    if subject is None or html_content is None:
+        print(f"Skipping email send for {notification_type} - empty message")
+        return False
 
     # Send email
     return send_email(user_email, subject, html_content)

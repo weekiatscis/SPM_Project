@@ -105,6 +105,13 @@
                     >
                       View Task →
                     </button>
+                    <button
+                      v-if="notification.project_id"
+                      @click="handleViewProject(notification)"
+                      class="view-project-btn"
+                    >
+                      View Project →
+                    </button>
                   </div>
                 </div>
                 <div v-if="!notification.is_read" class="unread-indicator"></div>
@@ -258,6 +265,24 @@
         }
       }
 
+      const handleViewProject = async (notification) => {
+        console.log('View project clicked:', notification.project_id)
+
+        // Mark as read if unread
+        if (!notification.is_read && user.value?.user_id) {
+          await markAsRead(notification.id, user.value.user_id)
+        }
+
+        // Navigate to project details page
+        try {
+          router.push(`/projects?projectId=${notification.project_id}`)
+          console.log('Navigating to project:', notification.project_id)
+        } catch (error) {
+          console.error('Error navigating to project:', error)
+          alert('Error navigating to project')
+        }
+      }
+
       const closeTaskDetailModal = () => {
         isTaskDetailModalOpen.value = false
         selectedTask.value = null
@@ -342,6 +367,7 @@
         formatNotificationTime,
         handleNotificationClick,
         handleViewTask,
+        handleViewProject,
         closeTaskDetailModal,
         handleEditTask,
         markAllAsRead,
@@ -544,6 +570,27 @@
   }
 
   .view-task-btn:active {
+    transform: scale(0.95);
+  }
+
+  .view-project-btn {
+    background: none;
+    border: none;
+    color: #52c41a;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+
+  .view-project-btn:hover {
+    background-color: #f6ffed;
+    color: #389e0d;
+  }
+
+  .view-project-btn:active {
     transform: scale(0.95);
   }
   </style>

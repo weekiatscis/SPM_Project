@@ -27,6 +27,16 @@
         <a-typography-text type="secondary" style="font-size: 12px;">
           Due: {{ formatDate(task.dueDate) }}
         </a-typography-text>
+        <div v-if="task.assignee" style="margin-top: 4px;">
+          <a-typography-text type="secondary" style="font-size: 11px;">
+            Assignee: {{ task.assignee }}
+          </a-typography-text>
+        </div>
+        <div v-if="task.collaborators && task.collaborators.length > 0" style="margin-top: 2px;">
+          <a-typography-text type="secondary" style="font-size: 11px;">
+            Collaborators: {{ task.collaborators.length }}
+          </a-typography-text>
+        </div>
       </a-col>
       <a-col :span="8" style="text-align: right;">
         <a-tag :color="getStatusColor(task.status)">
