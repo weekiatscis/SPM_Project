@@ -195,6 +195,23 @@ def create_project():
         if not body.get("project_name", "").strip():
             return jsonify({"error": "project_name is required"}), 400
 
+        project_name = body.get("project_name").strip()
+
+        # Check for duplicate project names (only for non-completed projects)
+        # Note: This assumes you have a 'status' field. If not, it checks all projects.
+        existing_projects = supabase.table("project").select("project_id, project_name, status").ilike("project_name", project_name).execute()
+
+        if existing_projects.data:
+            # Check if any non-completed project has this name
+            for existing in existing_projects.data:
+                # If you have a status field, check if it's not 'Completed'
+                # If you don't have a status field yet, this will block all duplicates
+                existing_status = existing.get("status", "Active")  # Default to 'Active' if no status field
+                if existing_status != "Completed":
+                    return jsonify({
+                        "error": f"A project with the name '{project_name}' already exists. Please choose a different name."
+                    }), 409  # 409 Conflict status code
+
         # Validate collaborators (now mandatory)
         collaborators = body.get("collaborators", [])
         print(f"DEBUG: Received collaborators from request: {collaborators}")
@@ -211,7 +228,8 @@ def create_project():
             "project_description": body.get("project_description", "").strip(),
             "created_by": body.get("owner_id") or body.get("created_by", "").strip() or "Unknown",
             "due_date": body.get("due_date"),
-            "collaborators": collaborators if isinstance(collaborators, list) else []
+            "collaborators": collaborators if isinstance(collaborators, list) else [],
+            "status": "Active"  # Set default status for new projects
         }
 
         print(f"DEBUG: Inserting project with collaborators: {project_data.get('collaborators')}")
@@ -365,7 +383,23 @@ def update_project(project_id):
         update_data = {}
 
         if "project_name" in body:
-            update_data["project_name"] = body["project_name"].strip()
+            new_project_name = body["project_name"].strip()
+
+            # Check for duplicate project names if name is being changed
+            if new_project_name != current_project.get("project_name"):
+                existing_projects = supabase.table("project").select("project_id, project_name, status").ilike("project_name", new_project_name).execute()
+
+                if existing_projects.data:
+                    # Check if any non-completed project has this name (excluding current project)
+                    for existing in existing_projects.data:
+                        if existing.get("project_id") != project_id:
+                            existing_status = existing.get("status", "Active")
+                            if existing_status != "Completed":
+                                return jsonify({
+                                    "error": f"A project with the name '{new_project_name}' already exists. Please choose a different name."
+                                }), 409
+
+            update_data["project_name"] = new_project_name
 
         if "project_description" in body:
             update_data["project_description"] = body["project_description"].strip()

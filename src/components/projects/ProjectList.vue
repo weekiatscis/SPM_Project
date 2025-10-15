@@ -195,24 +195,30 @@
         <!-- Left Side - Tasks List (30%) -->
         <a-col :span="7">
           <div style="border-right: 1px solid #f0f0f0; padding-right: 16px; height: 100%;">
-            <div style="display: flex; align-items: center; justify-between; margin-bottom: 16px;">
-              <h4 style="margin: 0;">Available Tasks</h4>
-              <a-space size="small">
+            <div style="margin-bottom: 16px;">
+              <h4 style="margin: 0 0 12px 0;">Available Tasks</h4>
+              <div style="display: flex; gap: 8px;">
                 <a-button
                   size="small"
                   :type="taskSortBy.startsWith('dueDate') ? 'primary' : 'default'"
                   @click="toggleTaskDueDateSort"
+                  style="flex: 1;"
                 >
                   Due Date {{ taskSortBy === 'dueDate-asc' ? '↑' : taskSortBy === 'dueDate-desc' ? '↓' : '↑' }}
                 </a-button>
-                <a-button
+                <a-select
+                  v-model:value="taskStatusFilter"
                   size="small"
-                  :type="taskSortBy.startsWith('status') ? 'primary' : 'default'"
-                  @click="toggleTaskStatusSort"
+                  placeholder="Status"
+                  style="flex: 1;"
+                  allow-clear
                 >
-                  Status {{ taskSortBy === 'status-asc' ? '↑' : taskSortBy === 'status-desc' ? '↓' : '↑' }}
-                </a-button>
-              </a-space>
+                  <a-select-option value="">All</a-select-option>
+                  <a-select-option value="Unassigned">Unassigned</a-select-option>
+                  <a-select-option value="Ongoing">Ongoing</a-select-option>
+                  <a-select-option value="Under Review">Under Review</a-select-option>
+                </a-select>
+              </div>
             </div>
 
             <div v-if="isLoadingTasks" style="text-align: center; padding: 50px;">
@@ -231,14 +237,14 @@
             >
               <template #renderItem="{ item }">
                 <a-list-item
-                  style="cursor: pointer; padding: 8px; border-radius: 4px; margin-bottom: 4px;"
-                  :style="isTaskSelected(item) ? { background: '#e6f7ff', border: '1px solid #1890ff' } : {}"
+                  style="cursor: pointer; padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #f0f0f0;"
+                  :style="isTaskSelected(item) ? { background: '#e6f7ff', border: '1px solid #1890ff' } : { background: 'white' }"
                   @click="selectTaskForAssign(item)"
                 >
                   <div style="width: 100%;">
-                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 4px;">
-                      <strong>{{ item.title }}</strong>
-                      <a-tag :color="getTaskStatusColor(item.status)" size="small">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
+                      <strong style="flex: 1; font-size: 14px; line-height: 1.5; word-break: break-word;">{{ item.title }}</strong>
+                      <a-tag :color="getTaskStatusColor(item.status)" size="small" style="flex-shrink: 0; margin-top: 2px;">
                         {{ item.status }}
                       </a-tag>
                     </div>
@@ -386,6 +392,7 @@ export default {
     const tasks = ref([])
     const isLoadingTasks = ref(false)
     const taskSortBy = ref('dueDate-asc')
+    const taskStatusFilter = ref('')
     const selectedTasksForAssign = ref([])
 
     // Project assignment state
@@ -543,15 +550,23 @@ export default {
       }
     }
 
-    // All available tasks computed property with sorting - only unassigned tasks
+    // All available tasks computed property with sorting and filtering - only unassigned tasks, excluding completed
     const allAvailableTasks = computed(() => {
       // Filter tasks that are not assigned to any project (project_id is null/undefined)
-      const unassignedTasks = tasks.value.filter(task =>
-        !task.project_id || task.project_id === null
+      // and exclude completed tasks
+      let filteredTasks = tasks.value.filter(task =>
+        (!task.project_id || task.project_id === null) &&
+        task.status !== 'Completed'
       )
 
-      let sortedTasks = [...unassignedTasks]
+      // Apply status filter if selected
+      if (taskStatusFilter.value) {
+        filteredTasks = filteredTasks.filter(task => task.status === taskStatusFilter.value)
+      }
 
+      let sortedTasks = [...filteredTasks]
+
+      // Apply sorting
       if (taskSortBy.value === 'dueDate-asc') {
         return sortedTasks.sort((a, b) => {
           if (!a.dueDate) return 1
@@ -564,10 +579,6 @@ export default {
           if (!b.dueDate) return -1
           return new Date(b.dueDate) - new Date(a.dueDate)
         })
-      } else if (taskSortBy.value === 'status-asc') {
-        return sortedTasks.sort((a, b) => a.status.localeCompare(b.status))
-      } else if (taskSortBy.value === 'status-desc') {
-        return sortedTasks.sort((a, b) => b.status.localeCompare(a.status))
       }
 
       return sortedTasks
@@ -579,14 +590,6 @@ export default {
         taskSortBy.value = 'dueDate-desc'
       } else {
         taskSortBy.value = 'dueDate-asc'
-      }
-    }
-
-    const toggleTaskStatusSort = () => {
-      if (taskSortBy.value === 'status-asc') {
-        taskSortBy.value = 'status-desc'
-      } else {
-        taskSortBy.value = 'status-asc'
       }
     }
 
@@ -867,9 +870,9 @@ export default {
       allAvailableTasks,
       isLoadingTasks,
       taskSortBy,
+      taskStatusFilter,
       selectedTasksForAssign,
       toggleTaskDueDateSort,
-      toggleTaskStatusSort,
       selectTaskForAssign,
       isTaskSelected,
       formatDate,

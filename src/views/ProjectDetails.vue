@@ -1389,8 +1389,8 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 20px;
+  margin-bottom: 16px;
 }
 
 .task-title {
@@ -1399,17 +1399,20 @@ export default {
   color: #111827;
   margin: 0;
   flex: 1;
-  line-height: 1.4;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .task-status {
-  padding: 4px 10px;
+  padding: 6px 12px;
   font-size: 11px;
   font-weight: 600;
   border-radius: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 .task-description {
