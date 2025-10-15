@@ -6,6 +6,7 @@ import ProjectDetails from '../views/ProjectDetails.vue'
 import Login from '../views/Login.vue'
 import Signup from '../views/Signup.vue'
 import ProfileSettings from '../views/ProfileSettings.vue'
+import ManagerDashboard from '../views/ManagerDashboard.vue'
 
 const routes = [
   { path: '/', redirect: '/home' },
@@ -14,7 +15,16 @@ const routes = [
   { path: '/home', name: 'Home', component: Home, meta: { requiresAuth: true } },
   { path: '/projects', name: 'Projects', component: Projects, meta: { requiresAuth: true } },
   { path: '/projects/:id', name: 'ProjectDetails', component: ProjectDetails, meta: { requiresAuth: true } },
-  { path: '/profile', name: 'ProfileSettings', component: ProfileSettings, meta: { requiresAuth: true } }
+  { path: '/profile', name: 'ProfileSettings', component: ProfileSettings, meta: { requiresAuth: true } },
+  { 
+    path: '/manager-dashboard', 
+    name: 'ManagerDashboard', 
+    component: ManagerDashboard, 
+    meta: { 
+      requiresAuth: true,
+      requiredRoles: ['Manager', 'Director']
+    } 
+  }
 ]
 
 const router = createRouter({
@@ -43,15 +53,36 @@ router.beforeEach(async (to, from, next) => {
   // Protect routes that require authentication
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next({ name: 'Login', query: { redirect: to.fullPath } })
-  } else if (to.meta.requiresGuest && authStore.isAuthenticated) {
-    next({ name: 'Home' }) 
-  } else {
-    // Reset session timer for authenticated users
-    if (authStore.isAuthenticated) {
-      authStore.resetSessionTimer()
-    }
-    next()
+    return
   }
+  
+  // Check role-based access control
+  if (to.meta.requiredRoles && authStore.user) {
+    const userRole = authStore.user.role
+    if (!to.meta.requiredRoles.includes(userRole)) {
+      next({ 
+        name: 'Home', 
+        query: { 
+          error: 'insufficient_permissions',
+          message: 'You do not have permission to access this page.'
+        } 
+      })
+      return
+    }
+  }
+  
+  // Redirect authenticated users away from guest pages
+  if (to.meta.requiresGuest && authStore.isAuthenticated) {
+    next({ name: 'Home' })
+    return
+  }
+  
+  // Reset session timer for authenticated users
+  if (authStore.isAuthenticated) {
+    authStore.resetSessionTimer()
+  }
+  
+  next()
 })
 
 export default router
