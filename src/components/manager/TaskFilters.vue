@@ -13,8 +13,8 @@
           <a-select-option value="Unassigned">
             <a-badge status="default" text="Unassigned" />
           </a-select-option>
-          <a-select-option value="On Going">
-            <a-badge status="processing" text="On Going" />
+          <a-select-option value="Ongoing">
+            <a-badge status="processing" text="Ongoing" />
           </a-select-option>
           <a-select-option value="Under Review">
             <a-badge status="warning" text="Under Review" />
