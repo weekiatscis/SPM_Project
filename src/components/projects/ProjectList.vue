@@ -8,14 +8,49 @@
 
 
   <div>
-    <!-- Section Toggle Tabs -->
-    <a-tabs v-model:activeKey="activeTab" style="margin-bottom: 16px;">
-      <a-tab-pane key="all" tab="Ongoing Projects" />
-      <a-tab-pane key="owned" tab="My Projects" />
-      <a-tab-pane key="collaborating" tab="Collaborating" />
-      <a-tab-pane key="completed" tab="Completed" />
-      <a-tab-pane key="assign" tab="Assign Task" />
-    </a-tabs>
+    <!-- Section Toggle Tabs with Stats and Button -->
+    <div class="tabs-header-row">
+      <a-tabs v-model:activeKey="activeTab" class="tabs-section">
+        <a-tab-pane key="all" tab="Ongoing Projects" />
+        <a-tab-pane key="owned" tab="My Projects" />
+        <a-tab-pane key="collaborating" tab="Collaborating" />
+        <a-tab-pane key="completed" tab="Completed" />
+        <a-tab-pane key="assign" tab="Assign Task" />
+      </a-tabs>
+
+      <div class="header-actions">
+        <div class="stats-container">
+          <div class="stat-card stat-total">
+            <div class="stat-icon">📊</div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.total }}</div>
+              <div class="stat-label">Total</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-active">
+            <div class="stat-icon">🚀</div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.active }}</div>
+              <div class="stat-label">Active</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-completed">
+            <div class="stat-icon">✓</div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.completed }}</div>
+              <div class="stat-label">Completed</div>
+            </div>
+          </div>
+        </div>
+
+        <button class="new-project-btn" @click="handleOpenModal">
+          <PlusOutlined class="btn-icon" />
+          <span>New Project</span>
+        </button>
+      </div>
+    </div>
 
     <!-- Ongoing Projects Section -->
     <a-card
@@ -428,7 +463,13 @@ export default {
     ProjectFormModal,
     ProjectCard
   },
-  emits: ['create-project'],
+  props: {
+    stats: {
+      type: Object,
+      default: () => ({ total: 0, active: 0, completed: 0 })
+    }
+  },
+  emits: ['create-project', 'open-modal'],
   setup(props, { emit }) {
     const router = useRouter()
     const projects = ref([])
@@ -509,6 +550,11 @@ export default {
     // Handle project click - navigate to project details page
     const handleProjectClick = async (project) => {
       router.push(`/projects/${project.project_id}`)
+    }
+
+    // Handle opening modal from button
+    const handleOpenModal = () => {
+      emit('open-modal')
     }
 
 
@@ -940,6 +986,7 @@ export default {
       handleProjectSaved,
       addNewProject, // Expose this method to parent
       handleProjectClick,
+      handleOpenModal, // Expose to handle button click
       // Task assignment related
       allAvailableTasks,
       isLoadingTasks,
@@ -1079,5 +1126,184 @@ export default {
 :deep(.ant-empty-description) {
   color: #6B7280;
   font-size: 14px;
+}
+
+/* Tabs Header Row */
+.tabs-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.tabs-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.stats-container {
+  display: flex;
+  gap: 8px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(215, 143, 238, 0.2);
+  border-radius: 10px;
+  min-width: 90px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(215, 143, 238, 0.1);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(215, 143, 238, 0.2);
+}
+
+.stat-total {
+  border-color: rgba(107, 114, 128, 0.2);
+}
+
+.stat-active {
+  border-color: rgba(215, 143, 238, 0.4);
+  background: linear-gradient(135deg, rgba(215, 143, 238, 0.08), rgba(167, 139, 250, 0.04));
+}
+
+.stat-completed {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(5, 150, 105, 0.02));
+}
+
+.stat-icon {
+  font-size: 20px;
+  line-height: 1;
+  filter: grayscale(0.2);
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: #1F2937;
+}
+
+.stat-active .stat-value {
+  background: linear-gradient(135deg, #D78FEE, #A78BFA);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-completed .stat-value {
+  background: linear-gradient(135deg, #10B981, #059669);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+.new-project-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: none;
+  background: linear-gradient(135deg, #D78FEE, #A78BFA);
+  color: white;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 14px rgba(215, 143, 238, 0.4);
+  white-space: nowrap;
+}
+
+.new-project-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(215, 143, 238, 0.5);
+}
+
+.new-project-btn:active {
+  transform: translateY(0);
+}
+
+.btn-icon {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+/* Responsive Design */
+@media (max-width: 1400px) {
+  .tabs-header-row {
+    flex-wrap: wrap;
+  }
+
+  .tabs-section {
+    flex-basis: 100%;
+  }
+
+  .header-actions {
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 768px) {
+  .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .stats-container {
+    justify-content: space-between;
+  }
+
+  .stat-card {
+    flex: 1;
+    min-width: 80px;
+  }
+
+  .stat-value {
+    font-size: 16px;
+  }
+
+  .stat-icon {
+    font-size: 18px;
+  }
+
+  .new-project-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>

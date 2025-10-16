@@ -7,39 +7,6 @@
           <h1 class="page-title">Projects Overview</h1>
           <p class="page-subtitle">Manage and organize your projects efficiently</p>
         </div>
-
-        <div class="header-right">
-          <div class="stats-container">
-            <div class="stat-card stat-total">
-              <div class="stat-icon">📊</div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.total }}</div>
-                <div class="stat-label">Total Projects</div>
-              </div>
-            </div>
-
-            <div class="stat-card stat-active">
-              <div class="stat-icon">🚀</div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.active }}</div>
-                <div class="stat-label">Active</div>
-              </div>
-            </div>
-
-            <div class="stat-card stat-completed">
-              <div class="stat-icon">✓</div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.completed }}</div>
-                <div class="stat-label">Completed</div>
-              </div>
-            </div>
-          </div>
-
-          <button class="new-project-btn" @click="showCreateModal = true">
-            <PlusOutlined class="btn-icon" />
-            <span>New Project</span>
-          </button>
-        </div>
       </div>
     </div>
 
@@ -47,7 +14,9 @@
     <div class="projects-content">
       <ProjectList
         ref="projectListRef"
+        :stats="stats"
         @create-project="showCreateModal = true"
+        @open-modal="showCreateModal = true"
       />
     </div>
 
