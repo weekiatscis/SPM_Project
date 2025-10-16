@@ -8,17 +8,30 @@
 
 
   <div>
-    <!-- Section Toggle Tabs with Stats and Button -->
-    <div class="tabs-header-row">
-      <a-tabs v-model:activeKey="activeTab" class="tabs-section">
-        <a-tab-pane key="all" tab="Ongoing Projects" />
-        <a-tab-pane key="owned" tab="My Projects" />
-        <a-tab-pane key="collaborating" tab="Collaborating" />
-        <a-tab-pane key="completed" tab="Completed" />
-        <a-tab-pane key="assign" tab="Assign Task" />
-      </a-tabs>
+    <!-- Tabs Container with Background Illustration -->
+    <div class="tabs-container-wrapper">
+      <!-- Section Toggle Tabs with Stats and Button -->
+      <div class="tabs-header-row">
+        <div class="tabs-section">
+          <!-- GIF Behind Tabs -->
+          <div class="tabs-background-illustration">
+            <img
+              src="/ProjectIllustration.gif"
+              alt="Project illustration"
+              class="project-illustration-gif"
+            />
+          </div>
 
-      <div class="header-actions">
+          <a-tabs v-model:activeKey="activeTab">
+          <a-tab-pane key="all" tab="Ongoing Projects" />
+          <a-tab-pane key="owned" tab="My Projects" />
+          <a-tab-pane key="collaborating" tab="Collaborating" />
+          <a-tab-pane key="completed" tab="Completed" />
+          <a-tab-pane key="assign" tab="Assign Task" />
+          </a-tabs>
+        </div>
+
+        <div class="header-actions">
         <div class="stats-container">
           <div class="stat-card stat-total">
             <div class="stat-icon">📊</div>
@@ -49,6 +62,7 @@
           <PlusOutlined class="btn-icon" />
           <span>New Project</span>
         </button>
+        </div>
       </div>
     </div>
 
@@ -1050,9 +1064,7 @@ export default {
 }
 
 :deep(.ant-tabs) {
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: #ffffff;
   border-radius: 12px;
   padding: 4px;
   border: 1px solid rgba(139, 92, 246, 0.1);
@@ -1060,6 +1072,7 @@ export default {
 
 :deep(.ant-tabs-nav) {
   margin: 0 !important;
+  background-color: #ffffff;
 }
 
 :deep(.ant-tabs-tab) {
@@ -1128,18 +1141,54 @@ export default {
   font-size: 14px;
 }
 
+/* Tabs Container Wrapper - Like Home's timeline wrapper */
+.tabs-container-wrapper {
+  position: relative;
+  margin-bottom: 16px;
+}
+
 /* Tabs Header Row */
 .tabs-header-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 16px;
+  position: relative;
+  z-index: 2;
 }
 
 .tabs-section {
   flex: 1;
   min-width: 0;
+  position: relative;
+}
+
+/* Background Illustration - Positioned behind tabs at right edge of ant-tabs */
+.tabs-section {
+  position: relative;
+}
+
+.tabs-background-illustration {
+  position: absolute;
+  top: -100%;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.project-illustration-gif {
+  width: 180px;
+  height: 150px;
+  border-radius: 8px;
+  display: block;
+  opacity: 0.9;
+}
+
+/* Ensure tabs content stays above illustration */
+:deep(.ant-tabs) {
+  position: relative;
+  z-index: 1;
 }
 
 .header-actions {
@@ -1271,13 +1320,31 @@ export default {
     flex-basis: 100%;
   }
 
+  .project-illustration-gif {
+    width: 100px;
+  }
+
   .header-actions {
     flex-basis: 100%;
     justify-content: space-between;
   }
 }
 
+@media (max-width: 1024px) {
+  .project-illustration-gif {
+    width: 90px;
+  }
+
+  .tabs-background-illustration {
+    right: -20px;
+  }
+}
+
 @media (max-width: 768px) {
+  .tabs-background-illustration {
+    display: none; /* Hide illustration on mobile */
+  }
+
   .header-actions {
     flex-direction: column;
     align-items: stretch;
