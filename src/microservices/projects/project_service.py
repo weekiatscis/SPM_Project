@@ -308,6 +308,7 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": row.get("created_at"),
         "created_by": row.get("created_by"),
         "due_date": row.get("due_date"),
+        "status": row.get("status", "Active"),
         "collaborators": row.get("collaborators", [])
     }
 
@@ -322,7 +323,7 @@ def get_projects():
         query = (
             supabase
             .table("project")
-            .select("project_id,project_name,project_description,created_at,created_by,due_date,collaborators")
+            .select("project_id,project_name,project_description,created_at,created_by,due_date,status,collaborators")
             .order("created_at", desc=True)
         )
 
@@ -413,6 +414,9 @@ def update_project(project_id):
         if "collaborators" in body:
             collaborators = body["collaborators"]
             update_data["collaborators"] = collaborators if isinstance(collaborators, list) else []
+
+        if "status" in body:
+            update_data["status"] = body["status"].strip()
 
         if not update_data:
             return jsonify({"error": "No valid fields to update"}), 400

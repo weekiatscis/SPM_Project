@@ -54,28 +54,44 @@
                 </template>
                 New Task
               </a-button>
+              <a-button @click="showTeamMembersModal = true" class="action-btn">
+                <template #icon>
+                  <TeamOutlined />
+                </template>
+                Team
+              </a-button>
               <a-button @click="handleGenerateReport" class="action-btn">
                 <template #icon>
                   <FileTextOutlined />
                 </template>
                 Report
               </a-button>
-            </div>
 
-            <!-- Management Buttons Row - Only show to project owner -->
-            <div class="management-buttons-group" v-if="isProjectOwner">
-              <a-button type="primary" @click="handleEdit" class="action-btn">
-                <template #icon>
-                  <EditOutlined />
+              <!-- Three-dot dropdown menu - Only show to project owner -->
+              <a-dropdown v-if="isProjectOwner" :trigger="['click']">
+                <a-button class="action-btn action-menu-btn">
+                  <template #icon>
+                    <MoreOutlined />
+                  </template>
+                </a-button>
+                <template #overlay>
+                  <a-menu>
+                    <a-menu-item key="edit" @click="handleEdit" class="menu-item-edit">
+                      <EditOutlined class="menu-icon-edit" />
+                      <span style="margin-left: 8px;">Edit Project</span>
+                    </a-menu-item>
+                    <a-menu-item key="complete" @click="handleMarkAsCompleted" :disabled="project.status === 'Completed'" class="menu-item-complete">
+                      <CheckCircleOutlined class="menu-icon-complete" />
+                      <span style="margin-left: 8px;">Mark as Completed</span>
+                    </a-menu-item>
+                    <a-menu-divider />
+                    <a-menu-item key="delete" @click="handleDelete" danger>
+                      <DeleteOutlined />
+                      <span style="margin-left: 8px;">Delete Project</span>
+                    </a-menu-item>
+                  </a-menu>
                 </template>
-                Edit
-              </a-button>
-              <a-button danger @click="handleDelete" class="action-btn">
-                <template #icon>
-                  <DeleteOutlined />
-                </template>
-                Delete
-              </a-button>
+              </a-dropdown>
             </div>
           </div>
         </div>
@@ -111,7 +127,7 @@
               </div>
             </div>
             <div class="meta-divider"></div>
-            <div class="meta-item meta-item-clickable" @click="showTeamMembersModal = true">
+            <div class="meta-item">
               <TeamOutlined class="meta-icon" />
               <div class="meta-content">
                 <span class="meta-label">Team Members</span>
@@ -381,7 +397,8 @@ import {
   UnorderedListOutlined,
   MessageOutlined,
   FlagOutlined,
-  PlusOutlined
+  PlusOutlined,
+  MoreOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useProjectEvents } from '../composables/useProjectEvents'
@@ -413,7 +430,8 @@ export default {
     UnorderedListOutlined,
     MessageOutlined,
     FlagOutlined,
-    PlusOutlined
+    PlusOutlined,
+    MoreOutlined
   },
   setup() {
     const route = useRoute()
@@ -713,7 +731,7 @@ export default {
           created_by: createdByName,
           created_by_id: foundProject.created_by,
           due_date: foundProject.due_date,
-          status: 'Active',
+          status: foundProject.status || 'Active',
           collaborators: foundProject.collaborators || []
         }
 
@@ -863,6 +881,117 @@ export default {
       loadProjectTasks()
     }
 
+    const handleMarkAsCompleted = async () => {
+      if (project.value.status === 'Completed') {
+        notification.info({
+          message: 'Project Already Completed',
+          description: 'This project is already marked as completed.',
+          placement: 'topRight',
+          duration: 3
+        })
+        return
+      }
+
+      try {
+        const userId = authStore.user?.user_id
+
+        if (!userId) {
+          throw new Error('User not authenticated')
+        }
+
+        // Step 1: Mark all tasks in the project as completed
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        let completedTasksCount = 0
+        let failedTasksCount = 0
+
+        for (const task of projectTasks.value) {
+          // Only update tasks that are not already completed
+          if (task.status !== 'Completed') {
+            try {
+              const taskResponse = await fetch(`${taskServiceUrl}/tasks/${task.id}`, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  status: 'Completed'
+                })
+              })
+
+              if (taskResponse.ok) {
+                completedTasksCount++
+              } else {
+                failedTasksCount++
+              }
+            } catch (taskError) {
+              console.error(`Failed to complete task ${task.id}:`, taskError)
+              failedTasksCount++
+            }
+          }
+        }
+
+        // Step 2: Mark the project as completed
+        const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+        const response = await fetch(`${projectServiceUrl}/projects/${project.value.project_id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            project_name: project.value.project_name,
+            project_description: project.value.project_description,
+            due_date: project.value.due_date,
+            created_by: project.value.created_by_id,
+            user_id: userId,
+            collaborators: project.value.collaborators || [],
+            status: 'Completed'
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `HTTP ${response.status}`)
+        }
+
+        // Update local project status
+        project.value.status = 'Completed'
+
+        // Build notification message
+        let description = `"${project.value.project_name}" has been marked as completed.`
+        if (completedTasksCount > 0) {
+          description += ` ${completedTasksCount} task(s) were also completed.`
+        }
+        if (failedTasksCount > 0) {
+          description += ` Note: ${failedTasksCount} task(s) could not be updated.`
+        }
+
+        notification.success({
+          message: 'Project Completed',
+          description: description,
+          placement: 'topRight',
+          duration: 4
+        })
+
+        // Emit event to update sidebar
+        emitProjectUpdated({
+          ...project.value,
+          status: 'Completed'
+        })
+
+        // Reload project and tasks to show updated status
+        await loadProject()
+        await loadProjectTasks()
+      } catch (error) {
+        console.error('Failed to mark project as completed:', error)
+        notification.error({
+          message: 'Failed to Complete Project',
+          description: error.message || 'Unable to mark project as completed. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      }
+    }
+
     watch(() => route.params.id, (newId, oldId) => {
       if (newId && newId !== oldId) {
         loadProject()
@@ -913,7 +1042,8 @@ export default {
       handleProjectUpdated,
       handleTaskClick,
       closeTaskDetailModal,
-      handleGenerateReport
+      handleGenerateReport,
+      handleMarkAsCompleted
     }
   }
 }
@@ -1060,6 +1190,29 @@ export default {
 .action-btn.primary-action:hover {
   background: #059669;
   border-color: #059669;
+}
+
+.action-menu-btn {
+  border: 1px solid #d9d9d9;
+  color: #6b7280;
+}
+
+.action-menu-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+/* Dropdown Menu Icon Colors */
+.menu-icon-edit {
+  color: #1890ff !important;
+}
+
+.menu-icon-complete {
+  color: #10b981 !important;
+}
+
+.menu-item-complete[disabled] .menu-icon-complete {
+  color: #d9d9d9 !important;
 }
 
 /* Meta Info and Progress Container */
