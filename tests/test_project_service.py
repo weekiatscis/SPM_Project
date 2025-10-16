@@ -113,7 +113,7 @@ class TestProjectService:
         """Test DELETE /projects/<id> endpoint structure"""
         try:
             response = requests.delete(
-                f"{PROJECT_SERVICE_URL}/projects/dummy-id",
+                f"{PROJECT_SERVICE_URL}/projects/dummy-id?user_id=test-user-id",
                 timeout=5
             )
             # Should return 404 (not found), not 500
