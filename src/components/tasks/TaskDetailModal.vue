@@ -215,7 +215,7 @@
 
         <!-- Footer with action buttons -->
         <div class="bg-gray-50 px-6 py-3 flex justify-between">
-          <div class="flex space-x-3">
+          <div class="flex space-x-3" v-if="isCurrentUserAssignee">
             <button
               @click="editTask"
               class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
@@ -241,6 +241,12 @@
               {{ isDeleting ? 'Deleting...' : getDeleteButtonText() }}
             </button>
           </div>
+          <div v-else class="flex items-center text-sm text-gray-500">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            Only the assignee can edit or delete this task
+          </div>
           <button
             @click="$emit('close')"
             class="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
@@ -255,8 +261,9 @@
 </template>
 
 <script>
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, onMounted, watch, nextTick, computed } from 'vue'
 import TaskComments from './TaskComments.vue'
+import { useAuthStore } from '../../stores/auth'
 // Icons will be inline SVG instead of components
 
 export default {
@@ -276,8 +283,14 @@ export default {
   },
   emits: ['close', 'edit', 'delete'],
   setup(props, { emit }) {
+    const authStore = useAuthStore()
     const isDeleting = ref(false)
     const auditLogs = ref([])
+    
+    // Check if the current user is the assignee
+    const isCurrentUserAssignee = computed(() => {
+      return authStore.user?.user_id === props.task?.owner_id
+    })
     const isLoadingLogs = ref(false)
     const userCache = ref({})
     const collaborators = ref([])
@@ -801,6 +814,7 @@ export default {
       parentTask,
       isLoadingParentTask,
       assigneeName,
+      isCurrentUserAssignee,
       formatDate,
       formatLogDate,
       formatActivityDate,

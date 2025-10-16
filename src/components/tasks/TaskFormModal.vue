@@ -393,7 +393,7 @@
             Cancel
           </button>
           <button @click="saveTask" :disabled="isLoading"
-            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed submittaskcreate">
             {{ isLoading ? 'Creating...' : (task?.id ? 'Update Task' : (form.isSubtask ? 'Create Subtask' : 'Create Task')) }}
           </button>
         </div>

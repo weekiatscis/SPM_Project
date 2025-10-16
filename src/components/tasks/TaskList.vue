@@ -51,7 +51,7 @@
         </div>
       </template>
       <template #extra>
-        <a-button type="primary" size="small" :icon="h(PlusOutlined)" @click="showTaskModal = true">
+        <a-button type="primary" size="small" :icon="h(PlusOutlined)" @click="showTaskModal = true" class="createtask">
           Create Task
         </a-button>
       </template>
@@ -61,10 +61,13 @@
         style="height: 400px; overflow-y: auto;"
       >
         <template #renderItem="{ item }">
-          <a-list-item>
+          <a-list-item v-if="!item.isSubtask || expandedParents[item.parent_task_id]">
             <TaskCard
               :task="item"
+              :is-expanded="expandedParents[item.id]"
+              :has-subtasks="hasSubtasks(item.id)"
               @view-details="handleTaskClick"
+              @toggle-expand="toggleExpand"
             />
           </a-list-item>
         </template>
@@ -98,6 +101,7 @@ export default {
     const isLoadingTaskDetails = ref(false)
     const sortBy = ref('dueDate-asc')
     const authStore = useAuthStore()
+    const expandedParents = ref({})
 
     // Modal state for creating task
     const showTaskModal = ref(false)
@@ -284,18 +288,20 @@ export default {
       closeDetailModal()
     }
 
-    // All tasks computed property with sorting
+    // All tasks computed property with sorting and hierarchy
     const allTasks = computed(() => {
       const sortedTasks = [...tasks.value]
       
+      // Apply sorting
+      let sorted = sortedTasks
       if (sortBy.value === 'dueDate-asc') {
-        return sortedTasks.sort((a, b) => {
+        sorted = sortedTasks.sort((a, b) => {
           if (!a.dueDate) return 1
           if (!b.dueDate) return -1
           return new Date(a.dueDate) - new Date(b.dueDate)
         })
       } else if (sortBy.value === 'dueDate-desc') {
-        return sortedTasks.sort((a, b) => {
+        sorted = sortedTasks.sort((a, b) => {
           if (!a.dueDate) return 1
           if (!b.dueDate) return -1
           return new Date(b.dueDate) - new Date(a.dueDate)
@@ -303,21 +309,33 @@ export default {
       } else if (sortBy.value === 'priority-asc') {
         // Sort by priority: lower numbers (1) = lower priority, higher numbers (10) = higher priority
         // Ascending = low to high (1 to 10)
-        return sortedTasks.sort((a, b) => {
+        sorted = sortedTasks.sort((a, b) => {
           const aPriority = typeof a.priority === 'number' ? a.priority : (parseInt(a.priority) || 5)
           const bPriority = typeof b.priority === 'number' ? b.priority : (parseInt(b.priority) || 5)
           return aPriority - bPriority
         })
       } else if (sortBy.value === 'priority-desc') {
         // Descending = high to low (10 to 1)
-        return sortedTasks.sort((a, b) => {
+        sorted = sortedTasks.sort((a, b) => {
           const aPriority = typeof a.priority === 'number' ? a.priority : (parseInt(a.priority) || 5)
           const bPriority = typeof b.priority === 'number' ? b.priority : (parseInt(b.priority) || 5)
           return bPriority - aPriority
         })
       }
       
-      return sortedTasks
+      // Organize tasks hierarchically
+      const parentTasks = sorted.filter(t => !t.parent_task_id)
+      const result = []
+      
+      parentTasks.forEach(parent => {
+        result.push({ ...parent, isParent: true })
+        const subtasks = sorted.filter(t => t.parent_task_id === parent.id)
+        subtasks.forEach(subtask => {
+          result.push({ ...subtask, isSubtask: true })
+        })
+      })
+      
+      return result
     })
 
     // Function to set sort option
@@ -341,6 +359,16 @@ export default {
       } else {
         sortBy.value = 'priority-asc'
       }
+    }
+
+    // Check if a task has subtasks
+    const hasSubtasks = (taskId) => {
+      return tasks.value.some(t => t.parent_task_id === taskId)
+    }
+
+    // Toggle expand/collapse for parent tasks
+    const toggleExpand = (taskId) => {
+      expandedParents.value[taskId] = !expandedParents.value[taskId]
     }
 
     const currentUser = computed(() => {
@@ -391,8 +419,19 @@ export default {
           dueDate: t.dueDate || null,
           status: normalizeStatus(t.status),
           recurrence: t.recurrence || null, // Add recurrence for recurring task icon
-          priority: t.priority || 5 // Add priority for sorting
+          priority: t.priority || 5, // Add priority for sorting
+          parent_task_id: t.parent_task_id || null // Add parent_task_id for subtask hierarchy
         }))
+        
+        // Initialize all parent tasks as expanded by default
+        const parentTaskIds = tasks.value
+          .filter(t => !t.parent_task_id)
+          .filter(t => tasks.value.some(st => st.parent_task_id === t.id))
+          .map(t => t.id)
+        
+        parentTaskIds.forEach(id => {
+          expandedParents.value[id] = true
+        })
       } catch (e) {
         console.error('Failed to load tasks via service:', e)
         tasks.value = []
@@ -417,8 +456,11 @@ export default {
       showEditModal,
       editingTask,
       sortBy,
+      expandedParents,
       toggleDueDateSort,
       togglePrioritySort,
+      hasSubtasks,
+      toggleExpand,
       handleTaskSaved,
       handleTaskClick,
       closeDetailModal,
