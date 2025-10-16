@@ -6,6 +6,7 @@ on:
       - main
       - ranentest
       - develop
+      - testingupdate  # Add your test branch
   pull_request:
     branches:
       - main
