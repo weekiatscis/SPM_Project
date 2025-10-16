@@ -80,7 +80,7 @@
           <a-date-picker
             v-model:value="dueDateValue"
             size="large"
-            format="YYYY-MM-DD"
+            format="DD/MM/YYYY"
             :style="{ width: '100%' }"
             placeholder="Select target date"
             :disabled-date="disabledDate"
@@ -96,7 +96,7 @@
           </div>
         </a-form-item>
 
-        <!-- Created By (Read-only for new projects) -->
+        <!-- Project Owner for New Projects (Read-only) -->
         <a-form-item
           v-if="!project?.project_id"
           label="Project Owner"
@@ -111,6 +111,35 @@
           <div class="owner-info">
             <InfoCircleOutlined class="info-icon" />
             <span>You will be assigned as the project owner</span>
+          </div>
+        </a-form-item>
+
+        <!-- Project Owner for Editing (Changeable) -->
+        <a-form-item
+          v-if="project?.project_id"
+          label="Project Owner"
+        >
+          <a-select
+            v-model:value="selectedOwnerId"
+            size="large"
+            placeholder="Select project owner"
+            :prefix="h(UserOutlined)"
+            class="custom-select"
+          >
+            <a-select-option
+              v-for="user in allUsersIncludingOwner"
+              :key="user.user_id"
+              :value="user.user_id"
+            >
+              <div class="owner-option">
+                <span>{{ user.name }}</span>
+                <span class="owner-dept">{{ user.department }}</span>
+              </div>
+            </a-select-option>
+          </a-select>
+          <div class="owner-warning">
+            <ExclamationCircleOutlined class="warning-icon" />
+            <span>Changing the owner will transfer full control of this project</span>
           </div>
         </a-form-item>
 
@@ -236,7 +265,8 @@ import {
   InfoCircleOutlined,
   ClockCircleOutlined,
   CheckOutlined,
-  SearchOutlined
+  SearchOutlined,
+  ExclamationCircleOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../../stores/auth'
 import { useProjectEvents } from '../../composables/useProjectEvents'
@@ -252,7 +282,8 @@ export default {
     InfoCircleOutlined,
     ClockCircleOutlined,
     CheckOutlined,
-    SearchOutlined
+    SearchOutlined,
+    ExclamationCircleOutlined
   },
   props: {
     project: {
@@ -294,6 +325,10 @@ export default {
     const isLoadingUsers = ref(false)
     const departments = ref([])
 
+    // Owner selection state
+    const selectedOwnerId = ref('')
+    const currentOwnerInfo = ref(null)
+
     // Sync modalVisible with isOpen prop
     watch(() => props.isOpen, (newVal) => {
       modalVisible.value = newVal
@@ -307,6 +342,27 @@ export default {
     // Get current user's ID
     const currentUserId = computed(() => {
       return authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID
+    })
+
+    // All users including current owner for owner selection dropdown
+    const allUsersIncludingOwner = computed(() => {
+      const users = [...allUsers.value]
+
+      // If editing and current owner info is loaded, add them if not already in list
+      if (currentOwnerInfo.value && !users.some(u => u.user_id === currentOwnerInfo.value.user_id)) {
+        users.unshift(currentOwnerInfo.value)
+      }
+
+      // Also add current user if not in list
+      if (authStore.user && !users.some(u => u.user_id === currentUserId.value)) {
+        users.unshift({
+          user_id: currentUserId.value,
+          name: authStore.user.name,
+          department: authStore.user.department
+        })
+      }
+
+      return users.sort((a, b) => a.name.localeCompare(b.name))
     })
 
     // Date picker value (using dayjs for Ant Design)
@@ -341,8 +397,8 @@ export default {
         const deptSet = new Set(users.map(u => u.department).filter(Boolean))
         departments.value = Array.from(deptSet).sort()
 
-        // Initialize filtered users
-        filteredUsers.value = allUsers.value
+        // Initialize filtered users and apply filters to exclude already selected collaborators
+        filterUsers()
       } catch (error) {
         console.error('Failed to fetch users:', error)
         notification.error({
@@ -419,14 +475,62 @@ export default {
     }
 
     // Watch for modal open to fetch users
-    watch(() => props.isOpen, (newVal) => {
+    watch(() => props.isOpen, async (newVal) => {
       if (newVal) {
-        fetchUsers()
+        // If editing, load current owner info
+        if (props.project?.project_id && props.project?.created_by_id) {
+          selectedOwnerId.value = props.project.created_by_id
+
+          try {
+            const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+            const response = await fetch(`${taskServiceUrl}/users/${props.project.created_by_id}`)
+            if (response.ok) {
+              const data = await response.json()
+              if (data.user) {
+                currentOwnerInfo.value = data.user
+              }
+            }
+          } catch (error) {
+            console.error(`Failed to fetch owner info:`, error)
+          }
+        }
+
+        // If editing a project with collaborators, load them first
+        if (props.project?.collaborators && Array.isArray(props.project.collaborators)) {
+          try {
+            const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+            const collaboratorDetails = []
+
+            // Fetch details for each collaborator
+            for (const userId of props.project.collaborators) {
+              try {
+                const response = await fetch(`${taskServiceUrl}/users/${userId}`)
+                if (response.ok) {
+                  const data = await response.json()
+                  if (data.user) {
+                    collaboratorDetails.push(data.user)
+                  }
+                }
+              } catch (error) {
+                console.error(`Failed to fetch user ${userId}:`, error)
+              }
+            }
+
+            selectedCollaborators.value = collaboratorDetails
+          } catch (error) {
+            console.error('Failed to load existing collaborators:', error)
+          }
+        } else {
+          selectedCollaborators.value = []
+        }
+
+        // Now fetch all users, which will automatically exclude selected collaborators
+        await fetchUsers()
       }
     })
 
     // Watch for project changes to populate form
-    watch(() => props.project, (newProject) => {
+    watch(() => props.project, async (newProject) => {
       if (newProject) {
         form.value = {
           project_name: newProject.project_name || '',
@@ -487,11 +591,29 @@ export default {
         // If editing existing project, call update API
         if (props.project?.project_id) {
           const updateProjectUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+
+          // Handle ownership transfer
+          let updatedCollaborators = selectedCollaborators.value.map(u => u.user_id)
+          let newOwnerId = selectedOwnerId.value
+
+          // If owner changed, manage collaborators list
+          if (newOwnerId !== props.project.created_by_id) {
+            // Remove new owner from collaborators if they're in the list
+            updatedCollaborators = updatedCollaborators.filter(id => id !== newOwnerId)
+
+            // Add old owner to collaborators if they're not already there
+            if (!updatedCollaborators.includes(props.project.created_by_id)) {
+              updatedCollaborators.push(props.project.created_by_id)
+            }
+          }
+
           const payload = {
             project_name: form.value.project_name.trim(),
             project_description: form.value.project_description?.trim() || '',
             due_date: form.value.due_date,
-            created_by: form.value.created_by?.trim() || 'Unknown'
+            created_by: newOwnerId, // Use selected owner
+            user_id: currentUserId.value, // Add user_id for authorization
+            collaborators: updatedCollaborators // Include updated collaborators
           }
 
           const response = await fetch(`${updateProjectUrl}/projects/${props.project.project_id}`, {
@@ -519,6 +641,17 @@ export default {
           emitProjectUpdated(updatedProjectData)
 
           emit('save', updatedProjectData)
+
+          // Show success notification for update
+          notification.success({
+            message: 'Project Updated',
+            description: `${result.project.project_name} has been updated successfully.`,
+            placement: 'topRight',
+            duration: 3
+          })
+
+          // Close modal
+          handleClose()
           return
         }
 
@@ -614,6 +747,9 @@ export default {
       dueDateValue,
       disabledDate,
       handleClose,
+      // Owner-related
+      selectedOwnerId,
+      allUsersIncludingOwner,
       // Collaborator-related
       filteredUsers,
       selectedCollaborators,
@@ -817,6 +953,53 @@ export default {
 .info-icon {
   font-size: 14px;
   color: #1890ff;
+}
+
+/* Owner Select Dropdown */
+:deep(.custom-select .ant-select-selector) {
+  border-radius: 8px !important;
+  border: 1.5px solid #d9d9d9 !important;
+  transition: all 0.3s ease !important;
+  height: 40px !important;
+  padding: 4px 11px !important;
+}
+
+:deep(.custom-select .ant-select-selector:hover) {
+  border-color: #667eea !important;
+}
+
+:deep(.custom-select.ant-select-focused .ant-select-selector) {
+  border-color: #667eea !important;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1) !important;
+}
+
+.owner-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.owner-dept {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-left: 8px;
+}
+
+.owner-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #fff7e6;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #d46b08;
+}
+
+.owner-warning .warning-icon {
+  font-size: 14px;
+  color: #fa8c16;
 }
 
 /* Modal Footer */

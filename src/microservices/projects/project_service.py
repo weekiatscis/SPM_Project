@@ -195,6 +195,23 @@ def create_project():
         if not body.get("project_name", "").strip():
             return jsonify({"error": "project_name is required"}), 400
 
+        project_name = body.get("project_name").strip()
+
+        # Check for duplicate project names (only for non-completed projects)
+        # Note: This assumes you have a 'status' field. If not, it checks all projects.
+        existing_projects = supabase.table("project").select("project_id, project_name, status").ilike("project_name", project_name).execute()
+
+        if existing_projects.data:
+            # Check if any non-completed project has this name
+            for existing in existing_projects.data:
+                # If you have a status field, check if it's not 'Completed'
+                # If you don't have a status field yet, this will block all duplicates
+                existing_status = existing.get("status", "Active")  # Default to 'Active' if no status field
+                if existing_status != "Completed":
+                    return jsonify({
+                        "error": f"A project with the name '{project_name}' already exists. Please choose a different name."
+                    }), 409  # 409 Conflict status code
+
         # Validate collaborators (now mandatory)
         collaborators = body.get("collaborators", [])
         print(f"DEBUG: Received collaborators from request: {collaborators}")
@@ -211,7 +228,8 @@ def create_project():
             "project_description": body.get("project_description", "").strip(),
             "created_by": body.get("owner_id") or body.get("created_by", "").strip() or "Unknown",
             "due_date": body.get("due_date"),
-            "collaborators": collaborators if isinstance(collaborators, list) else []
+            "collaborators": collaborators if isinstance(collaborators, list) else [],
+            "status": "Active"  # Set default status for new projects
         }
 
         print(f"DEBUG: Inserting project with collaborators: {project_data.get('collaborators')}")
@@ -290,6 +308,7 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": row.get("created_at"),
         "created_by": row.get("created_by"),
         "due_date": row.get("due_date"),
+        "status": row.get("status", "Active"),
         "collaborators": row.get("collaborators", [])
     }
 
@@ -304,7 +323,7 @@ def get_projects():
         query = (
             supabase
             .table("project")
-            .select("project_id,project_name,project_description,created_at,created_by,due_date,collaborators")
+            .select("project_id,project_name,project_description,created_at,created_by,due_date,status,collaborators")
             .order("created_at", desc=True)
         )
 
@@ -345,11 +364,43 @@ def update_project(project_id):
         if not body.get("project_name", "").strip():
             return jsonify({"error": "project_name is required"}), 400
 
+        # Get the user making the request
+        requesting_user_id = body.get("user_id", "").strip()
+        if not requesting_user_id:
+            return jsonify({"error": "user_id is required for authorization"}), 400
+
+        # Check if project exists and get current project data
+        project_response = supabase.table("project").select("*").eq("project_id", project_id).execute()
+        if not project_response.data:
+            return jsonify({"error": "Project not found"}), 404
+
+        current_project = project_response.data[0]
+
+        # Verify ownership - only the creator can edit the project
+        if current_project.get("created_by") != requesting_user_id:
+            return jsonify({"error": "Only the project owner can edit this project"}), 403
+
         # Prepare update data
         update_data = {}
 
         if "project_name" in body:
-            update_data["project_name"] = body["project_name"].strip()
+            new_project_name = body["project_name"].strip()
+
+            # Check for duplicate project names if name is being changed
+            if new_project_name != current_project.get("project_name"):
+                existing_projects = supabase.table("project").select("project_id, project_name, status").ilike("project_name", new_project_name).execute()
+
+                if existing_projects.data:
+                    # Check if any non-completed project has this name (excluding current project)
+                    for existing in existing_projects.data:
+                        if existing.get("project_id") != project_id:
+                            existing_status = existing.get("status", "Active")
+                            if existing_status != "Completed":
+                                return jsonify({
+                                    "error": f"A project with the name '{new_project_name}' already exists. Please choose a different name."
+                                }), 409
+
+            update_data["project_name"] = new_project_name
 
         if "project_description" in body:
             update_data["project_description"] = body["project_description"].strip()
@@ -363,6 +414,9 @@ def update_project(project_id):
         if "collaborators" in body:
             collaborators = body["collaborators"]
             update_data["collaborators"] = collaborators if isinstance(collaborators, list) else []
+
+        if "status" in body:
+            update_data["status"] = body["status"].strip()
 
         if not update_data:
             return jsonify({"error": "No valid fields to update"}), 400
@@ -382,6 +436,22 @@ def update_project(project_id):
 @app.route("/projects/<project_id>", methods=["DELETE"])
 def delete_project(project_id):
     try:
+        # Get the user making the request from query parameter
+        requesting_user_id = request.args.get("user_id", "").strip()
+        if not requesting_user_id:
+            return jsonify({"error": "user_id is required for authorization"}), 400
+
+        # Check if project exists and get current project data
+        project_response = supabase.table("project").select("*").eq("project_id", project_id).execute()
+        if not project_response.data:
+            return jsonify({"error": "Project not found"}), 404
+
+        current_project = project_response.data[0]
+
+        # Verify ownership - only the creator can delete the project
+        if current_project.get("created_by") != requesting_user_id:
+            return jsonify({"error": "Only the project owner can delete this project"}), 403
+
         # Delete the project from Supabase
         response = supabase.table("project").delete().eq("project_id", project_id).execute()
 

@@ -10,20 +10,21 @@
   <div>
     <!-- Section Toggle Tabs -->
     <a-tabs v-model:activeKey="activeTab" style="margin-bottom: 16px;">
-      <a-tab-pane key="all" tab="All Projects" />
+      <a-tab-pane key="all" tab="Ongoing Projects" />
       <a-tab-pane key="owned" tab="My Projects" />
       <a-tab-pane key="collaborating" tab="Collaborating" />
+      <a-tab-pane key="completed" tab="Completed" />
       <a-tab-pane key="assign" tab="Assign Task" />
     </a-tabs>
 
-    <!-- All Projects Section -->
+    <!-- Ongoing Projects Section -->
     <a-card
       v-if="activeTab === 'all'"
       style="min-height: 500px;"
     >
       <template #title>
         <div style="display: flex; align-items: center; gap: 12px;">
-          <span>All Projects</span>
+          <span>Ongoing Projects</span>
           <a-space size="small">
             <a-button
               size="small"
@@ -183,6 +184,59 @@
       </a-row>
     </a-card>
 
+    <!-- Completed Projects Section -->
+    <a-card
+      v-if="activeTab === 'completed'"
+      style="min-height: 500px;"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>Completed Projects</span>
+          <a-space size="small">
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
+              @click="toggleDateSort"
+            >
+              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
+            </a-button>
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
+              @click="toggleStatusSort"
+            >
+              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
+            </a-button>
+          </a-space>
+        </div>
+      </template>
+
+      <div v-if="isLoading" style="text-align: center; padding: 50px;">
+        <a-spin size="large" />
+        <p style="margin-top: 16px;">Loading projects...</p>
+      </div>
+
+      <div v-else-if="completedProjects.length === 0" style="text-align: center; padding: 50px;">
+        <a-empty description="No completed projects yet" />
+      </div>
+
+      <a-row v-else :gutter="[16, 16]">
+        <a-col
+          v-for="project in completedProjects"
+          :key="project.project_id"
+          :xs="24"
+          :sm="12"
+          :lg="8"
+          :xl="6"
+        >
+          <ProjectCard
+            :project="project"
+            @view-details="handleProjectClick"
+          />
+        </a-col>
+      </a-row>
+    </a-card>
+
     <!-- Assign Task Section -->
     <a-card
       v-if="activeTab === 'assign'"
@@ -195,24 +249,30 @@
         <!-- Left Side - Tasks List (30%) -->
         <a-col :span="7">
           <div style="border-right: 1px solid #f0f0f0; padding-right: 16px; height: 100%;">
-            <div style="display: flex; align-items: center; justify-between; margin-bottom: 16px;">
-              <h4 style="margin: 0;">Available Tasks</h4>
-              <a-space size="small">
+            <div style="margin-bottom: 16px;">
+              <h4 style="margin: 0 0 12px 0;">Available Tasks</h4>
+              <div style="display: flex; gap: 8px;">
                 <a-button
                   size="small"
                   :type="taskSortBy.startsWith('dueDate') ? 'primary' : 'default'"
                   @click="toggleTaskDueDateSort"
+                  style="flex: 1;"
                 >
                   Due Date {{ taskSortBy === 'dueDate-asc' ? '↑' : taskSortBy === 'dueDate-desc' ? '↓' : '↑' }}
                 </a-button>
-                <a-button
+                <a-select
+                  v-model:value="taskStatusFilter"
                   size="small"
-                  :type="taskSortBy.startsWith('status') ? 'primary' : 'default'"
-                  @click="toggleTaskStatusSort"
+                  placeholder="Status"
+                  style="flex: 1;"
+                  allow-clear
                 >
-                  Status {{ taskSortBy === 'status-asc' ? '↑' : taskSortBy === 'status-desc' ? '↓' : '↑' }}
-                </a-button>
-              </a-space>
+                  <a-select-option value="">All</a-select-option>
+                  <a-select-option value="Unassigned">Unassigned</a-select-option>
+                  <a-select-option value="Ongoing">Ongoing</a-select-option>
+                  <a-select-option value="Under Review">Under Review</a-select-option>
+                </a-select>
+              </div>
             </div>
 
             <div v-if="isLoadingTasks" style="text-align: center; padding: 50px;">
@@ -231,14 +291,14 @@
             >
               <template #renderItem="{ item }">
                 <a-list-item
-                  style="cursor: pointer; padding: 8px; border-radius: 4px; margin-bottom: 4px;"
-                  :style="isTaskSelected(item) ? { background: '#e6f7ff', border: '1px solid #1890ff' } : {}"
+                  style="cursor: pointer; padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #f0f0f0;"
+                  :style="isTaskSelected(item) ? { background: '#e6f7ff', border: '1px solid #1890ff' } : { background: 'white' }"
                   @click="selectTaskForAssign(item)"
                 >
                   <div style="width: 100%;">
-                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 4px;">
-                      <strong>{{ item.title }}</strong>
-                      <a-tag :color="getTaskStatusColor(item.status)" size="small">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
+                      <strong style="flex: 1; font-size: 14px; line-height: 1.5; word-break: break-word;">{{ item.title }}</strong>
+                      <a-tag :color="getTaskStatusColor(item.status)" size="small" style="flex-shrink: 0; margin-top: 2px;">
                         {{ item.status }}
                       </a-tag>
                     </div>
@@ -386,6 +446,7 @@ export default {
     const tasks = ref([])
     const isLoadingTasks = ref(false)
     const taskSortBy = ref('dueDate-asc')
+    const taskStatusFilter = ref('')
     const selectedTasksForAssign = ref([])
 
     // Project assignment state
@@ -421,7 +482,7 @@ export default {
         created_by_id: projectData.created_by,
         due_date: projectData.due_date,
         collaborators: projectData.collaborators || [],
-        status: 'Active'
+        status: projectData.status || 'Active'
       }
 
       // Add the new project to the projects list
@@ -468,27 +529,43 @@ export default {
       return sorted
     }
 
-    // All projects computed property with sorting
+    // Ongoing projects (exclude completed projects)
     const allProjects = computed(() => {
-      return applySorting(projects.value)
+      const ongoing = projects.value.filter(p => p.status !== 'Completed')
+      return applySorting(ongoing)
     })
 
-    // Owned projects (where user is the creator)
+    // Owned projects (where user is the creator, excluding completed)
     const ownedProjects = computed(() => {
       const currentUserId = authStore.user?.user_id
-      const owned = projects.value.filter(p => p.created_by_id === currentUserId)
+      const owned = projects.value.filter(p =>
+        p.created_by_id === currentUserId &&
+        p.status !== 'Completed'
+      )
       return applySorting(owned)
     })
 
-    // Collaborating projects (where user is in collaborators array but not the creator)
+    // Collaborating projects (where user is in collaborators array but not the creator, excluding completed)
     const collaboratingProjects = computed(() => {
       const currentUserId = authStore.user?.user_id
       const collaborating = projects.value.filter(p =>
         p.created_by_id !== currentUserId &&
         p.collaborators &&
-        p.collaborators.includes(currentUserId)
+        p.collaborators.includes(currentUserId) &&
+        p.status !== 'Completed'
       )
       return applySorting(collaborating)
+    })
+
+    // Completed projects (where user is the creator OR collaborator, and status is Completed)
+    const completedProjects = computed(() => {
+      const currentUserId = authStore.user?.user_id
+      const completed = projects.value.filter(p => {
+        const isOwner = p.created_by_id === currentUserId
+        const isCollaborator = p.collaborators && p.collaborators.includes(currentUserId)
+        return (isOwner || isCollaborator) && p.status === 'Completed'
+      })
+      return applySorting(completed)
     })
 
     // Function to toggle date sort between ascending and descending
@@ -543,15 +620,23 @@ export default {
       }
     }
 
-    // All available tasks computed property with sorting - only unassigned tasks
+    // All available tasks computed property with sorting and filtering - only unassigned tasks, excluding completed
     const allAvailableTasks = computed(() => {
       // Filter tasks that are not assigned to any project (project_id is null/undefined)
-      const unassignedTasks = tasks.value.filter(task =>
-        !task.project_id || task.project_id === null
+      // and exclude completed tasks
+      let filteredTasks = tasks.value.filter(task =>
+        (!task.project_id || task.project_id === null) &&
+        task.status !== 'Completed'
       )
 
-      let sortedTasks = [...unassignedTasks]
+      // Apply status filter if selected
+      if (taskStatusFilter.value) {
+        filteredTasks = filteredTasks.filter(task => task.status === taskStatusFilter.value)
+      }
 
+      let sortedTasks = [...filteredTasks]
+
+      // Apply sorting
       if (taskSortBy.value === 'dueDate-asc') {
         return sortedTasks.sort((a, b) => {
           if (!a.dueDate) return 1
@@ -564,10 +649,6 @@ export default {
           if (!b.dueDate) return -1
           return new Date(b.dueDate) - new Date(a.dueDate)
         })
-      } else if (taskSortBy.value === 'status-asc') {
-        return sortedTasks.sort((a, b) => a.status.localeCompare(b.status))
-      } else if (taskSortBy.value === 'status-desc') {
-        return sortedTasks.sort((a, b) => b.status.localeCompare(a.status))
       }
 
       return sortedTasks
@@ -579,14 +660,6 @@ export default {
         taskSortBy.value = 'dueDate-desc'
       } else {
         taskSortBy.value = 'dueDate-asc'
-      }
-    }
-
-    const toggleTaskStatusSort = () => {
-      if (taskSortBy.value === 'status-asc') {
-        taskSortBy.value = 'status-desc'
-      } else {
-        taskSortBy.value = 'status-asc'
       }
     }
 
@@ -803,7 +876,7 @@ export default {
           created_by_id: p.created_by, // Store the original user_id
           due_date: p.due_date,
           collaborators: p.collaborators || [], // Store collaborators array
-          status: 'Active' // Default status since not in DB yet
+          status: p.status || 'Active' // Use status from API, default to Active if not present
         }))
 
         // Fetch user names for all unique created_by user IDs
@@ -854,6 +927,7 @@ export default {
       allProjects,
       ownedProjects,
       collaboratingProjects,
+      completedProjects,
       isLoading,
       activeTab,
       showProjectModal,
@@ -867,9 +941,9 @@ export default {
       allAvailableTasks,
       isLoadingTasks,
       taskSortBy,
+      taskStatusFilter,
       selectedTasksForAssign,
       toggleTaskDueDateSort,
-      toggleTaskStatusSort,
       selectTaskForAssign,
       isTaskSelected,
       formatDate,
