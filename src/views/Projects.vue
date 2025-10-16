@@ -61,7 +61,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import ProjectList from '../components/projects/ProjectList.vue'
@@ -80,7 +80,7 @@ export default {
     const showCreateModal = ref(false)
     const authStore = useAuthStore()
     const projectListRef = ref(null)
-    const { emitProjectCreated } = useProjectEvents()
+    const { emitProjectCreated, onProjectUpdated, onProjectDeleted } = useProjectEvents()
 
     const currentUser = computed(() => {
       const user = localStorage.getItem('user')
@@ -101,7 +101,7 @@ export default {
       // Add to local stats array with status
       projects.value.unshift({
         ...projectData,
-        status: 'Active' // Add status for stats calculation
+        status: projectData.status || 'Active' // Use status from projectData, default to Active
       })
 
       // Also notify ProjectList component to add the project
@@ -115,8 +115,8 @@ export default {
       showCreateModal.value = false
     }
 
-    // Load projects on mount for stats
-    onMounted(async () => {
+    // Function to load projects
+    const loadProjects = async () => {
       try {
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
         const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
@@ -138,7 +138,7 @@ export default {
           created_at: p.created_at,
           created_by: p.created_by, // This is still user_id
           created_by_id: p.created_by, // Store the original user_id
-          status: 'Active' // Default status since not in DB yet
+          status: p.status || 'Active' // Use status from API, default to Active if not present
         }))
 
         // Fetch user names for all unique created_by user IDs
@@ -171,6 +171,26 @@ export default {
         console.error('Failed to load projects for stats:', error)
         projects.value = []
       }
+    }
+
+    // Load projects on mount for stats
+    onMounted(async () => {
+      await loadProjects()
+    })
+
+    // Listen for project updates and reload
+    const cleanupUpdated = onProjectUpdated(() => {
+      loadProjects()
+    })
+
+    const cleanupDeleted = onProjectDeleted(() => {
+      loadProjects()
+    })
+
+    // Cleanup listeners on unmount
+    onUnmounted(() => {
+      cleanupUpdated()
+      cleanupDeleted()
     })
 
     return {
