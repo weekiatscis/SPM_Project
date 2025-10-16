@@ -730,12 +730,15 @@ export default {
 
     // Project assignment functions
     const filteredProjectsForAssign = computed(() => {
+      // Exclude completed projects from assignment
+      const activeProjects = projects.value.filter(p => p.status !== 'Completed')
+
       if (!projectSearchQuery.value) {
-        return projects.value
+        return activeProjects
       }
 
       const query = projectSearchQuery.value.toLowerCase()
-      return projects.value.filter(project =>
+      return activeProjects.filter(project =>
         project.project_name.toLowerCase().includes(query) ||
         (project.project_description || '').toLowerCase().includes(query) ||
         project.created_by.toLowerCase().includes(query)
