@@ -913,14 +913,75 @@ export default {
       reportPreviewData.value = null
     }
 
-    const handleExportPDF = () => {
-      notification.info({
-        message: 'Export to PDF',
-        description: 'PDF export will be available soon!',
-        placement: 'topRight',
-        duration: 3
-      })
-      // TODO: Implement PDF generation endpoint
+    const handleExportPDF = async () => {
+      try {
+        notification.info({
+          message: 'Generating PDF',
+          description: 'Please wait while we generate your PDF report...',
+          placement: 'topRight',
+          duration: 2
+        })
+
+        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+
+        const response = await fetch(`${reportServiceUrl}/generate-project-report`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            project_id: project.value.project_id
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to generate PDF')
+        }
+
+        // Get the blob from response
+        const blob = await response.blob()
+
+        // Create a download link
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+
+        // Extract filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition')
+        let filename = `project_report_${project.value.project_name.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`
+
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+          if (filenameMatch && filenameMatch[1]) {
+            filename = filenameMatch[1].replace(/['"]/g, '')
+          }
+        }
+
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+
+        notification.success({
+          message: 'PDF Generated Successfully',
+          description: 'Your project report has been downloaded.',
+          placement: 'topRight',
+          duration: 3
+        })
+
+        closeReportPreview()
+
+      } catch (error) {
+        console.error('Error exporting PDF:', error)
+        notification.error({
+          message: 'Failed to Export PDF',
+          description: error.message || 'Unable to generate PDF. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      }
     }
 
     const closeTaskDetailModal = () => {

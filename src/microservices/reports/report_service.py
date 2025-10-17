@@ -767,6 +767,342 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
     return buffer
 
 
+def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
+    """
+    Generate a PDF report for a project.
+
+    Args:
+        report_data: Dictionary containing project report data
+
+    Returns:
+        BytesIO buffer containing the PDF
+    """
+    # Create a buffer to hold the PDF
+    buffer = io.BytesIO()
+
+    # Create the PDF document
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                           rightMargin=50, leftMargin=50,
+                           topMargin=50, bottomMargin=50)
+
+    # Container for PDF elements
+    elements = []
+
+    # Styles
+    styles = getSampleStyleSheet()
+
+    # Title style
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=HexColor('#0f172a'),
+        spaceAfter=10,
+        spaceBefore=0,
+        alignment=TA_LEFT,
+        fontName='Helvetica-Bold',
+        leading=28,
+        leftIndent=0,
+        rightIndent=0
+    )
+
+    # Heading style
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=HexColor('#1e40af'),
+        spaceAfter=12,
+        spaceBefore=12,
+        alignment=TA_LEFT,
+        fontName='Helvetica-Bold',
+        leftIndent=0,
+        rightIndent=0,
+        borderPadding=(0, 0, 6, 0)
+    )
+
+    # Load logo
+    from reportlab.graphics.shapes import Line, Drawing as ShapeDrawing
+    from svglib.svglib import svg2rlg
+
+    logo_path = os.path.join(os.path.dirname(__file__), 'taskio-logo.svg')
+    logo = None
+    if os.path.exists(logo_path):
+        try:
+            logo_drawing = svg2rlg(logo_path)
+            scale_factor = 0.35
+            logo_drawing.width = logo_drawing.width * scale_factor
+            logo_drawing.height = logo_drawing.height * scale_factor
+            logo_drawing.scale(scale_factor, scale_factor)
+            logo = logo_drawing
+        except Exception as e:
+            logger.warning(f"Could not load logo: {e}")
+
+    # Create header table
+    if logo:
+        header_data = [[
+            Paragraph("Project Report", title_style),
+            logo
+        ]]
+        header_table = Table(header_data, colWidths=[4*inch, 2.5*inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+    else:
+        header_data = [[
+            Paragraph("Project Report", title_style),
+            Paragraph('<font name="Helvetica-Bold" size="16" color="#3b82f6">TASKIO</font><br/><font name="Helvetica" size="10" color="#64748b">PROJECT MANAGEMENT</font>',
+                     ParagraphStyle('Logo', alignment=TA_RIGHT, leading=14))
+        ]]
+        header_table = Table(header_data, colWidths=[4*inch, 2.5*inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+
+    elements.append(header_table)
+    elements.append(Spacer(1, 8))
+
+    # Horizontal line
+    line_drawing = ShapeDrawing(500, 3)
+    line = Line(0, 0, 500, 0)
+    line.strokeColor = HexColor('#3b82f6')
+    line.strokeWidth = 3
+    line_drawing.add(line)
+    elements.append(line_drawing)
+    elements.append(Spacer(1, 18))
+
+    # Project Overview
+    project = report_data['project']
+    overview_data = [
+        ['Project Name:', project['name']],
+        ['Project Owner:', project['owner']],
+        ['Status:', project['status'] or 'N/A'],
+        ['Start Date:', project['created_date']],
+        ['Due Date:', project['due_date']],
+        ['Description:', project['description'] or 'No description']
+    ]
+
+    overview_table = Table(overview_data, colWidths=[1.5*inch, 4.5*inch])
+    overview_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), HexColor('#475569')),
+        ('TEXTCOLOR', (1, 0), (1, -1), HexColor('#1e293b')),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+    ]))
+    elements.append(overview_table)
+    elements.append(Spacer(1, 20))
+
+    # Summary statistics
+    summary = report_data['summary']
+    summary_heading = Paragraph("Project Performance Summary", heading_style)
+    elements.append(summary_heading)
+    elements.append(Spacer(1, 8))
+
+    summary_data = [
+        ['Total Tasks', 'Completed', 'In Progress', 'Under Review', 'Completion Rate'],
+        [
+            str(summary['total_tasks']),
+            str(summary['completed_tasks']),
+            str(summary['ongoing_tasks']),
+            str(summary['under_review_tasks']),
+            f"{summary['completion_rate']}%"
+        ]
+    ]
+
+    summary_table = Table(summary_data, colWidths=[1.2*inch]*5)
+    summary_table.setStyle(TableStyle([
+        # Header row
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#64748b')),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+
+        # Data row
+        ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, 1), 18),
+        ('TEXTCOLOR', (0, 1), (-1, 1), HexColor('#1e293b')),
+        ('ALIGN', (0, 1), (-1, 1), 'CENTER'),
+        ('BOTTOMPADDING', (0, 1), (-1, 1), 10),
+        ('TOPPADDING', (0, 1), (-1, 1), 5),
+
+        # Styling
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#ffffff')),
+        ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, HexColor('#e2e8f0')),
+        ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#f1f5f9')),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 20))
+
+    # Team performance
+    if report_data['team_performance']:
+        team_heading = Paragraph("Team Member Performance", heading_style)
+        elements.append(team_heading)
+        elements.append(Spacer(1, 8))
+
+        team_data = [['Team Member', 'Total Tasks', 'Completed', 'Completion Rate']]
+        for member in report_data['team_performance']:
+            team_data.append([
+                member['member'],
+                str(member['total']),
+                str(member['completed']),
+                f"{member['rate']}%"
+            ])
+
+        team_table = Table(team_data, colWidths=[2.5*inch, 1.3*inch, 1.3*inch, 1.5*inch])
+        team_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('TEXTCOLOR', (0, 1), (-1, -1), HexColor('#1e293b')),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+            ('LINEBELOW', (0, 0), (-1, 0), 1.5, HexColor('#2563eb')),
+            ('INNERGRID', (0, 1), (-1, -1), 0.5, HexColor('#e2e8f0')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        # Alternating row colors
+        for row_idx in range(1, len(team_data)):
+            bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+            team_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+            ]))
+
+        elements.append(team_table)
+        elements.append(Spacer(1, 20))
+
+    # Task breakdown - new page
+    elements.append(PageBreak())
+    tasks_heading = Paragraph("Task Breakdown by Status", heading_style)
+    elements.append(tasks_heading)
+    elements.append(Spacer(1, 8))
+
+    # Iterate through task groups
+    task_groups = report_data['task_groups']
+    for status, tasks in task_groups.items():
+        if not tasks:
+            continue
+
+        # Status section header
+        status_para = Paragraph(f"<b>{status}</b> ({len(tasks)} tasks)",
+                               ParagraphStyle('StatusHeader', fontSize=12, textColor=HexColor('#1e293b'), spaceAfter=8))
+        elements.append(status_para)
+
+        # Tasks table
+        task_data = [['Task Title', 'Assignee', 'Priority', 'Due Date']]
+        for task in tasks:
+            assignee = task.get('assignee_name') or task.get('owner_name') or 'Unassigned'
+            priority = task.get('priority', 'N/A')
+            if priority != 'N/A':
+                try:
+                    priority = f"{int(priority)} / 10"
+                except:
+                    pass
+
+            due_date = task.get('dueDate') or task.get('due_date') or 'N/A'
+            if due_date != 'N/A':
+                try:
+                    if 'T' in due_date:
+                        due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                    else:
+                        due_date = datetime.fromisoformat(due_date).strftime('%Y-%m-%d')
+                except:
+                    pass
+
+            task_data.append([
+                task.get('title', 'Untitled')[:40],
+                assignee,
+                priority,
+                due_date
+            ])
+
+        task_table = Table(task_data, colWidths=[3*inch, 1.5*inch, 1*inch, 1.1*inch])
+        task_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#e5e7eb')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#1e293b')),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (2, 0), (2, -1), 'CENTER'),
+            ('ALIGN', (3, 0), (3, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('TEXTCOLOR', (0, 1), (-1, -1), HexColor('#1e293b')),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, HexColor('#f1f5f9')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        # Alternating row colors
+        for row_idx in range(1, len(task_data)):
+            bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+            task_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+            ]))
+
+        elements.append(task_table)
+        elements.append(Spacer(1, 16))
+
+    # Footer
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=HexColor('#6b7280'),
+        alignment=TA_CENTER
+    )
+    footer_text = Paragraph(f"Report generated at: {report_data['generated_at']}", footer_style)
+    elements.append(Spacer(1, 20))
+    elements.append(footer_text)
+
+    # Build PDF
+    doc.build(elements)
+
+    # Reset buffer position
+    buffer.seek(0)
+
+    return buffer
+
+
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint."""
@@ -882,6 +1218,56 @@ def preview_project_report():
     except Exception as e:
         logger.error(f"Error generating project report preview: {e}", exc_info=True)
         return jsonify({"error": "Failed to generate preview", "details": str(e)}), 500
+
+
+@app.route("/generate-project-report", methods=["POST"])
+def generate_project_report():
+    """
+    Generate a PDF report for a project.
+
+    Request body:
+    {
+        "project_id": "project-uuid"
+    }
+
+    Returns:
+        PDF file stream
+    """
+    try:
+        data = request.get_json()
+        project_id = data.get('project_id')
+
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+
+        logger.info(f"Generating PDF report for project {project_id}")
+
+        # Fetch project report data
+        report_data = fetch_project_report_data(project_id)
+
+        # Generate PDF
+        pdf_buffer = generate_project_pdf_report(report_data)
+
+        # Generate filename
+        project_name = report_data['project']['name'].replace(' ', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"project_report_{project_name}_{timestamp}.pdf"
+
+        # Return PDF as response
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except requests.RequestException as e:
+        logger.error(f"Error communicating with services: {e}")
+        return jsonify({"error": "Failed to fetch project data", "details": str(e)}), 503
+
+    except Exception as e:
+        logger.error(f"Error generating project report PDF: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate PDF", "details": str(e)}), 500
 
 
 if __name__ == "__main__":
