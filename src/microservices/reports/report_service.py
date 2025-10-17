@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 # Environment variables
-TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://task-service:8080")
+TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://localhost:8080")
+PROJECT_SERVICE_URL = os.getenv("PROJECT_SERVICE_URL", "http://localhost:8082")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -106,6 +107,179 @@ def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
         raise
     except Exception as e:
         logger.error(f"Unexpected error fetching tasks: {e}")
+        raise
+
+
+def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
+    """
+    Fetch and prepare project report data for preview or PDF generation.
+
+    Args:
+        project_id: The project ID to generate report for
+
+    Returns:
+        Dictionary containing all report data
+    """
+    try:
+        # Fetch project details
+        project_url = f"{PROJECT_SERVICE_URL}/projects"
+        logger.info(f"Fetching project from: {project_url}")
+
+        project_response = requests.get(project_url, timeout=10)
+        project_response.raise_for_status()
+        all_projects = project_response.json().get('projects', [])
+
+        # Find the specific project
+        project_data = None
+        for proj in all_projects:
+            if proj.get('project_id') == project_id:
+                project_data = proj
+                break
+
+        if not project_data:
+            raise Exception(f"Project {project_id} not found")
+
+        # Fetch tasks for this project (tasks with matching project_id)
+        tasks_url = f"{TASK_SERVICE_URL}/tasks?project_id={project_id}"
+        logger.info(f"Fetching project tasks from: {tasks_url}")
+
+        tasks_response = requests.get(tasks_url, timeout=10)
+        tasks_response.raise_for_status()
+        tasks = tasks_response.json().get('tasks', [])
+
+        logger.info(f"Fetched project {project_id} with {len(tasks)} tasks")
+
+        # Calculate statistics
+        total_tasks = len(tasks)
+        completed_tasks = len([t for t in tasks if t.get('status', '').lower() == 'completed'])
+        ongoing_tasks = len([t for t in tasks if t.get('status', '').lower() == 'ongoing'])
+        under_review_tasks = len([t for t in tasks if t.get('status', '').lower() == 'under review'])
+        completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+        # Count tasks by team member
+        tasks_by_member = {}
+        completed_by_member = {}
+
+        for task in tasks:
+            assignee = task.get('assignee_name', task.get('owner_name', 'Unassigned'))
+            tasks_by_member[assignee] = tasks_by_member.get(assignee, 0) + 1
+
+            if task.get('status', '').lower() == 'completed':
+                completed_by_member[assignee] = completed_by_member.get(assignee, 0) + 1
+
+        # Group tasks by status with overdue calculation
+        today = datetime.now(timezone.utc).date()
+        task_groups = {
+            'Overdue': [],
+            'Ongoing': [],
+            'Under Review': [],
+            'Completed': [],
+            'Unassigned': []
+        }
+
+        for task in tasks:
+            status = task.get('status', 'Unassigned')
+            due_date_str = task.get('dueDate', task.get('due_date', ''))
+
+            # Check if task is overdue
+            is_overdue = False
+            if due_date_str and status.lower() != 'completed':
+                try:
+                    if 'T' in due_date_str:
+                        task_due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00')).date()
+                    else:
+                        task_due_date = datetime.fromisoformat(due_date_str).date()
+
+                    if task_due_date < today:
+                        is_overdue = True
+                except:
+                    pass
+
+            # Categorize task
+            if is_overdue:
+                task_groups['Overdue'].append(task)
+            elif status in task_groups:
+                task_groups[status].append(task)
+            else:
+                status_lower = status.lower()
+                if 'ongoing' in status_lower or 'progress' in status_lower:
+                    task_groups['Ongoing'].append(task)
+                elif 'review' in status_lower:
+                    task_groups['Under Review'].append(task)
+                elif 'completed' in status_lower:
+                    task_groups['Completed'].append(task)
+                else:
+                    task_groups['Unassigned'].append(task)
+
+        # Format dates
+        created_date = project_data.get('created_at', 'N/A')
+        due_date = project_data.get('due_date', 'N/A')
+
+        if created_date and created_date != 'N/A':
+            try:
+                if 'T' in created_date:
+                    created_date = datetime.fromisoformat(created_date.replace('Z', '+00:00')).strftime('%B %d, %Y')
+                else:
+                    created_date = datetime.fromisoformat(created_date).strftime('%B %d, %Y')
+            except:
+                created_date = 'N/A'
+
+        if due_date and due_date != 'N/A':
+            try:
+                if 'T' in due_date:
+                    due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00')).strftime('%B %d, %Y')
+                else:
+                    due_date = datetime.fromisoformat(due_date).strftime('%B %d, %Y')
+            except:
+                due_date = 'N/A'
+
+        # Build team member performance list
+        team_performance = []
+        for member, total in sorted(tasks_by_member.items(), key=lambda x: x[1], reverse=True):
+            completed = completed_by_member.get(member, 0)
+            rate = (completed / total * 100) if total > 0 else 0
+            team_performance.append({
+                'member': member,
+                'total': total,
+                'completed': completed,
+                'rate': round(rate, 1)
+            })
+
+        # Return structured report data
+        return {
+            'project': {
+                'id': project_data.get('project_id'),
+                'name': project_data.get('project_name', 'Untitled Project'),
+                'description': project_data.get('project_description', 'No description'),
+                'owner': project_data.get('created_by_name', 'Unknown'),
+                'status': project_data.get('status', 'Active'),
+                'created_date': created_date,
+                'due_date': due_date,
+                'collaborators': project_data.get('collaborators', [])
+            },
+            'summary': {
+                'total_tasks': total_tasks,
+                'completed_tasks': completed_tasks,
+                'ongoing_tasks': ongoing_tasks,
+                'under_review_tasks': under_review_tasks,
+                'completion_rate': round(completion_rate, 1)
+            },
+            'team_performance': team_performance,
+            'task_groups': {
+                'Overdue': task_groups['Overdue'],
+                'Ongoing': task_groups['Ongoing'],
+                'Under Review': task_groups['Under Review'],
+                'Completed': task_groups['Completed'],
+                'Unassigned': task_groups['Unassigned']
+            },
+            'generated_at': datetime.now().strftime('%B %d, %Y at %I:%M %p')
+        }
+
+    except requests.RequestException as e:
+        logger.error(f"Error fetching project data: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error preparing project report data: {e}")
         raise
 
 
@@ -674,6 +848,40 @@ def generate_report():
     except Exception as e:
         logger.error(f"Error generating report: {e}", exc_info=True)
         return jsonify({"error": "Failed to generate report", "details": str(e)}), 500
+
+
+@app.route("/preview-project-report", methods=["POST"])
+def preview_project_report():
+    """
+    Generate project report data for preview (returns JSON).
+
+    Request body:
+    {
+        "project_id": "project-uuid"
+    }
+
+    Returns:
+        JSON with report data
+    """
+    try:
+        data = request.get_json()
+        project_id = data.get('project_id')
+
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+
+        logger.info(f"Generating preview for project {project_id}")
+        report_data = fetch_project_report_data(project_id)
+
+        return jsonify(report_data), 200
+
+    except requests.RequestException as e:
+        logger.error(f"Error communicating with services: {e}")
+        return jsonify({"error": "Failed to fetch project data", "details": str(e)}), 503
+
+    except Exception as e:
+        logger.error(f"Error generating project report preview: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate preview", "details": str(e)}), 500
 
 
 if __name__ == "__main__":

@@ -313,6 +313,14 @@
       @save="handleTaskCreated"
     />
 
+    <!-- Project Report Preview Modal -->
+    <ProjectReportPreviewModal
+      :isOpen="showReportPreviewModal"
+      :reportData="reportPreviewData"
+      @close="closeReportPreview"
+      @export="handleExportPDF"
+    />
+
     <!-- Delete Confirmation Modal -->
     <a-modal
       v-model:open="showDeleteModal"
@@ -407,6 +415,7 @@ import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
 import ProjectComments from '../components/projects/ProjectComments.vue'
 import TeamMembersModal from '../components/projects/TeamMembersModal.vue'
 import CreateProjectTaskModal from '../components/projects/CreateProjectTaskModal.vue'
+import ProjectReportPreviewModal from '../components/projects/ProjectReportPreviewModal.vue'
 
 export default {
   name: 'ProjectDetails',
@@ -416,6 +425,7 @@ export default {
     ProjectComments,
     TeamMembersModal,
     CreateProjectTaskModal,
+    ProjectReportPreviewModal,
     FileTextOutlined,
     EditOutlined,
     DeleteOutlined,
@@ -460,6 +470,10 @@ export default {
 
     // Create task modal state
     const showCreateTaskModal = ref(false)
+
+    // Report preview modal state
+    const showReportPreviewModal = ref(false)
+    const reportPreviewData = ref(null)
 
     // Check if current user is the project owner
     const isProjectOwner = computed(() => {
@@ -536,21 +550,34 @@ export default {
     }
 
     const getPriorityClass = (priority) => {
+      const priorityNum = parseInt(priority)
+      if (!isNaN(priorityNum)) {
+        if (priorityNum >= 8) return 'priority-high'        // 8-10: High priority
+        if (priorityNum >= 5) return 'priority-medium'      // 5-7: Medium priority
+        if (priorityNum >= 3) return 'priority-low'         // 3-4: Low priority
+        return 'priority-lowest'                             // 1-2: Lowest priority
+      }
+      // Fallback for legacy text values
       const priorityStr = String(priority).toLowerCase()
-      if (priorityStr === 'high' || priorityStr === '1') return 'priority-high'
-      if (priorityStr === 'medium' || priorityStr === '2' || priorityStr === '3') return 'priority-medium'
-      if (priorityStr === 'low' || priorityStr === '4') return 'priority-low'
-      if (priorityStr === 'lowest' || priorityStr === '5') return 'priority-lowest'
+      if (priorityStr === 'high') return 'priority-high'
+      if (priorityStr === 'medium') return 'priority-medium'
+      if (priorityStr === 'low') return 'priority-low'
+      if (priorityStr === 'lowest') return 'priority-lowest'
       return 'priority-medium'
     }
 
     const getPriorityText = (priority) => {
+      const priorityNum = parseInt(priority)
+      if (!isNaN(priorityNum) && priorityNum >= 1 && priorityNum <= 10) {
+        return `Priority: ${priorityNum} / 10`
+      }
+      // Fallback for legacy text values
       const priorityStr = String(priority).toLowerCase()
-      if (priorityStr === 'high' || priorityStr === '1') return 'High'
-      if (priorityStr === 'medium' || priorityStr === '2' || priorityStr === '3') return 'Medium'
-      if (priorityStr === 'low' || priorityStr === '4') return 'Low'
-      if (priorityStr === 'lowest' || priorityStr === '5') return 'Lowest'
-      return 'Medium'
+      if (priorityStr === 'high') return 'Priority: 9 / 10'
+      if (priorityStr === 'medium') return 'Priority: 5 / 10'
+      if (priorityStr === 'low') return 'Priority: 3 / 10'
+      if (priorityStr === 'lowest') return 'Priority: 1 / 10'
+      return 'Priority: 5 / 10'
     }
 
     const getTeamMembersCount = () => {
@@ -838,13 +865,62 @@ export default {
       loadProject()
     }
 
-    const handleGenerateReport = () => {
+    const handleGenerateReport = async () => {
+      try {
+        // Show loading notification
+        notification.info({
+          message: 'Loading Report Preview',
+          description: 'Please wait while we prepare your project report...',
+          placement: 'topRight',
+          duration: 2
+        })
+
+        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+
+        // Fetch report preview data
+        const response = await fetch(`${reportServiceUrl}/preview-project-report`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            project_id: project.value.project_id
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to load report preview')
+        }
+
+        const data = await response.json()
+        reportPreviewData.value = data
+        showReportPreviewModal.value = true
+
+      } catch (error) {
+        console.error('Error loading report preview:', error)
+        notification.error({
+          message: 'Failed to Load Preview',
+          description: error.message || 'Unable to load report preview. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      }
+    }
+
+    const closeReportPreview = () => {
+      showReportPreviewModal.value = false
+      reportPreviewData.value = null
+    }
+
+    const handleExportPDF = () => {
       notification.info({
-        message: 'Feature Coming Soon',
-        description: 'Project report generation will be available soon.',
+        message: 'Export to PDF',
+        description: 'PDF export will be available soon!',
         placement: 'topRight',
         duration: 3
       })
+      // TODO: Implement PDF generation endpoint
     }
 
     const closeTaskDetailModal = () => {
@@ -1043,6 +1119,10 @@ export default {
       handleTaskClick,
       closeTaskDetailModal,
       handleGenerateReport,
+      closeReportPreview,
+      handleExportPDF,
+      showReportPreviewModal,
+      reportPreviewData,
       handleMarkAsCompleted
     }
   }
@@ -1175,10 +1255,20 @@ export default {
   font-weight: 500;
   border-radius: 8px;
   transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .action-btn:hover {
   transform: translateY(-1px);
+}
+
+.action-btn :deep(.anticon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .action-btn.primary-action {

@@ -44,8 +44,8 @@
         <!-- Project Name -->
         <a-form-item
           label="Project Name"
-          :validate-status="errors.project_name ? 'error' : ''"
-          :help="errors.project_name"
+          :validate-status="errors.project_name || isDuplicateName ? 'error' : isCheckingDuplicate ? 'validating' : ''"
+          :help="errors.project_name || (isDuplicateName ? 'A project with this name already exists' : '')"
           required
         >
           <a-input
@@ -54,6 +54,7 @@
             placeholder="e.g., Website Redesign, Q1 Marketing Campaign"
             :prefix="h(EditOutlined)"
             class="custom-input"
+            @input="onProjectNameInput"
           />
         </a-form-item>
 
@@ -239,7 +240,7 @@
           size="large"
           @click="saveProject"
           :loading="isLoading"
-          :disabled="isLoading"
+          :disabled="isLoading || isDuplicateName || isCheckingDuplicate"
           class="submit-btn"
         >
           <template #icon>
@@ -328,6 +329,11 @@ export default {
     // Owner selection state
     const selectedOwnerId = ref('')
     const currentOwnerInfo = ref(null)
+
+    // Duplicate name checking state
+    const isDuplicateName = ref(false)
+    const isCheckingDuplicate = ref(false)
+    let duplicateCheckTimeout = null
 
     // Sync modalVisible with isOpen prop
     watch(() => props.isOpen, (newVal) => {
@@ -464,6 +470,62 @@ export default {
       }
     }
 
+    // Check for duplicate project names
+    const checkDuplicateProjectName = async (projectName) => {
+      if (!projectName || !projectName.trim()) {
+        isDuplicateName.value = false
+        return
+      }
+
+      // Skip check if editing existing project with same name
+      if (props.project?.project_id && props.project?.project_name === projectName.trim()) {
+        isDuplicateName.value = false
+        return
+      }
+
+      isCheckingDuplicate.value = true
+
+      try {
+        const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+        const response = await fetch(`${projectServiceUrl}/projects`)
+
+        if (!response.ok) {
+          console.error('Failed to fetch projects for duplicate check')
+          isDuplicateName.value = false
+          return
+        }
+
+        const data = await response.json()
+        const projects = data.projects || []
+
+        // Check if project name already exists (case-insensitive)
+        const duplicate = projects.some(p =>
+          p.project_name.toLowerCase() === projectName.trim().toLowerCase() &&
+          p.project_id !== props.project?.project_id
+        )
+
+        isDuplicateName.value = duplicate
+      } catch (error) {
+        console.error('Error checking duplicate project name:', error)
+        isDuplicateName.value = false
+      } finally {
+        isCheckingDuplicate.value = false
+      }
+    }
+
+    // Handle project name input with debounce
+    const onProjectNameInput = () => {
+      // Clear existing timeout
+      if (duplicateCheckTimeout) {
+        clearTimeout(duplicateCheckTimeout)
+      }
+
+      // Set new timeout for debounced check
+      duplicateCheckTimeout = setTimeout(() => {
+        checkDuplicateProjectName(form.value.project_name)
+      }, 500) // Wait 500ms after user stops typing
+    }
+
     // Handle close modal
     const handleClose = () => {
       modalVisible.value = false
@@ -471,6 +533,12 @@ export default {
       selectedCollaborators.value = []
       departmentFilter.value = ''
       userSearchQuery.value = ''
+      // Reset duplicate check state
+      isDuplicateName.value = false
+      isCheckingDuplicate.value = false
+      if (duplicateCheckTimeout) {
+        clearTimeout(duplicateCheckTimeout)
+      }
       emit('close')
     }
 
@@ -760,7 +828,11 @@ export default {
       filterUsers,
       isUserSelected,
       toggleCollaborator,
-      removeCollaborator
+      removeCollaborator,
+      // Duplicate check-related
+      isDuplicateName,
+      isCheckingDuplicate,
+      onProjectNameInput
     }
   }
 }
