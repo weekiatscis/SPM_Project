@@ -6,7 +6,14 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from collections import Counter
+from enum import Enum
 
+# Configure logging FIRST
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Now import other packages
+from supabase import create_client, Client
 import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_file
@@ -22,15 +29,53 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.piecharts import Pie
 from reportlab.lib.colors import HexColor
 
+# Add this import
+try:
+    from svglib.svglib import svg2rlg
+except ImportError:
+    svg2rlg = None
+    logger.warning("svglib not available - logo will be text-based")
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
+try:
+    # Try multiple possible .env locations
+    env_paths = [
+        os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'),  # Original path
+        os.path.join(os.path.dirname(__file__), '.env'),  # Same directory
+        '.env',  # Current working directory
+        '/app/.env'  # Docker working directory
+    ]
+    
+    env_loaded = False
+    for env_path in env_paths:
+        if os.path.exists(env_path):
+            load_dotenv(dotenv_path=env_path)
+            print(f"✅ Loaded environment from: {env_path}")
+            env_loaded = True
+            break
+    
+    if not env_loaded:
+        print("⚠️  No .env file found, using system environment variables")
+        load_dotenv()  # Load from system environment
+        
+except Exception as e:
+    print(f"⚠️  Error loading .env file: {e}")
+    print("Using system environment variables instead")
 
 # Environment variables
 TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://task-service:8080")
+# Add after TASK_SERVICE_URL line
+SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -306,7 +351,7 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
     # Load logo
     logo_path = os.path.join(os.path.dirname(__file__), 'taskio-logo.svg')
     logo = None
-    if os.path.exists(logo_path):
+    if os.path.exists(logo_path) and svg2rlg:
         try:
             logo_drawing = svg2rlg(logo_path)
             # Scale logo to reasonable size
@@ -592,91 +637,290 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
 
     return buffer
 
+class UserRole(Enum):
+    STAFF = "Staff"
+    MANAGER = "Manager"
+    DIRECTOR = "Director"
+    HR = "HR"
+
+class ReportType(Enum):
+    INDIVIDUAL = "individual"
+    TEAM = "team"
+    DEPARTMENT = "department"
+    ORGANIZATION = "organization"
+
+def get_user_details(user_id: str) -> Dict[str, Any]:
+    """Fetch user details from Supabase."""
+    try:
+        response = supabase.table('user').select('*').eq('user_id', user_id).execute()
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching user details: {e}")
+        return None
+
+def get_team_members(department: str, superior_id: str = None) -> List[Dict[str, Any]]:
+    """Fetch team members based on department and/or superior."""
+    try:
+        query = supabase.table('user').select('*').eq('department', department)
+        if superior_id:
+            query = query.eq('superior', superior_id)
+        response = query.execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Error fetching team members: {e}")
+        return []
+
+def get_all_departments() -> List[str]:
+    """Fetch all unique departments."""
+    try:
+        response = supabase.table('user').select('department').execute()
+        departments = list(set([user['department'] for user in response.data]))
+        return departments
+    except Exception as e:
+        logger.error(f"Error fetching departments: {e}")
+        return []
+
+def validate_report_access(requesting_user: Dict[str, Any], report_data: Dict[str, Any]) -> bool:
+    """Validate if user has access to generate the requested report type."""
+    user_role = requesting_user.get('role')
+    report_type = report_data.get('report_type', 'individual')
+    
+    # Staff can only generate individual reports for themselves
+    if user_role == UserRole.STAFF.value:
+        return (report_type == ReportType.INDIVIDUAL.value and 
+                report_data.get('user_id') == requesting_user.get('user_id'))
+    
+    # Manager can generate team reports for their subordinates
+    elif user_role == UserRole.MANAGER.value:
+        if report_type == ReportType.INDIVIDUAL.value:
+            target_user_id = report_data.get('user_id')
+            if target_user_id == requesting_user.get('user_id'):
+                return True
+            target_user = get_user_details(target_user_id)
+            return target_user and target_user.get('superior') == requesting_user.get('user_id')
+        elif report_type == ReportType.TEAM.value:
+            return True
+        return False
+    
+    # Director can generate department reports
+    elif user_role == UserRole.DIRECTOR.value:
+        if report_type in [ReportType.INDIVIDUAL.value, ReportType.TEAM.value, ReportType.DEPARTMENT.value]:
+            target_department = report_data.get('department')
+            return target_department == requesting_user.get('department')
+        return False
+    
+    # HR can generate organization-wide reports
+    elif user_role == UserRole.HR.value:
+        return True
+    
+    return False
+
+def fetch_tasks_for_multiple_users(user_ids: List[str], start_date: Optional[str] = None,
+                                   end_date: Optional[str] = None,
+                                   status_filter: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Fetch tasks for multiple users."""
+    all_tasks = []
+    for user_id in user_ids:
+        try:
+            tasks = fetch_tasks_for_user(user_id, start_date, end_date, status_filter)
+            all_tasks.extend(tasks)
+        except Exception as e:
+            logger.warning(f"Failed to fetch tasks for user {user_id}: {e}")
+    return all_tasks
+
+def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Calculate team-level metrics for director reports."""
+    total_tasks = len(tasks)
+    if total_tasks == 0:
+        return {
+            'total_tasks': 0,
+            'completion_rate': 0,
+            'overdue_percentage': 0,
+            'total_time_spent': 0,
+            'avg_completion_time': 0
+        }
+    
+    completed_tasks = [t for t in tasks if t.get('status', '').lower() == 'completed']
+    overdue_tasks = []
+    total_time_spent = 0
+    completion_times = []
+    
+    current_date = datetime.now(timezone.utc)
+    
+    for task in tasks:
+        # Check for overdue tasks
+        due_date = task.get('due_date')
+        if due_date and task.get('status', '').lower() != 'completed':
+            try:
+                due_dt = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
+                if due_dt < current_date:
+                    overdue_tasks.append(task)
+            except:
+                pass
+        
+        # Calculate time spent
+        created_at = task.get('created_at')
+        updated_at = task.get('updated_at', datetime.now().isoformat())
+        
+        if created_at:
+            try:
+                created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                updated_dt = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+                time_spent = (updated_dt - created_dt).days
+                total_time_spent += max(time_spent, 0)
+                
+                if task.get('status', '').lower() == 'completed':
+                    completion_times.append(time_spent)
+            except:
+                pass
+    
+    completion_rate = (len(completed_tasks) / total_tasks) * 100
+    overdue_percentage = (len(overdue_tasks) / total_tasks) * 100
+    avg_completion_time = sum(completion_times) / len(completion_times) if completion_times else 0
+    
+    return {
+        'total_tasks': total_tasks,
+        'completed_tasks': len(completed_tasks),
+        'completion_rate': completion_rate,
+        'overdue_tasks': len(overdue_tasks),
+        'overdue_percentage': overdue_percentage,
+        'total_time_spent': total_time_spent,
+        'avg_completion_time': avg_completion_time
+    }
 
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint."""
     return jsonify({"status": "healthy", "service": "report-service"}), 200
 
+@app.route("/available-users", methods=["GET"])
+def get_available_users():
+    """Get all users available for HR individual analysis."""
+    try:
+        response = supabase.table('user').select('user_id, name, department, role').execute()
+        users = response.data
+        
+        # Sort by department, then by name
+        users.sort(key=lambda x: (x.get('department', ''), x.get('name', '')))
+        
+        return jsonify(users), 200
+        
+    except Exception as e:
+        logger.error(f"Error fetching available users: {e}")
+        return jsonify({"error": "Failed to fetch available users"}), 500
+
+@app.route("/report-options", methods=["GET"])
+def get_report_options():
+    """Get available report options based on user role."""
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({"error": "user_id is required"}), 400
+            
+        user = get_user_details(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        role = user.get('role')
+        department = user.get('department')
+        
+        options = {
+            'user_role': role,
+            'available_report_types': [],
+            'departments': [],
+            'teams': []
+        }
+        
+        if role == UserRole.STAFF.value:
+            options['available_report_types'] = ['individual']
+            
+        elif role == UserRole.MANAGER.value:
+            options['available_report_types'] = ['individual', 'team']
+            options['teams'] = [member['name'] for member in get_team_members(department, user_id)]
+            
+        elif role == UserRole.DIRECTOR.value:
+            options['available_report_types'] = ['individual', 'team', 'department']
+            options['departments'] = [department]
+            # Get teams in their department
+            dept_members = get_team_members(department)
+            superiors = list(set([member.get('superior') for member in dept_members if member.get('superior')]))
+            options['teams'] = superiors
+            
+        elif role == UserRole.HR.value:
+            options['available_report_types'] = ['individual', 'team', 'department', 'organization']
+            options['departments'] = get_all_departments()
+            # Get all teams across organization
+            all_users = supabase.table('user').select('superior').execute().data
+            all_superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
+            options['teams'] = all_superiors
+            
+        return jsonify(options), 200
+        
+    except Exception as e:
+        logger.error(f"Error fetching report options: {e}")
+        return jsonify({"error": "Failed to fetch report options"}), 500
 
 @app.route("/generate-report", methods=["POST"])
 def generate_report():
     """
-    Generate a PDF report for a user's tasks.
-
-    Request body:
-    {
-        "user_id": "user-uuid",
-        "user_name": "User Name",
-        "start_date": "2025-01-01",  // Optional
-        "end_date": "2025-12-31",    // Optional
-        "status_filter": ["Ongoing", "Completed"]   // Optional: List of statuses or ['All']
-    }
-
-    Returns:
-        PDF file stream
+    Enhanced report generation supporting different roles and hierarchies.
     """
     try:
         data = request.get_json()
-
-        # Validate required fields
-        user_id = data.get('user_id')
-        user_name = data.get('user_name', 'Unknown User')
-
-        if not user_id:
-            return jsonify({"error": "user_id is required"}), 400
-
-        # Optional filters
-        start_date = data.get('start_date')
-        end_date = data.get('end_date')
-        status_filter = data.get('status_filter', ['All'])
-
-        # Ensure status_filter is a list
-        if isinstance(status_filter, str):
-            status_filter = [status_filter]
-
-        # Validate date formats if provided
-        if start_date:
-            try:
-                datetime.fromisoformat(start_date)
-            except ValueError:
-                return jsonify({"error": "start_date must be in ISO format (YYYY-MM-DD)"}), 400
-
-        if end_date:
-            try:
-                datetime.fromisoformat(end_date)
-            except ValueError:
-                return jsonify({"error": "end_date must be in ISO format (YYYY-MM-DD)"}), 400
-
-        # Fetch tasks
-        logger.info(f"Generating report for user {user_id}")
-        tasks = fetch_tasks_for_user(user_id, start_date, end_date, status_filter)
-
-        # Generate PDF
-        pdf_buffer = generate_pdf_report(user_id, user_name, tasks, start_date, end_date, status_filter)
-
-        # Generate filename
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"task_report_{user_name.replace(' ', '_')}_{timestamp}.pdf"
-
-        # Return PDF as response
-        return send_file(
-            pdf_buffer,
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=filename
-        )
-
+        
+        # Get requesting user details
+        requesting_user_id = data.get('requesting_user_id') or data.get('user_id')
+        if not requesting_user_id:
+            return jsonify({"error": "requesting_user_id is required"}), 400
+            
+        requesting_user = get_user_details(requesting_user_id)
+        if not requesting_user:
+            return jsonify({"error": "User not found"}), 404
+        
+        report_type = data.get('report_type', 'individual')
+        
+        # Validate access
+        if not validate_report_access(requesting_user, data):
+            return jsonify({"error": "Unauthorized to generate this report type"}), 403
+        
+        # Handle different report types based on user role
+        user_role = requesting_user.get('role')
+        
+        if report_type == ReportType.INDIVIDUAL.value:
+            # Individual report (existing functionality)
+            user_id = data.get('user_id', requesting_user_id)
+            user_name = data.get('user_name') or requesting_user.get('name', 'Unknown User')
+            
+            start_date = data.get('start_date')
+            end_date = data.get('end_date')
+            status_filter = data.get('status_filter', ['All'])
+            
+            tasks = fetch_tasks_for_user(user_id, start_date, end_date, status_filter)
+            pdf_buffer = generate_pdf_report(user_id, user_name, tasks, start_date, end_date, status_filter)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename = f"individual_report_{user_name.replace(' ', '_')}_{timestamp}.pdf"
+            
+            # Return PDF
+            return send_file(
+                pdf_buffer,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=filename
+            )
+            
+        else:
+            return jsonify({"error": "Report type not implemented yet"}), 400
+        
     except requests.RequestException as e:
         logger.error(f"Error communicating with task service: {e}")
         return jsonify({"error": "Failed to fetch tasks from task service", "details": str(e)}), 503
-
     except Exception as e:
         logger.error(f"Error generating report: {e}", exc_info=True)
         return jsonify({"error": "Failed to generate report", "details": str(e)}), 500
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8090))
-    logger.info(f"Starting Report Service on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=8090, debug=True)
