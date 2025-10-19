@@ -101,25 +101,47 @@ def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
         # Call task service API
         url = f"{TASK_SERVICE_URL}/tasks?owner_id={user_id}"
         logger.info(f"Fetching tasks from: {url}")
+        logger.info(f"🔍 TASK_SERVICE_URL: {TASK_SERVICE_URL}")
 
         response = requests.get(url, timeout=10)
+        logger.info(f"🔍 Response status: {response.status_code}")
+        
         response.raise_for_status()
 
         data = response.json()
         tasks = data.get('tasks', [])
+        logger.info(f"🔍 Raw tasks received: {len(tasks)}")
+        logger.info(f"🔍 First few tasks: {tasks[:2] if tasks else 'No tasks'}")
+        logger.info(f"🔍 Status filter: {status_filter}")
+        logger.info(f"🔍 Date filters - start: {start_date}, end: {end_date}")
 
         # Apply filters
         filtered_tasks = []
         for task in tasks:
+            # Normalize task fields to match expected format
+            normalized_task = {
+                'id': task.get('id'),
+                'title': task.get('title', task.get('name', 'Untitled')),
+                'status': task.get('status', 'Unknown'),
+                'created_at': task.get('created_at'),
+                'updated_at': task.get('updated_at'),
+                'due_date': task.get('due_date', task.get('dueDate')),  # Handle both formats
+                'description': task.get('description', ''),
+                'owner_id': task.get('owner_id', task.get('ownerId')),
+            }
+            
             # Status filter - check if task status is in the list of selected statuses
             if status_filter and len(status_filter) > 0 and 'All' not in status_filter:
-                task_status = task.get('status', '').lower()
+                task_status = normalized_task.get('status', '').lower()
+                logger.info(f"🔍 Checking task {normalized_task.get('title', 'Unknown')} - status: '{task_status}' against filter: {[s.lower() for s in status_filter]}")
                 if not any(status.lower() == task_status for status in status_filter):
+                    logger.info(f"🔍 Task filtered out due to status")
                     continue
+                logger.info(f"🔍 Task passed status filter")
 
             # Date range filter (based on assigned date - created_at)
             if start_date or end_date:
-                created_at = task.get('created_at')
+                created_at = normalized_task.get('created_at')
                 if created_at:
                     try:
                         # Parse the date (handle both ISO format and date-only)
@@ -138,12 +160,14 @@ def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
                             if task_date > end:
                                 continue
                     except (ValueError, AttributeError) as e:
-                        logger.warning(f"Could not parse date for task {task.get('id')}: {e}")
+                        logger.warning(f"Could not parse date for task {normalized_task.get('id')}: {e}")
                         continue
 
-            filtered_tasks.append(task)
+            logger.info(f"🔍 Task '{normalized_task.get('title', 'Unknown')}' passed all filters")
+            filtered_tasks.append(normalized_task)
 
-        logger.info(f"Fetched {len(filtered_tasks)} tasks for user {user_id}")
+        logger.info(f"🔍 FINAL: Filtered {len(filtered_tasks)} tasks from {len(tasks)} for user {user_id}")
+        logger.info(f"🔍 Filtered task titles: {[t.get('title', 'Unknown') for t in filtered_tasks[:5]]}")
         return filtered_tasks
 
     except requests.RequestException as e:
@@ -1403,6 +1427,71 @@ def generate_report():
         logger.error(f"Error generating report: {e}", exc_info=True)
         return jsonify({"error": "Failed to generate report", "details": str(e)}), 500
 
+@app.route("/debug-users", methods=["GET"])
+def debug_users():
+    """Debug user relationships."""
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({"error": "user_id required"}), 400
+            
+        user = get_user_details(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+            
+        result = {
+            "user": user,
+            "department_members": [],
+            "subordinates": []
+        }
+        
+        # Get all users in same department
+        dept_members = get_team_members(user.get('department'))
+        result["department_members"] = dept_members
+        
+        # Get direct subordinates
+        subordinates = get_team_members(user.get('department'), user_id)
+        result["subordinates"] = subordinates
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error in debug: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/debug-tasks", methods=["GET"])
+def debug_tasks():
+    """Debug task fetching and filtering."""
+    try:
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({"error": "user_id required"}), 400
+        
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        status_filter = request.args.getlist('status_filter') or ['All']
+        
+        logger.info(f"🔍 DEBUG TASKS: user_id={user_id}, start={start_date}, end={end_date}, status={status_filter}")
+        
+        # Fetch tasks directly
+        tasks = fetch_tasks_for_user(user_id, start_date, end_date, status_filter)
+        
+        result = {
+            "user_id": user_id,
+            "filters": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "status_filter": status_filter
+            },
+            "task_count": len(tasks),
+            "tasks": tasks[:3]  # Only return first 3 for debugging
+        }
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"Error in debug tasks: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8090, debug=True)

@@ -159,9 +159,9 @@
 
         <!-- Department Selection (for organization scope) -->
         <div class="filter-section" v-if="scopeType === 'departments'">
-          <label class="filter-label">Select Departments (Optional)</label>
+          <label class="filter-label">Select Departments</label>
           <a-select v-model:value="selectedDepartments" mode="multiple" :style="{ width: '100%' }"
-            :disabled="isGenerating" placeholder="Select specific departments (leave empty for all departments)"
+            :disabled="isGenerating" placeholder="Select specific departments (at least one team)"
             allow-clear>
             <a-select-option v-for="dept in reportOptions.departments" :key="dept" :value="dept">
               {{ dept }}
@@ -171,9 +171,9 @@
 
         <!-- Team Selection (for organization scope) -->
         <div class="filter-section" v-if="scopeType === 'teams'">
-          <label class="filter-label">Select Teams (Optional)</label>
+          <label class="filter-label">Select Teams</label>
           <a-select v-model:value="selectedTeams" mode="multiple" :style="{ width: '100%' }" :disabled="isGenerating"
-            placeholder="Select specific teams (leave empty for all teams)" allow-clear>
+            placeholder="Select specific teams (at least one team)" allow-clear>
             <a-select-option v-for="team in reportOptions.teams" :key="team" :value="team">
               {{ team }}
             </a-select-option>
@@ -184,7 +184,7 @@
         <div class="filter-section" v-if="scopeType === 'individuals'">
           <label class="filter-label">Select Individuals</label>
           <a-select v-model:value="selectedIndividuals" mode="multiple" :style="{ width: '100%' }"
-            :disabled="isGenerating" placeholder="Select individuals to compare" show-search
+            :disabled="isGenerating" placeholder="Select individuals to compare (at least one individual)" show-search
             :filter-option="filterIndividualOption">
             <a-select-option v-for="individual in availableIndividuals" :key="individual.user_id"
               :value="individual.user_id">
@@ -327,15 +327,18 @@ export default {
 
       // Individual report validations
       if (selectedReportType.value === 'individual') {
-        if (role === 'HR' || role === 'Manager') {
+        if (role === 'HR' || role === 'Director') {
           return selectedIndividual.value !== null
         }
-        return true // Staff can always generate their own report
+        return true // Staff and Manager can always generate their own report
       }
 
       // Team report validations
       if (selectedReportType.value === 'team') {
-        return selectedTeam.value !== null
+        if (role === 'Manager') {
+          return true // Managers don't need to select - it's automatically their team
+        }
+        return selectedTeam.value !== null // Directors and HR need to select a team
       }
 
       // Department report validations
@@ -559,158 +562,175 @@ export default {
       }
     }
     const generateReport = async () => {
-      if (!currentUser.value) {
-        message.error('Please log in to generate reports')
-        return
+  if (!currentUser.value) {
+    message.error('Please log in to generate reports')
+    return
+  }
+
+  isGenerating.value = true
+  errorMessage.value = ''
+  successMessage.value = ''
+
+  try {
+    const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+    const role = currentUser.value.role
+
+    // Build request body based on report type and selection
+    const requestBody = {
+      requesting_user_id: currentUser.value.user_id,
+      report_type: selectedReportType.value,
+      status_filter: statusFilter.value.length > 0 ? statusFilter.value : ['All']
+    }
+
+    // Add date range if selected
+    if (dateRange.value && dateRange.value.length === 2) {
+      requestBody.start_date = dateRange.value[0].format('YYYY-MM-DD')
+      requestBody.end_date = dateRange.value[1].format('YYYY-MM-DD')
+    }
+
+    // Report type specific request body setup
+    if (selectedReportType.value === 'individual') {
+      const targetUserId = selectedIndividual.value || currentUser.value.user_id
+      requestBody.user_id = targetUserId
+
+      // Get user name for the target user
+      if (targetUserId === currentUser.value.user_id) {
+        requestBody.user_name = currentUser.value.name
+      } else {
+        const targetUser = availableIndividuals.value.find(u => u.user_id === targetUserId) ||
+          teamMembers.value.find(u => u.user_id === targetUserId) ||
+          departmentMembers.value.find(u => u.user_id === targetUserId)
+        requestBody.user_name = targetUser?.name || 'Unknown User'
       }
-
-      isGenerating.value = true
-      errorMessage.value = ''
-      successMessage.value = ''
-
-      try {
-        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
-        const role = currentUser.value.role
-
-        // Build request body based on report type and selection
-        const requestBody = {
-          requesting_user_id: currentUser.value.user_id,
-          report_type: selectedReportType.value,
-          status_filter: statusFilter.value.length > 0 ? statusFilter.value : ['All']
+    } 
+    else if (selectedReportType.value === 'team') {
+      if (role === 'Manager') {
+        // For managers, don't send teams array - let backend handle it
+        // The backend will automatically get their team members
+      } else if (role === 'Director' || role === 'HR') {
+        // Only send teams array for Director/HR who need to select a team
+        if (!selectedTeam.value) {
+          message.error('Please select a team')
+          return
         }
-
-        // Add date range if selected
-        if (dateRange.value && dateRange.value.length === 2) {
-          requestBody.start_date = dateRange.value[0].format('YYYY-MM-DD')
-          requestBody.end_date = dateRange.value[1].format('YYYY-MM-DD')
+        requestBody.teams = [selectedTeam.value]
+      }
+    } 
+    else if (selectedReportType.value === 'department') {
+      if (role === 'Director') {
+        requestBody.department = currentUser.value.department
+        if (selectedTeams.value.length > 0) {
+          requestBody.teams = selectedTeams.value
         }
-
-        // Report type specific request body setup
-        if (selectedReportType.value === 'individual') {
-          const targetUserId = selectedIndividual.value || currentUser.value.user_id
-          requestBody.user_id = targetUserId
-
-          // Get user name for the target user
-          if (targetUserId === currentUser.value.user_id) {
-            requestBody.user_name = currentUser.value.name
-          } else {
-            const targetUser = availableIndividuals.value.find(u => u.user_id === targetUserId) ||
-              teamMembers.value.find(u => u.user_id === targetUserId)
-            requestBody.user_name = targetUser?.name || 'Unknown User'
-          }
+      } else if (role === 'HR') {
+        if (!selectedDepartment.value) {
+          message.error('Please select a department')
+          return
         }
-        else if (selectedReportType.value === 'team') {
-          requestBody.teams = [selectedTeam.value]
-        }
-        else if (selectedReportType.value === 'department') {
-          if (role === 'Director') {
-            requestBody.department = currentUser.value.department
-            if (selectedTeams.value.length > 0) {
-              requestBody.teams = selectedTeams.value
-            }
-          } else if (role === 'HR') {
-            requestBody.department = selectedDepartment.value
-          }
-        }
-        else if (selectedReportType.value === 'organization' && role === 'HR') {
-          requestBody.scope_type = scopeType.value
+        requestBody.department = selectedDepartment.value
+      }
+    } 
+    else if (selectedReportType.value === 'organization' && role === 'HR') {
+      requestBody.scope_type = scopeType.value
 
-          if (scopeType.value === 'departments' && selectedDepartments.value.length > 0) {
-            requestBody.scope_values = selectedDepartments.value
-          } else if (scopeType.value === 'teams' && selectedTeams.value.length > 0) {
-            requestBody.scope_values = selectedTeams.value
-          } else if (scopeType.value === 'individuals' && selectedIndividuals.value.length > 0) {
-            requestBody.scope_values = selectedIndividuals.value
-          }
-        }
-
-        const response = await fetch(`${reportServiceUrl}/generate-report`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody)
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || 'Failed to generate report')
-        }
-
-        // Download the PDF
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0]
-        let filename = `${selectedReportType.value}_report_${timestamp}.pdf`
-
-        if (selectedReportType.value === 'organization') {
-          filename = `organization_${scopeType.value}_report_${timestamp}.pdf`
-        }
-
-        a.download = filename
-
-        document.body.appendChild(a)
-        a.click()
-        window.URL.revokeObjectURL(url)
-        document.body.removeChild(a)
-
-        successMessage.value = `Report generated successfully!`
-        message.success('Report downloaded successfully!')
-
-      } catch (error) {
-        console.error('Error generating report:', error)
-        errorMessage.value = error.message || 'Failed to generate report. Please try again.'
-        message.error('Failed to generate report')
-      } finally {
-        isGenerating.value = false
+      if (scopeType.value === 'departments' && selectedDepartments.value.length > 0) {
+        requestBody.scope_values = selectedDepartments.value
+      } else if (scopeType.value === 'teams' && selectedTeams.value.length > 0) {
+        requestBody.scope_values = selectedTeams.value
+      } else if (scopeType.value === 'individuals' && selectedIndividuals.value.length > 0) {
+        requestBody.scope_values = selectedIndividuals.value
       }
     }
 
-    // Lifecycle hooks
-    onMounted(() => {
-      fetchReportOptions()
-      fetchAvailableIndividuals()
+    const response = await fetch(`${reportServiceUrl}/generate-report`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody)
     })
 
-    watch(currentUser, (newUser) => {
-      if (newUser) {
-        fetchReportOptions()
-        fetchAvailableIndividuals()
-      }
-    })
-
-    return {
-      currentUser,
-      dateRange,
-      statusFilter,
-      isGenerating,
-      successMessage,
-      errorMessage,
-      reportOptions,
-      selectedReportType,
-      selectedDepartments,
-      selectedTeams,
-      selectedIndividuals,
-      selectedIndividual,
-      selectedTeam,
-      selectedDepartment,
-      scopeType,
-      availableIndividuals,
-      teamMembers,
-      canGenerateReport,
-      getRoleColor,
-      formatReportType,
-      onReportTypeChange,
-      onScopeTypeChange,
-      filterIndividualOption,
-      getGenerateButtonText,
-      getRoleSpecificTitle,
-      getRoleSpecificFeatures,
-      generateReport
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(errorData.error || 'Failed to generate report')
     }
+
+    // Download the PDF
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0]
+    let filename = `${selectedReportType.value}_report_${timestamp}.pdf`
+
+    if (selectedReportType.value === 'organization') {
+      filename = `organization_${scopeType.value}_report_${timestamp}.pdf`
+    }
+
+    a.download = filename
+
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    document.body.removeChild(a)
+
+    successMessage.value = `Report generated successfully!`
+    message.success('Report downloaded successfully!')
+
+  } catch (error) {
+    console.error('Error generating report:', error)
+    errorMessage.value = error.message || 'Failed to generate report. Please try again.'
+    message.error('Failed to generate report')
+  } finally {
+    isGenerating.value = false
+  }
+}
+
+// Lifecycle hooks
+onMounted(() => {
+  fetchReportOptions()
+  fetchAvailableIndividuals()
+  fetchDepartmentMembers()  // Add this line
+})
+
+watch(currentUser, (newUser) => {
+  if (newUser) {
+    fetchReportOptions()
+    fetchAvailableIndividuals()
+    fetchDepartmentMembers()  // Add this line
+  }
+})
+
+return {
+  currentUser,
+  dateRange,
+  statusFilter,
+  isGenerating,
+  successMessage,
+  errorMessage,
+  reportOptions,
+  selectedReportType,
+  selectedDepartments,
+  selectedTeams,
+  selectedIndividuals,
+  selectedIndividual,
+  selectedTeam,
+  selectedDepartment,
+  scopeType,
+  availableIndividuals,
+  teamMembers,
+  canGenerateReport,
+  getRoleColor,
+  formatReportType,
+  onReportTypeChange,
+  onScopeTypeChange,
+  filterIndividualOption,
+  getGenerateButtonText,
+  getRoleSpecificTitle,
+  getRoleSpecificFeatures,
+  generateReport
+}
   }
 }
 </script>
