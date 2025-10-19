@@ -576,6 +576,8 @@ class TestEmailSending:
     """Test email sending functionality"""
 
     @pytest.mark.skipif(send_email is None, reason="email_service not available")
+    @patch('email_service.SMTP_USER', 'test@example.com')  # Mock credentials
+    @patch('email_service.SMTP_PASSWORD', 'test_password')  # Mock credentials
     @patch('email_service.smtplib.SMTP')
     def test_send_email_success(self, mock_smtp):
         """Test successful email sending"""
@@ -594,6 +596,8 @@ class TestEmailSending:
         mock_server.send_message.assert_called_once()
 
     @pytest.mark.skipif(send_email is None, reason="email_service not available")
+    @patch('email_service.SMTP_USER', 'test@example.com')
+    @patch('email_service.SMTP_PASSWORD', 'test_password')
     @patch('email_service.smtplib.SMTP')
     def test_send_email_smtp_failure(self, mock_smtp):
         """Test email sending with SMTP failure"""
@@ -608,6 +612,8 @@ class TestEmailSending:
         assert result == False
 
     @pytest.mark.skipif(send_email is None, reason="email_service not available")
+    @patch('email_service.SMTP_USER', 'test@example.com')
+    @patch('email_service.SMTP_PASSWORD', 'test_password')
     @patch('email_service.smtplib.SMTP')
     def test_send_email_authentication_failure(self, mock_smtp):
         """Test email sending with authentication failure"""
@@ -624,6 +630,8 @@ class TestEmailSending:
         assert result == False
 
     @pytest.mark.skipif(send_email is None, reason="email_service not available")
+    @patch('email_service.SMTP_USER', 'test@example.com')
+    @patch('email_service.SMTP_PASSWORD', 'test_password')
     @patch('email_service.smtplib.SMTP')
     def test_send_email_with_special_characters(self, mock_smtp):
         """Test email sending with special characters in subject"""
