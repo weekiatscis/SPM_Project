@@ -8,22 +8,72 @@
 
 
   <div>
-    <!-- Section Toggle Tabs -->
-    <a-tabs v-model:activeKey="activeTab" style="margin-bottom: 16px;">
-      <a-tab-pane key="all" tab="All Projects" />
-      <a-tab-pane key="owned" tab="My Projects" />
-      <a-tab-pane key="collaborating" tab="Collaborating" />
-      <a-tab-pane key="assign" tab="Assign Task" />
-    </a-tabs>
+    <!-- Tabs Container with Background Illustration -->
+    <div class="tabs-container-wrapper">
+      <!-- Section Toggle Tabs with Stats and Button -->
+      <div class="tabs-header-row">
+        <div class="tabs-section">
+          <!-- GIF Behind Tabs -->
+          <div class="tabs-background-illustration">
+            <img
+              src="/ProjectIllustration.gif"
+              alt="Project illustration"
+              class="project-illustration-gif"
+            />
+          </div>
 
-    <!-- All Projects Section -->
+          <a-tabs v-model:activeKey="activeTab">
+          <a-tab-pane key="all" tab="Ongoing Projects" />
+          <a-tab-pane key="owned" tab="My Projects" />
+          <a-tab-pane key="collaborating" tab="Collaborating" />
+          <a-tab-pane key="completed" tab="Completed" />
+          <a-tab-pane key="assign" tab="Assign Task" />
+          </a-tabs>
+        </div>
+
+        <div class="header-actions">
+        <div class="stats-container">
+          <div class="stat-card stat-total">
+            <div class="stat-icon">📊</div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.total }}</div>
+              <div class="stat-label">Total</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-active">
+            <div class="stat-icon">🚀</div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.active }}</div>
+              <div class="stat-label">Active</div>
+            </div>
+          </div>
+
+          <div class="stat-card stat-completed">
+            <div class="stat-icon">✓</div>
+            <div class="stat-info">
+              <div class="stat-value">{{ stats.completed }}</div>
+              <div class="stat-label">Completed</div>
+            </div>
+          </div>
+        </div>
+
+        <button class="new-project-btn" @click="handleOpenModal">
+          <PlusOutlined class="btn-icon" />
+          <span>New Project</span>
+        </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ongoing Projects Section -->
     <a-card
       v-if="activeTab === 'all'"
       style="min-height: 500px;"
     >
       <template #title>
         <div style="display: flex; align-items: center; gap: 12px;">
-          <span>All Projects</span>
+          <span>Ongoing Projects</span>
           <a-space size="small">
             <a-button
               size="small"
@@ -183,6 +233,59 @@
       </a-row>
     </a-card>
 
+    <!-- Completed Projects Section -->
+    <a-card
+      v-if="activeTab === 'completed'"
+      style="min-height: 500px;"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>Completed Projects</span>
+          <a-space size="small">
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
+              @click="toggleDateSort"
+            >
+              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
+            </a-button>
+            <a-button
+              size="small"
+              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
+              @click="toggleStatusSort"
+            >
+              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
+            </a-button>
+          </a-space>
+        </div>
+      </template>
+
+      <div v-if="isLoading" style="text-align: center; padding: 50px;">
+        <a-spin size="large" />
+        <p style="margin-top: 16px;">Loading projects...</p>
+      </div>
+
+      <div v-else-if="completedProjects.length === 0" style="text-align: center; padding: 50px;">
+        <a-empty description="No completed projects yet" />
+      </div>
+
+      <a-row v-else :gutter="[16, 16]">
+        <a-col
+          v-for="project in completedProjects"
+          :key="project.project_id"
+          :xs="24"
+          :sm="12"
+          :lg="8"
+          :xl="6"
+        >
+          <ProjectCard
+            :project="project"
+            @view-details="handleProjectClick"
+          />
+        </a-col>
+      </a-row>
+    </a-card>
+
     <!-- Assign Task Section -->
     <a-card
       v-if="activeTab === 'assign'"
@@ -195,24 +298,30 @@
         <!-- Left Side - Tasks List (30%) -->
         <a-col :span="7">
           <div style="border-right: 1px solid #f0f0f0; padding-right: 16px; height: 100%;">
-            <div style="display: flex; align-items: center; justify-between; margin-bottom: 16px;">
-              <h4 style="margin: 0;">Available Tasks</h4>
-              <a-space size="small">
+            <div style="margin-bottom: 16px;">
+              <h4 style="margin: 0 0 12px 0;">Available Tasks</h4>
+              <div style="display: flex; gap: 8px;">
                 <a-button
                   size="small"
                   :type="taskSortBy.startsWith('dueDate') ? 'primary' : 'default'"
                   @click="toggleTaskDueDateSort"
+                  style="flex: 1;"
                 >
                   Due Date {{ taskSortBy === 'dueDate-asc' ? '↑' : taskSortBy === 'dueDate-desc' ? '↓' : '↑' }}
                 </a-button>
-                <a-button
+                <a-select
+                  v-model:value="taskStatusFilter"
                   size="small"
-                  :type="taskSortBy.startsWith('status') ? 'primary' : 'default'"
-                  @click="toggleTaskStatusSort"
+                  placeholder="Status"
+                  style="flex: 1;"
+                  allow-clear
                 >
-                  Status {{ taskSortBy === 'status-asc' ? '↑' : taskSortBy === 'status-desc' ? '↓' : '↑' }}
-                </a-button>
-              </a-space>
+                  <a-select-option value="">All</a-select-option>
+                  <a-select-option value="Unassigned">Unassigned</a-select-option>
+                  <a-select-option value="Ongoing">Ongoing</a-select-option>
+                  <a-select-option value="Under Review">Under Review</a-select-option>
+                </a-select>
+              </div>
             </div>
 
             <div v-if="isLoadingTasks" style="text-align: center; padding: 50px;">
@@ -231,14 +340,14 @@
             >
               <template #renderItem="{ item }">
                 <a-list-item
-                  style="cursor: pointer; padding: 8px; border-radius: 4px; margin-bottom: 4px;"
-                  :style="isTaskSelected(item) ? { background: '#e6f7ff', border: '1px solid #1890ff' } : {}"
+                  style="cursor: pointer; padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid #f0f0f0;"
+                  :style="isTaskSelected(item) ? { background: '#e6f7ff', border: '1px solid #1890ff' } : { background: 'white' }"
                   @click="selectTaskForAssign(item)"
                 >
                   <div style="width: 100%;">
-                    <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 4px;">
-                      <strong>{{ item.title }}</strong>
-                      <a-tag :color="getTaskStatusColor(item.status)" size="small">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px;">
+                      <strong style="flex: 1; font-size: 14px; line-height: 1.5; word-break: break-word;">{{ item.title }}</strong>
+                      <a-tag :color="getTaskStatusColor(item.status)" size="small" style="flex-shrink: 0; margin-top: 2px;">
                         {{ item.status }}
                       </a-tag>
                     </div>
@@ -368,7 +477,13 @@ export default {
     ProjectFormModal,
     ProjectCard
   },
-  emits: ['create-project'],
+  props: {
+    stats: {
+      type: Object,
+      default: () => ({ total: 0, active: 0, completed: 0 })
+    }
+  },
+  emits: ['create-project', 'open-modal'],
   setup(props, { emit }) {
     const router = useRouter()
     const projects = ref([])
@@ -386,6 +501,7 @@ export default {
     const tasks = ref([])
     const isLoadingTasks = ref(false)
     const taskSortBy = ref('dueDate-asc')
+    const taskStatusFilter = ref('')
     const selectedTasksForAssign = ref([])
 
     // Project assignment state
@@ -421,7 +537,7 @@ export default {
         created_by_id: projectData.created_by,
         due_date: projectData.due_date,
         collaborators: projectData.collaborators || [],
-        status: 'Active'
+        status: projectData.status || 'Active'
       }
 
       // Add the new project to the projects list
@@ -450,6 +566,11 @@ export default {
       router.push(`/projects/${project.project_id}`)
     }
 
+    // Handle opening modal from button
+    const handleOpenModal = () => {
+      emit('open-modal')
+    }
+
 
     // Helper function to apply sorting
     const applySorting = (projectList) => {
@@ -468,27 +589,43 @@ export default {
       return sorted
     }
 
-    // All projects computed property with sorting
+    // Ongoing projects (exclude completed projects)
     const allProjects = computed(() => {
-      return applySorting(projects.value)
+      const ongoing = projects.value.filter(p => p.status !== 'Completed')
+      return applySorting(ongoing)
     })
 
-    // Owned projects (where user is the creator)
+    // Owned projects (where user is the creator, excluding completed)
     const ownedProjects = computed(() => {
       const currentUserId = authStore.user?.user_id
-      const owned = projects.value.filter(p => p.created_by_id === currentUserId)
+      const owned = projects.value.filter(p =>
+        p.created_by_id === currentUserId &&
+        p.status !== 'Completed'
+      )
       return applySorting(owned)
     })
 
-    // Collaborating projects (where user is in collaborators array but not the creator)
+    // Collaborating projects (where user is in collaborators array but not the creator, excluding completed)
     const collaboratingProjects = computed(() => {
       const currentUserId = authStore.user?.user_id
       const collaborating = projects.value.filter(p =>
         p.created_by_id !== currentUserId &&
         p.collaborators &&
-        p.collaborators.includes(currentUserId)
+        p.collaborators.includes(currentUserId) &&
+        p.status !== 'Completed'
       )
       return applySorting(collaborating)
+    })
+
+    // Completed projects (where user is the creator OR collaborator, and status is Completed)
+    const completedProjects = computed(() => {
+      const currentUserId = authStore.user?.user_id
+      const completed = projects.value.filter(p => {
+        const isOwner = p.created_by_id === currentUserId
+        const isCollaborator = p.collaborators && p.collaborators.includes(currentUserId)
+        return (isOwner || isCollaborator) && p.status === 'Completed'
+      })
+      return applySorting(completed)
     })
 
     // Function to toggle date sort between ascending and descending
@@ -543,15 +680,23 @@ export default {
       }
     }
 
-    // All available tasks computed property with sorting - only unassigned tasks
+    // All available tasks computed property with sorting and filtering - only unassigned tasks, excluding completed
     const allAvailableTasks = computed(() => {
       // Filter tasks that are not assigned to any project (project_id is null/undefined)
-      const unassignedTasks = tasks.value.filter(task =>
-        !task.project_id || task.project_id === null
+      // and exclude completed tasks
+      let filteredTasks = tasks.value.filter(task =>
+        (!task.project_id || task.project_id === null) &&
+        task.status !== 'Completed'
       )
 
-      let sortedTasks = [...unassignedTasks]
+      // Apply status filter if selected
+      if (taskStatusFilter.value) {
+        filteredTasks = filteredTasks.filter(task => task.status === taskStatusFilter.value)
+      }
 
+      let sortedTasks = [...filteredTasks]
+
+      // Apply sorting
       if (taskSortBy.value === 'dueDate-asc') {
         return sortedTasks.sort((a, b) => {
           if (!a.dueDate) return 1
@@ -564,10 +709,6 @@ export default {
           if (!b.dueDate) return -1
           return new Date(b.dueDate) - new Date(a.dueDate)
         })
-      } else if (taskSortBy.value === 'status-asc') {
-        return sortedTasks.sort((a, b) => a.status.localeCompare(b.status))
-      } else if (taskSortBy.value === 'status-desc') {
-        return sortedTasks.sort((a, b) => b.status.localeCompare(a.status))
       }
 
       return sortedTasks
@@ -579,14 +720,6 @@ export default {
         taskSortBy.value = 'dueDate-desc'
       } else {
         taskSortBy.value = 'dueDate-asc'
-      }
-    }
-
-    const toggleTaskStatusSort = () => {
-      if (taskSortBy.value === 'status-asc') {
-        taskSortBy.value = 'status-desc'
-      } else {
-        taskSortBy.value = 'status-asc'
       }
     }
 
@@ -657,12 +790,15 @@ export default {
 
     // Project assignment functions
     const filteredProjectsForAssign = computed(() => {
+      // Exclude completed projects from assignment
+      const activeProjects = projects.value.filter(p => p.status !== 'Completed')
+
       if (!projectSearchQuery.value) {
-        return projects.value
+        return activeProjects
       }
 
       const query = projectSearchQuery.value.toLowerCase()
-      return projects.value.filter(project =>
+      return activeProjects.filter(project =>
         project.project_name.toLowerCase().includes(query) ||
         (project.project_description || '').toLowerCase().includes(query) ||
         project.created_by.toLowerCase().includes(query)
@@ -803,7 +939,7 @@ export default {
           created_by_id: p.created_by, // Store the original user_id
           due_date: p.due_date,
           collaborators: p.collaborators || [], // Store collaborators array
-          status: 'Active' // Default status since not in DB yet
+          status: p.status || 'Active' // Use status from API, default to Active if not present
         }))
 
         // Fetch user names for all unique created_by user IDs
@@ -854,6 +990,7 @@ export default {
       allProjects,
       ownedProjects,
       collaboratingProjects,
+      completedProjects,
       isLoading,
       activeTab,
       showProjectModal,
@@ -863,13 +1000,14 @@ export default {
       handleProjectSaved,
       addNewProject, // Expose this method to parent
       handleProjectClick,
+      handleOpenModal, // Expose to handle button click
       // Task assignment related
       allAvailableTasks,
       isLoadingTasks,
       taskSortBy,
+      taskStatusFilter,
       selectedTasksForAssign,
       toggleTaskDueDateSort,
-      toggleTaskStatusSort,
       selectTaskForAssign,
       isTaskSelected,
       formatDate,
@@ -926,9 +1064,7 @@ export default {
 }
 
 :deep(.ant-tabs) {
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: #ffffff;
   border-radius: 12px;
   padding: 4px;
   border: 1px solid rgba(139, 92, 246, 0.1);
@@ -936,6 +1072,7 @@ export default {
 
 :deep(.ant-tabs-nav) {
   margin: 0 !important;
+  background-color: #ffffff;
 }
 
 :deep(.ant-tabs-tab) {
@@ -1002,5 +1139,238 @@ export default {
 :deep(.ant-empty-description) {
   color: #6B7280;
   font-size: 14px;
+}
+
+/* Tabs Container Wrapper - Like Home's timeline wrapper */
+.tabs-container-wrapper {
+  position: relative;
+  margin-bottom: 16px;
+}
+
+/* Tabs Header Row */
+.tabs-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  position: relative;
+  z-index: 2;
+}
+
+.tabs-section {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+/* Background Illustration - Positioned behind tabs at right edge of ant-tabs */
+.tabs-section {
+  position: relative;
+}
+
+.tabs-background-illustration {
+  position: absolute;
+  top: -100%;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.project-illustration-gif {
+  width: 180px;
+  height: 150px;
+  border-radius: 8px;
+  display: block;
+  opacity: 0.9;
+}
+
+/* Ensure tabs content stays above illustration */
+:deep(.ant-tabs) {
+  position: relative;
+  z-index: 1;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.stats-container {
+  display: flex;
+  gap: 8px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(215, 143, 238, 0.2);
+  border-radius: 10px;
+  min-width: 90px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(215, 143, 238, 0.1);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(215, 143, 238, 0.2);
+}
+
+.stat-total {
+  border-color: rgba(107, 114, 128, 0.2);
+}
+
+.stat-active {
+  border-color: rgba(215, 143, 238, 0.4);
+  background: linear-gradient(135deg, rgba(215, 143, 238, 0.08), rgba(167, 139, 250, 0.04));
+}
+
+.stat-completed {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(5, 150, 105, 0.02));
+}
+
+.stat-icon {
+  font-size: 20px;
+  line-height: 1;
+  filter: grayscale(0.2);
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: #1F2937;
+}
+
+.stat-active .stat-value {
+  background: linear-gradient(135deg, #D78FEE, #A78BFA);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-completed .stat-value {
+  background: linear-gradient(135deg, #10B981, #059669);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #6B7280;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+.new-project-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border: none;
+  background: linear-gradient(135deg, #D78FEE, #A78BFA);
+  color: white;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 14px rgba(215, 143, 238, 0.4);
+  white-space: nowrap;
+}
+
+.new-project-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(215, 143, 238, 0.5);
+}
+
+.new-project-btn:active {
+  transform: translateY(0);
+}
+
+.btn-icon {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+/* Responsive Design */
+@media (max-width: 1400px) {
+  .tabs-header-row {
+    flex-wrap: wrap;
+  }
+
+  .tabs-section {
+    flex-basis: 100%;
+  }
+
+  .project-illustration-gif {
+    width: 100px;
+  }
+
+  .header-actions {
+    flex-basis: 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 1024px) {
+  .project-illustration-gif {
+    width: 90px;
+  }
+
+  .tabs-background-illustration {
+    right: -20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .tabs-background-illustration {
+    display: none; /* Hide illustration on mobile */
+  }
+
+  .header-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .stats-container {
+    justify-content: space-between;
+  }
+
+  .stat-card {
+    flex: 1;
+    min-width: 80px;
+  }
+
+  .stat-value {
+    font-size: 16px;
+  }
+
+  .stat-icon {
+    font-size: 18px;
+  }
+
+  .new-project-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>

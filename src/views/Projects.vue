@@ -1,45 +1,9 @@
 <template>
   <div class="projects-page">
-    <!-- Welcome Header -->
-    <div class="project-overview-header">
-      <div class="header-content">
-        <div class="header-left">
-          <h1 class="page-title">Projects Overview</h1>
-          <p class="page-subtitle">Manage and organize your projects efficiently</p>
-        </div>
-
-        <div class="header-right">
-          <div class="stats-container">
-            <div class="stat-card stat-total">
-              <div class="stat-icon">📊</div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.total }}</div>
-                <div class="stat-label">Total Projects</div>
-              </div>
-            </div>
-
-            <div class="stat-card stat-active">
-              <div class="stat-icon">🚀</div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.active }}</div>
-                <div class="stat-label">Active</div>
-              </div>
-            </div>
-
-            <div class="stat-card stat-completed">
-              <div class="stat-icon">✓</div>
-              <div class="stat-info">
-                <div class="stat-value">{{ stats.completed }}</div>
-                <div class="stat-label">Completed</div>
-              </div>
-            </div>
-          </div>
-
-          <button class="new-project-btn" @click="showCreateModal = true">
-            <PlusOutlined class="btn-icon" />
-            <span>New Project</span>
-          </button>
-        </div>
+    <!-- Project Overview Header -->
+    <div class="project-overview-wrapper">
+      <div class="project-overview-header">
+        <h1 class="page-title">Projects Overview</h1>
       </div>
     </div>
 
@@ -47,7 +11,9 @@
     <div class="projects-content">
       <ProjectList
         ref="projectListRef"
+        :stats="stats"
         @create-project="showCreateModal = true"
+        @open-modal="showCreateModal = true"
       />
     </div>
 
@@ -61,7 +27,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import ProjectList from '../components/projects/ProjectList.vue'
@@ -80,7 +46,7 @@ export default {
     const showCreateModal = ref(false)
     const authStore = useAuthStore()
     const projectListRef = ref(null)
-    const { emitProjectCreated } = useProjectEvents()
+    const { emitProjectCreated, onProjectUpdated, onProjectDeleted } = useProjectEvents()
 
     const currentUser = computed(() => {
       const user = localStorage.getItem('user')
@@ -101,7 +67,7 @@ export default {
       // Add to local stats array with status
       projects.value.unshift({
         ...projectData,
-        status: 'Active' // Add status for stats calculation
+        status: projectData.status || 'Active' // Use status from projectData, default to Active
       })
 
       // Also notify ProjectList component to add the project
@@ -115,8 +81,8 @@ export default {
       showCreateModal.value = false
     }
 
-    // Load projects on mount for stats
-    onMounted(async () => {
+    // Function to load projects
+    const loadProjects = async () => {
       try {
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
         const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
@@ -138,7 +104,7 @@ export default {
           created_at: p.created_at,
           created_by: p.created_by, // This is still user_id
           created_by_id: p.created_by, // Store the original user_id
-          status: 'Active' // Default status since not in DB yet
+          status: p.status || 'Active' // Use status from API, default to Active if not present
         }))
 
         // Fetch user names for all unique created_by user IDs
@@ -171,6 +137,26 @@ export default {
         console.error('Failed to load projects for stats:', error)
         projects.value = []
       }
+    }
+
+    // Load projects on mount for stats
+    onMounted(async () => {
+      await loadProjects()
+    })
+
+    // Listen for project updates and reload
+    const cleanupUpdated = onProjectUpdated(() => {
+      loadProjects()
+    })
+
+    const cleanupDeleted = onProjectDeleted(() => {
+      loadProjects()
+    })
+
+    // Cleanup listeners on unmount
+    onUnmounted(() => {
+      cleanupUpdated()
+      cleanupDeleted()
     })
 
     return {
@@ -188,165 +174,26 @@ export default {
 .projects-page {
   max-width: 1600px;
   margin: 0 auto;
-  padding: 32px 24px;
+  padding: 20px;
 }
 
-/* Project Overview Header */
+/* Project Overview Wrapper - Simple wrapper */
+.project-overview-wrapper {
+  margin-bottom: 12px;
+}
+
+/* Project Overview Header - Text on the left */
 .project-overview-header {
-  margin-bottom: 32px;
-  padding: 32px;
-  background: linear-gradient(135deg, rgba(215, 143, 238, 0.12) 0%, rgba(167, 139, 250, 0.08) 100%);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(215, 143, 238, 0.2);
-  border-radius: 20px;
-  box-shadow: 0 8px 24px rgba(215, 143, 238, 0.15);
-}
-
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 32px;
-}
-
-.header-left {
-  flex: 1;
+  margin-bottom: 12px;
+  padding: 24px 32px 24px 24px;
 }
 
 .page-title {
-  margin: 0 0 8px 0;
-  font-size: 32px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #D78FEE, #A78BFA);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: -0.5px;
-}
-
-.page-subtitle {
   margin: 0;
-  font-size: 16px;
-  color: #6B7280;
-  font-weight: 400;
-}
-
-.header-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 16px;
-}
-
-.stats-container {
-  display: flex;
-  gap: 12px;
-}
-
-.stat-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 20px;
-  background: rgba(255, 255, 255, 0.9);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(215, 143, 238, 0.2);
-  border-radius: 14px;
-  min-width: 140px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px rgba(215, 143, 238, 0.1);
-}
-
-.stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 20px rgba(215, 143, 238, 0.2);
-}
-
-.stat-total {
-  border-color: rgba(107, 114, 128, 0.2);
-}
-
-.stat-active {
-  border-color: rgba(215, 143, 238, 0.4);
-  background: linear-gradient(135deg, rgba(215, 143, 238, 0.08), rgba(167, 139, 250, 0.04));
-}
-
-.stat-completed {
-  border-color: rgba(16, 185, 129, 0.3);
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(5, 150, 105, 0.02));
-}
-
-.stat-icon {
-  font-size: 28px;
-  line-height: 1;
-  filter: grayscale(0.2);
-}
-
-.stat-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.stat-value {
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1;
-  color: #1F2937;
-}
-
-.stat-active .stat-value {
-  background: linear-gradient(135deg, #D78FEE, #A78BFA);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.stat-completed .stat-value {
-  background: linear-gradient(135deg, #10B981, #059669);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.stat-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #6B7280;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.new-project-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 28px;
-  border: none;
-  background: linear-gradient(135deg, #D78FEE, #A78BFA);
-  color: white;
-  border-radius: 12px;
-  font-size: 15px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 14px rgba(215, 143, 238, 0.4);
-}
-
-.new-project-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(215, 143, 238, 0.5);
-}
-
-.new-project-btn:active {
-  transform: translateY(0);
-}
-
-.btn-icon {
-  font-size: 18px;
-  font-weight: bold;
+  font-size: 36px;
+  font-weight: 800;
+  color: #000000;
+  text-align: left;
 }
 
 .projects-content {
@@ -354,50 +201,27 @@ export default {
 }
 
 /* Responsive Design */
-@media (max-width: 1200px) {
-  .header-content {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .header-right {
-    align-items: stretch;
-  }
-
-  .stats-container {
-    justify-content: space-between;
-  }
-
-  .new-project-btn {
-    width: 100%;
-    justify-content: center;
-  }
-}
-
 @media (max-width: 768px) {
   .projects-page {
     padding: 20px 16px;
   }
 
   .project-overview-header {
-    padding: 24px 20px;
+    padding: 16px 20px 12px 16px;
   }
 
   .page-title {
-    font-size: 24px;
+    font-size: 24px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .project-overview-header {
+    padding: 12px 16px 8px 12px;
   }
 
-  .page-subtitle {
-    font-size: 14px;
-  }
-
-  .stats-container {
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .stat-card {
-    width: 100%;
+  .page-title {
+    font-size: 20px !important;
   }
 }
 </style>

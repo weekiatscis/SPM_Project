@@ -54,28 +54,44 @@
                 </template>
                 New Task
               </a-button>
+              <a-button @click="showTeamMembersModal = true" class="action-btn">
+                <template #icon>
+                  <TeamOutlined />
+                </template>
+                Team
+              </a-button>
               <a-button @click="handleGenerateReport" class="action-btn">
                 <template #icon>
                   <FileTextOutlined />
                 </template>
                 Report
               </a-button>
-            </div>
 
-            <!-- Management Buttons Row -->
-            <div class="management-buttons-group">
-              <a-button type="primary" @click="handleEdit" class="action-btn">
-                <template #icon>
-                  <EditOutlined />
+              <!-- Three-dot dropdown menu - Only show to project owner -->
+              <a-dropdown v-if="isProjectOwner" :trigger="['click']">
+                <a-button class="action-btn action-menu-btn">
+                  <template #icon>
+                    <MoreOutlined />
+                  </template>
+                </a-button>
+                <template #overlay>
+                  <a-menu>
+                    <a-menu-item key="edit" @click="handleEdit" class="menu-item-edit">
+                      <EditOutlined class="menu-icon-edit" />
+                      <span style="margin-left: 8px;">Edit Project</span>
+                    </a-menu-item>
+                    <a-menu-item key="complete" @click="handleMarkAsCompleted" :disabled="project.status === 'Completed'" class="menu-item-complete">
+                      <CheckCircleOutlined class="menu-icon-complete" />
+                      <span style="margin-left: 8px;">Mark as Completed</span>
+                    </a-menu-item>
+                    <a-menu-divider />
+                    <a-menu-item key="delete" @click="handleDelete" danger>
+                      <DeleteOutlined />
+                      <span style="margin-left: 8px;">Delete Project</span>
+                    </a-menu-item>
+                  </a-menu>
                 </template>
-                Edit
-              </a-button>
-              <a-button danger @click="handleDelete" class="action-btn">
-                <template #icon>
-                  <DeleteOutlined />
-                </template>
-                Delete
-              </a-button>
+              </a-dropdown>
             </div>
           </div>
         </div>
@@ -111,7 +127,7 @@
               </div>
             </div>
             <div class="meta-divider"></div>
-            <div class="meta-item meta-item-clickable" @click="showTeamMembersModal = true">
+            <div class="meta-item">
               <TeamOutlined class="meta-icon" />
               <div class="meta-content">
                 <span class="meta-label">Team Members</span>
@@ -381,7 +397,8 @@ import {
   UnorderedListOutlined,
   MessageOutlined,
   FlagOutlined,
-  PlusOutlined
+  PlusOutlined,
+  MoreOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useProjectEvents } from '../composables/useProjectEvents'
@@ -413,7 +430,8 @@ export default {
     UnorderedListOutlined,
     MessageOutlined,
     FlagOutlined,
-    PlusOutlined
+    PlusOutlined,
+    MoreOutlined
   },
   setup() {
     const route = useRoute()
@@ -442,6 +460,12 @@ export default {
 
     // Create task modal state
     const showCreateTaskModal = ref(false)
+
+    // Check if current user is the project owner
+    const isProjectOwner = computed(() => {
+      if (!project.value || !authStore.user) return false
+      return project.value.created_by_id === authStore.user.user_id
+    })
 
     // Helper functions
     const formatDate = (dateString) => {
@@ -707,7 +731,7 @@ export default {
           created_by: createdByName,
           created_by_id: foundProject.created_by,
           due_date: foundProject.due_date,
-          status: 'Active',
+          status: foundProject.status || 'Active',
           collaborators: foundProject.collaborators || []
         }
 
@@ -750,8 +774,13 @@ export default {
       isDeletingProject.value = true
 
       try {
+        const userId = authStore.user?.user_id
+        if (!userId) {
+          throw new Error('User not authenticated')
+        }
+
         const baseUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
-        const response = await fetch(`${baseUrl}/projects/${project.value.project_id}`, {
+        const response = await fetch(`${baseUrl}/projects/${project.value.project_id}?user_id=${encodeURIComponent(userId)}`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json'
@@ -852,6 +881,117 @@ export default {
       loadProjectTasks()
     }
 
+    const handleMarkAsCompleted = async () => {
+      if (project.value.status === 'Completed') {
+        notification.info({
+          message: 'Project Already Completed',
+          description: 'This project is already marked as completed.',
+          placement: 'topRight',
+          duration: 3
+        })
+        return
+      }
+
+      try {
+        const userId = authStore.user?.user_id
+
+        if (!userId) {
+          throw new Error('User not authenticated')
+        }
+
+        // Step 1: Mark all tasks in the project as completed
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        let completedTasksCount = 0
+        let failedTasksCount = 0
+
+        for (const task of projectTasks.value) {
+          // Only update tasks that are not already completed
+          if (task.status !== 'Completed') {
+            try {
+              const taskResponse = await fetch(`${taskServiceUrl}/tasks/${task.id}`, {
+                method: 'PUT',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  status: 'Completed'
+                })
+              })
+
+              if (taskResponse.ok) {
+                completedTasksCount++
+              } else {
+                failedTasksCount++
+              }
+            } catch (taskError) {
+              console.error(`Failed to complete task ${task.id}:`, taskError)
+              failedTasksCount++
+            }
+          }
+        }
+
+        // Step 2: Mark the project as completed
+        const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+        const response = await fetch(`${projectServiceUrl}/projects/${project.value.project_id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            project_name: project.value.project_name,
+            project_description: project.value.project_description,
+            due_date: project.value.due_date,
+            created_by: project.value.created_by_id,
+            user_id: userId,
+            collaborators: project.value.collaborators || [],
+            status: 'Completed'
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `HTTP ${response.status}`)
+        }
+
+        // Update local project status
+        project.value.status = 'Completed'
+
+        // Build notification message
+        let description = `"${project.value.project_name}" has been marked as completed.`
+        if (completedTasksCount > 0) {
+          description += ` ${completedTasksCount} task(s) were also completed.`
+        }
+        if (failedTasksCount > 0) {
+          description += ` Note: ${failedTasksCount} task(s) could not be updated.`
+        }
+
+        notification.success({
+          message: 'Project Completed',
+          description: description,
+          placement: 'topRight',
+          duration: 4
+        })
+
+        // Emit event to update sidebar
+        emitProjectUpdated({
+          ...project.value,
+          status: 'Completed'
+        })
+
+        // Reload project and tasks to show updated status
+        await loadProject()
+        await loadProjectTasks()
+      } catch (error) {
+        console.error('Failed to mark project as completed:', error)
+        notification.error({
+          message: 'Failed to Complete Project',
+          description: error.message || 'Unable to mark project as completed. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      }
+    }
+
     watch(() => route.params.id, (newId, oldId) => {
       if (newId && newId !== oldId) {
         loadProject()
@@ -876,6 +1016,7 @@ export default {
       isDeletingProject,
       showTeamMembersModal,
       showCreateTaskModal,
+      isProjectOwner,
       handleTeamUpdate,
       handleCreateTask,
       handleTaskCreated,
@@ -901,7 +1042,8 @@ export default {
       handleProjectUpdated,
       handleTaskClick,
       closeTaskDetailModal,
-      handleGenerateReport
+      handleGenerateReport,
+      handleMarkAsCompleted
     }
   }
 }
@@ -1050,6 +1192,29 @@ export default {
   border-color: #059669;
 }
 
+.action-menu-btn {
+  border: 1px solid #d9d9d9;
+  color: #6b7280;
+}
+
+.action-menu-btn:hover {
+  border-color: #667eea;
+  color: #667eea;
+}
+
+/* Dropdown Menu Icon Colors */
+.menu-icon-edit {
+  color: #1890ff !important;
+}
+
+.menu-icon-complete {
+  color: #10b981 !important;
+}
+
+.menu-item-complete[disabled] .menu-icon-complete {
+  color: #d9d9d9 !important;
+}
+
 /* Meta Info and Progress Container */
 .meta-and-progress {
   display: flex;
@@ -1131,11 +1296,13 @@ export default {
   align-items: center;
   gap: 24px;
   flex: 0 0 auto;
+  flex-wrap: wrap;
 }
 
 .stat-item-inline {
   text-align: center;
   min-width: 60px;
+  flex-shrink: 0;
 }
 
 .stat-number-inline {
@@ -1144,6 +1311,7 @@ export default {
   color: #111827;
   line-height: 1;
   margin-bottom: 4px;
+  white-space: nowrap;
 }
 
 .stat-item-inline.completed .stat-number-inline { color: #10b981; }
@@ -1156,6 +1324,7 @@ export default {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .progress-inline {
@@ -1165,6 +1334,7 @@ export default {
   min-width: 140px;
   padding-left: 24px;
   border-left: 1px solid #e5e7eb;
+  flex-shrink: 0;
 }
 
 .progress-percentage-inline {
@@ -1172,6 +1342,7 @@ export default {
   font-weight: 700;
   color: #667eea;
   text-align: right;
+  white-space: nowrap;
 }
 
 .progress-bar-inline {
@@ -1371,8 +1542,8 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 20px;
+  margin-bottom: 16px;
 }
 
 .task-title {
@@ -1381,17 +1552,20 @@ export default {
   color: #111827;
   margin: 0;
   flex: 1;
-  line-height: 1.4;
+  line-height: 1.5;
+  word-break: break-word;
 }
 
 .task-status {
-  padding: 4px 10px;
+  padding: 6px 12px;
   font-size: 11px;
   font-weight: 600;
   border-radius: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 .task-description {
@@ -1540,7 +1714,7 @@ export default {
   }
 
   .stat-item-inline {
-    min-width: 50px;
+    min-width: 55px;
   }
 
   .stat-number-inline {
@@ -1553,6 +1727,32 @@ export default {
 
   .progress-percentage-inline {
     font-size: 20px;
+  }
+}
+
+@media (max-width: 900px) {
+  .progress-stats-inline {
+    gap: 12px;
+  }
+
+  .stat-item-inline {
+    min-width: 45px;
+  }
+
+  .stat-number-inline {
+    font-size: 20px;
+  }
+
+  .stat-label-inline {
+    font-size: 10px;
+  }
+
+  .progress-inline {
+    min-width: 100px;
+  }
+
+  .progress-percentage-inline {
+    font-size: 18px;
   }
 }
 

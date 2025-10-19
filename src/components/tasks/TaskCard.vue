@@ -2,44 +2,78 @@
   <a-card
     :hoverable="true"
     size="small"
-    :style="{ width: '100%' }"
-    @click="$emit('view-details', task)"
+    :style="{ 
+      width: '100%',
+      marginLeft: task.isSubtask ? '32px' : '0',
+      borderLeft: task.isSubtask ? '3px solid #1890ff' : 'none'
+    }"
     :class="[
       'cursor-pointer',
-      { 'urgent-task': isDueWithin24Hours(task.dueDate) && task.status !== 'Completed' }
+      'task-card',
+      { 'urgent-task': isDueWithin24Hours(task.dueDate) && task.status !== 'Completed' },
+      { 'subtask-card': task.isSubtask },
+      { 'parent-task-card': task.isParent }
     ]"
   >
     <a-row justify="space-between" align="middle">
       <a-col :span="16">
         <div class="flex items-center space-x-2">
-          <a-typography-text strong>{{ task.title }}</a-typography-text>
-          <a-tooltip v-if="task.recurrence" :title="getRecurrenceTooltip(task.recurrence)">
+          <!-- Expand/Collapse button for parent tasks with subtasks -->
+          <button 
+            v-if="hasSubtasks && !task.isSubtask"
+            @click.stop="$emit('toggle-expand', task.id)"
+            class="expand-button"
+          >
             <svg 
-               class="w-5 h-5 text-blue-500 flex-shrink-0" 
-               fill="none" 
-               stroke="currentColor" 
-               viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              class="w-4 h-4 text-gray-500" 
+              :class="{ 'rotate-90': isExpanded }"
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
             </svg>
-          </a-tooltip>
+          </button>
+          
+          <div @click="$emit('view-details', task)" class="flex-1">
+            <a-typography-text :strong="!task.isSubtask" :class="{ 'subtask-title': task.isSubtask }">
+              {{ task.title }}
+            </a-typography-text>
+            
+            <!-- Subtask badge -->
+            <a-tag v-if="task.isSubtask" color="blue" size="small" style="font-size: 10px; margin-left: 8px;">
+              Subtask
+            </a-tag>
+            
+            <a-tooltip v-if="task.recurrence" :title="getRecurrenceTooltip(task.recurrence)">
+              <svg 
+                 class="w-5 h-5 text-blue-500 flex-shrink-0 inline-block ml-2" 
+                 fill="none" 
+                 stroke="currentColor" 
+                 viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </a-tooltip>
+          </div>
         </div>
         <br>
-        <a-typography-text type="secondary" style="font-size: 12px;">
-          Due: {{ formatDate(task.dueDate) }}
-        </a-typography-text>
-        <div v-if="task.assignee" style="margin-top: 4px;">
-          <a-typography-text type="secondary" style="font-size: 11px;">
-            Assignee: {{ task.assignee }}
+        <div @click="$emit('view-details', task)">
+          <a-typography-text type="secondary" :style="{ fontSize: task.isSubtask ? '11px' : '12px' }">
+            Due: {{ formatDate(task.dueDate) }}
           </a-typography-text>
-        </div>
-        <div v-if="task.collaborators && task.collaborators.length > 0" style="margin-top: 2px;">
-          <a-typography-text type="secondary" style="font-size: 11px;">
-            Collaborators: {{ task.collaborators.length }}
-          </a-typography-text>
+          <div v-if="task.assignee" style="margin-top: 4px;">
+            <a-typography-text type="secondary" :style="{ fontSize: task.isSubtask ? '10px' : '11px' }">
+              Assignee: {{ task.assignee }}
+            </a-typography-text>
+          </div>
+          <div v-if="task.collaborators && task.collaborators.length > 0" style="margin-top: 2px;">
+            <a-typography-text type="secondary" :style="{ fontSize: task.isSubtask ? '10px' : '11px' }">
+              Collaborators: {{ task.collaborators.length }}
+            </a-typography-text>
+          </div>
         </div>
       </a-col>
       <a-col :span="8" style="text-align: right;">
-        <a-tag :color="getStatusColor(task.status)">
+        <a-tag :color="getStatusColor(task.status)" :size="task.isSubtask ? 'small' : 'default'">
           {{ getStatusText(task.status) }}
         </a-tag>
       </a-col>
@@ -54,9 +88,17 @@ export default {
     task: {
       type: Object,
       required: true
+    },
+    isExpanded: {
+      type: Boolean,
+      default: false
+    },
+    hasSubtasks: {
+      type: Boolean,
+      default: false
     }
   },
-  emits: ['view-details'],
+  emits: ['view-details', 'toggle-expand'],
   setup(props, { emit }) {
     const formatDate = (dateString) => {
       // Parse the date string and set to midnight local time to avoid timezone issues
@@ -142,6 +184,49 @@ export default {
   border: 1px solid #ff4d4f !important;
 }
 
+/* Expand button */
+.expand-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.expand-button:hover {
+  background-color: #f0f0f0;
+}
+
+.expand-button svg {
+  transition: transform 0.2s ease;
+}
+
+.expand-button svg.rotate-90 {
+  transform: rotate(90deg);
+}
+
+/* Subtask styling */
+.subtask-card {
+  background-color: #f0f5ff;
+  border-left-width: 3px !important;
+  position: relative;
+}
+
+.subtask-title {
+  font-size: 14px;
+  color: #595959;
+}
+
+/* Parent task styling */
+.parent-task-card {
+  font-weight: 500;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
 /* Add hover effect for recurring icon */
 .w-5.h-5.text-blue-500 {
   transition: transform 0.2s ease;
@@ -149,5 +234,19 @@ export default {
 
 .w-5.h-5.text-blue-500:hover {
   transform: rotate(180deg);
+}
+
+/* Enhanced card transitions */
+.task-card {
+  transition: all 0.2s ease-in-out;
+}
+
+.task-card:hover {
+  transform: translateY(-2px);
+}
+
+.subtask-card:hover {
+  transform: translateX(2px) translateY(-1px);
+  background-color: #e6f7ff;
 }
 </style>

@@ -72,31 +72,16 @@
 
               <!-- Actions (Only visible if current user is owner) -->
               <div v-if="isCurrentUserOwner" class="member-actions">
-                <a-dropdown :trigger="['click']">
-                  <a-button type="text" size="small">
-                    <MoreOutlined />
-                  </a-button>
-                  <template #overlay>
-                    <a-menu>
-                      <a-menu-item
-                        key="transfer"
-                        @click="showTransferOwnershipModal(collaborator)"
-                      >
-                        <SwapOutlined />
-                        Transfer Ownership
-                      </a-menu-item>
-                      <a-menu-item
-                        key="remove"
-                        danger
-                        @click="showRemoveCollaboratorModal(collaborator)"
-                        :disabled="collaboratorsList.length === 1"
-                      >
-                        <UserDeleteOutlined />
-                        Remove from Project
-                      </a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
+                <a-button
+                  type="text"
+                  size="small"
+                  danger
+                  @click="showRemoveCollaboratorModal(collaborator)"
+                  :disabled="collaboratorsList.length === 1"
+                >
+                  <UserDeleteOutlined />
+                  Remove
+                </a-button>
               </div>
             </div>
           </div>
@@ -130,39 +115,6 @@
       </a-button>
     </template>
   </a-modal>
-
-  <!-- Transfer Ownership Confirmation Modal -->
-  <a-modal
-    v-model:open="showTransferModal"
-    title="Transfer Project Ownership"
-    width="500px"
-    :maskClosable="false"
-    @ok="confirmTransferOwnership"
-    @cancel="cancelTransfer"
-  >
-    <div class="confirmation-content">
-      <ExclamationCircleOutlined class="warning-icon transfer" />
-      <p class="confirm-title">
-        Transfer ownership to <strong>{{ selectedCollaborator?.name }}</strong>?
-      </p>
-      <p class="confirm-description">
-        You will become a collaborator and <strong>{{ selectedCollaborator?.name }}</strong> will become the project owner. They will have full control over the project, including the ability to remove you.
-      </p>
-      <a-alert
-        message="Important"
-        description="This action cannot be undone. Make sure you trust this person with project ownership."
-        type="warning"
-        show-icon
-        style="margin-top: 16px;"
-      />
-    </div>
-    <template #footer>
-      <a-button @click="cancelTransfer">Cancel</a-button>
-      <a-button type="primary" @click="confirmTransferOwnership" :loading="isTransferring">
-        Transfer Ownership
-      </a-button>
-    </template>
-  </a-modal>
 </template>
 
 <script>
@@ -172,9 +124,7 @@ import {
   UserOutlined,
   TeamOutlined,
   CrownOutlined,
-  MoreOutlined,
   UserDeleteOutlined,
-  SwapOutlined,
   ExclamationCircleOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../../stores/auth'
@@ -186,9 +136,7 @@ export default {
     UserOutlined,
     TeamOutlined,
     CrownOutlined,
-    MoreOutlined,
     UserDeleteOutlined,
-    SwapOutlined,
     ExclamationCircleOutlined
   },
   props: {
@@ -215,10 +163,6 @@ export default {
     const showRemoveModal = ref(false)
     const selectedCollaborator = ref(null)
     const isRemoving = ref(false)
-
-    // Transfer ownership state
-    const showTransferModal = ref(false)
-    const isTransferring = ref(false)
 
     // Check if current user is the project owner
     const isCurrentUserOwner = computed(() => {
@@ -312,13 +256,18 @@ export default {
           id => id !== selectedCollaborator.value.user_id
         )
 
-        // Call API to update project
+        // Call API to update project - include all required fields
         const response = await fetch(`${projectServiceUrl}/projects/${props.project.project_id}`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
+            project_name: props.project.project_name,
+            project_description: props.project.project_description || '',
+            due_date: props.project.due_date,
+            created_by: props.project.created_by_id,
+            user_id: authStore.user?.user_id,
             collaborators: updatedCollaborators
           })
         })
@@ -362,85 +311,6 @@ export default {
       }
     }
 
-    // Show transfer ownership modal
-    const showTransferOwnershipModal = (collaborator) => {
-      selectedCollaborator.value = collaborator
-      showTransferModal.value = true
-    }
-
-    // Cancel transfer
-    const cancelTransfer = () => {
-      showTransferModal.value = false
-      selectedCollaborator.value = null
-    }
-
-    // Confirm transfer ownership
-    const confirmTransferOwnership = async () => {
-      if (!selectedCollaborator.value) return
-
-      isTransferring.value = true
-
-      try {
-        const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
-
-        // Remove new owner from collaborators and add current owner to collaborators
-        const updatedCollaborators = props.project.collaborators
-          .filter(id => id !== selectedCollaborator.value.user_id)
-          .concat([props.project.created_by_id])
-
-        // Call API to update project with new owner
-        const response = await fetch(`${projectServiceUrl}/projects/${props.project.project_id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            created_by: selectedCollaborator.value.user_id,
-            collaborators: updatedCollaborators
-          })
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || `HTTP ${response.status}`)
-        }
-
-        notification.success({
-          message: 'Ownership Transferred',
-          description: `${selectedCollaborator.value.name} is now the project owner.`,
-          placement: 'topRight',
-          duration: 3
-        })
-
-        // Emit update event
-        const updatedProject = {
-          ...props.project,
-          created_by_id: selectedCollaborator.value.user_id,
-          created_by: selectedCollaborator.value.name,
-          collaborators: updatedCollaborators
-        }
-        emitProjectUpdated(updatedProject)
-        emit('update', updatedProject)
-
-        // Reload team members
-        await loadTeamMembers()
-
-        // Close modals
-        showTransferModal.value = false
-        selectedCollaborator.value = null
-      } catch (error) {
-        console.error('Failed to transfer ownership:', error)
-        notification.error({
-          message: 'Failed to Transfer Ownership',
-          description: error.message || 'An error occurred while transferring ownership.',
-          placement: 'topRight',
-          duration: 4
-        })
-      } finally {
-        isTransferring.value = false
-      }
-    }
-
     const handleClose = () => {
       modalVisible.value = false
       emit('close')
@@ -453,16 +323,11 @@ export default {
       collaboratorsList,
       isCurrentUserOwner,
       showRemoveModal,
-      showTransferModal,
       selectedCollaborator,
       isRemoving,
-      isTransferring,
       showRemoveCollaboratorModal,
-      showTransferOwnershipModal,
       cancelRemove,
-      cancelTransfer,
       confirmRemoveCollaborator,
-      confirmTransferOwnership,
       handleClose
     }
   }

@@ -4,7 +4,10 @@
       "Bash(python:*)",
       "Bash(docker ps:*)",
       "Bash(docker-compose up:*)",
-      "Bash(docker logs:*)"
+      "Bash(docker logs:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(docker restart:*)"
     ],
     "deny": [],
     "ask": []

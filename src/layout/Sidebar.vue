@@ -278,7 +278,10 @@ export default {
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
         const payload = await response.json()
-        userProjects.value = Array.isArray(payload?.projects) ? payload.projects : []
+        const allProjects = Array.isArray(payload?.projects) ? payload.projects : []
+
+        // Filter to only show Active projects (exclude Completed)
+        userProjects.value = allProjects.filter(project => project.status !== 'Completed')
       } catch (error) {
         console.error('Failed to load user projects:', error)
         userProjects.value = []

@@ -13,8 +13,8 @@
           <a-select-option value="Unassigned">
             <a-badge status="default" text="Unassigned" />
           </a-select-option>
-          <a-select-option value="On Going">
-            <a-badge status="processing" text="On Going" />
+          <a-select-option value="Ongoing">
+            <a-badge status="processing" text="Ongoing" />
           </a-select-option>
           <a-select-option value="Under Review">
             <a-badge status="warning" text="Under Review" />
@@ -154,13 +154,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { 
   SearchOutlined, 
   ExclamationCircleOutlined,
   ClockCircleOutlined,
   FireOutlined
 } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
 
 const props = defineProps({
   filters: {
@@ -221,7 +222,7 @@ const resetFilters = () => {
   emit('reset')
 }
 
-const applyQuickFilter = (filterType) => {
+const applyQuickFilter = async (filterType) => {
   // Reset filters first
   localFilters.value = {
     status: null,
@@ -236,32 +237,21 @@ const applyQuickFilter = (filterType) => {
       {
         // For overdue: tasks due before today AND not completed
         // Set date range from far past to yesterday (end of day)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0) // Start of today
-        
-        const yesterday = new Date(today)
-        yesterday.setDate(yesterday.getDate() - 1)
-        yesterday.setHours(23, 59, 59, 999) // End of yesterday
+        const today = dayjs().startOf('day')
+        const yesterday = dayjs().subtract(1, 'day').endOf('day')
         
         localFilters.value.dateRange = [
-          new Date('2020-01-01'), // Far past date
+          dayjs('2020-01-01'), // Far past date
           yesterday
         ]
-        // Exclude completed tasks - use the exact status values from your system
-        // Note: Adjust these status values to match your actual task statuses
-        localFilters.value.status = null // Don't filter by single status
       }
       break
       
     case 'thisWeek':
       {
         // Set date range to next 7 days from today
-        const today = new Date()
-        today.setHours(0, 0, 0, 0) // Start of today
-        
-        const oneWeekFromNow = new Date(today)
-        oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7)
-        oneWeekFromNow.setHours(23, 59, 59, 999) // End of 7th day
+        const today = dayjs().startOf('day')
+        const oneWeekFromNow = dayjs().add(7, 'day').endOf('day')
         
         localFilters.value.dateRange = [
           today,
@@ -275,7 +265,13 @@ const applyQuickFilter = (filterType) => {
       break
   }
   
+  // Emit the update first
   emit('update:filters', localFilters.value)
+  
+  // Wait for Vue to process the reactivity update
+  await nextTick()
+  
+  // Then emit the apply action
   emit('apply', localFilters.value)
 }
 </script>

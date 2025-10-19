@@ -6,7 +6,7 @@
 
       <!-- Modal panel -->
       <div
-        class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+        class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
         <!-- Header -->
         <div class="bg-white px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">
@@ -22,7 +22,9 @@
         </div>
 
         <!-- Form -->
-        <form @submit.prevent="saveTask" class="bg-white px-6 py-4 space-y-4">
+        <form @submit.prevent="saveTask" class="bg-white px-6 py-4 space-y-5">
+          
+          <!-- ========== SECTION 1: TASK BASICS ========== -->
           <!-- Task Type Toggle -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -87,199 +89,302 @@
               placeholder="Enter task description"></textarea>
           </div>
 
-          <!-- Due Date -->
-          <div>
-            <label for="dueDate" class="block text-sm font-medium text-gray-700 mb-1">
-              Due Date *
-            </label>
-            <input id="dueDate" v-model="form.dueDate" type="date" required class="input-field"
-              :class="{ 'border-red-500': errors.dueDate }" :min="minDate" />
-            <div v-if="errors.dueDate" class="mt-1 text-sm text-red-600">
-              {{ errors.dueDate }}
-            </div>
-            <div v-if="daysUntilDue !== null" class="mt-1 text-sm" :class="dueDateColorClass">
-              {{ dueDateMessage }}
-            </div>
-          </div>
+          <!-- ========== SECTION 2: SCHEDULING (2-column layout) ========== -->
+          <div class="border-t pt-5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Due Date -->
+              <div>
+                <label for="dueDate" class="block text-sm font-medium text-gray-700 mb-1">
+                  Due Date *
+                </label>
+                <input id="dueDate" v-model="form.dueDate" type="date" required class="input-field"
+                  :class="{ 'border-red-500': errors.dueDate }" :min="minDate" />
+                <div v-if="errors.dueDate" class="mt-1 text-sm text-red-600">
+                  {{ errors.dueDate }}
+                </div>
+                <div v-if="daysUntilDue !== null" class="mt-1 text-sm" :class="dueDateColorClass">
+                  {{ dueDateMessage }}
+                </div>
+              </div>
 
-          <!-- Status -->
-          <div>
-            <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
-              Status
-            </label>
-            <select id="status" v-model="form.status" class="input-field">
-              <!-- Staff users cannot create unassigned tasks -->
-              <option v-if="!isStaffRole" value="Unassigned">Unassigned</option>
-              <option value="Ongoing">Ongoing</option>
-              <option value="Under Review">Under Review</option>
-              <option value="Completed">Completed</option>
-            </select>
-            <div v-if="isStaffRole" class="mt-1 text-sm text-gray-600">
-              As a Staff member, tasks will be automatically assigned to you.
-            </div>
-          </div>
-
-          <!-- Priority -->
-          <div>
-            <label for="priority" class="block text-sm font-medium text-gray-700 mb-1">
-              Priority
-            </label>
-            <select id="priority" v-model="form.priority" class="input-field">
-              <option value="1">High</option>
-              <option value="2">Medium</option>
-              <option value="3">Low</option>
-              <option value="4">Lowest</option>
-            </select>
-          </div>
-
-          <!-- Assignee -->
-          <div>
-            <label for="assignee" class="block text-sm font-medium text-gray-700 mb-1">
-              Assignee *
-            </label>
-
-            <!-- If user is Staff, show read-only field with their name -->
-            <div v-if="isStaffRole" class="input-field bg-gray-50 cursor-not-allowed">
-              {{ authStore.user?.name || 'Current User' }} (You)
-            </div>
-
-            <!-- If user is Manager/Director, show dropdown with subordinates -->
-            <select v-else-if="canAssignToOthers" id="assignee" v-model="form.assigneeId" required class="input-field"
-              :class="{ 'border-red-500': errors.assigneeId }">
-              <option value="">Select assignee...</option>
-              <option v-for="subordinate in subordinates" :key="subordinate.user_id" :value="subordinate.user_id">
-                {{ subordinate.name }} ({{ subordinate.role }})
-              </option>
-            </select>
-
-            <!-- If no subordinates available, fallback to current user -->
-            <div v-else class="input-field bg-gray-50 cursor-not-allowed">
-              {{ authStore.user?.name || 'Current User' }} (You)
-            </div>
-
-            <div v-if="errors.assigneeId" class="mt-1 text-sm text-red-600">
-              {{ errors.assigneeId }}
-            </div>
-
-            <div v-if="isLoadingSubordinates" class="mt-1 text-sm text-gray-600">
-              Loading team members...
-            </div>
-
-            <div v-if="canAssignToOthers && subordinates.length === 0 && !isLoadingSubordinates"
-              class="mt-1 text-sm text-gray-600">
-              No team members found. Task will be assigned to you.
-            </div>
-          </div>
-
-          <!-- Collaborators -->
-          <div>
-            <label for="collaborators" class="block text-sm font-medium text-gray-700 mb-1">
-              Collaborators
-            </label>
-            <div class="relative">
-              <select id="collaborators" v-model="selectedCollaborator" @change="addCollaborator" class="input-field"
-                :disabled="isLoadingDepartmentMembers">
-                <option value="">Add a collaborator...</option>
-                <option v-for="member in availableDepartmentMembers" :key="member.user_id" :value="member.user_id">
-                  {{ member.name }} ({{ member.role }})
-                </option>
-              </select>
-            </div>
-
-            <!-- Selected Collaborators -->
-            <div v-if="form.collaborators.length > 0" class="mt-2 space-y-1">
-              <div v-for="collaborator in selectedCollaborators" :key="collaborator.user_id"
-                class="flex items-center justify-between bg-blue-50 px-3 py-2 rounded-md">
-                <span class="text-sm font-medium text-blue-700">
-                  {{ collaborator.name }} ({{ collaborator.role }})
-                </span>
-                <button type="button" @click="removeCollaborator(collaborator.user_id)"
-                  class="text-blue-400 hover:text-blue-600">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              <!-- Status -->
+              <div>
+                <label for="status" class="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select id="status" v-model="form.status" class="input-field">
+                  <!-- Staff users cannot create unassigned tasks -->
+                  <option v-if="!isStaffRole" value="Unassigned">Unassigned</option>
+                  <option value="Ongoing">Ongoing</option>
+                  <option value="Under Review">Under Review</option>
+                  <option value="Completed">Completed</option>
+                </select>
               </div>
             </div>
 
-            <div v-if="isLoadingDepartmentMembers" class="mt-1 text-sm text-gray-600">
-              Loading department members...
+            <!-- Priority -->
+            <div class="mt-4">
+              <div class="flex items-center justify-between mb-3">
+                <label for="priority" class="block text-sm font-medium text-gray-700">
+                  Priority
+                </label>
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-medium text-gray-500">{{ getPriorityLabel(form.priority) }}</span>
+                  <span 
+                    class="inline-flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold text-white"
+                    :class="getPriorityBadgeColor(form.priority)">
+                    {{ form.priority }}
+                  </span>
+                </div>
+              </div>
+              <div class="relative">
+                <input 
+                  id="priority" 
+                  v-model.number="form.priority" 
+                  type="range" 
+                  min="1" 
+                  max="10" 
+                  step="1"
+                  class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider-priority"
+                  :style="getSliderStyle(form.priority)"
+                />
+                <div class="flex justify-between mt-1 text-xs text-gray-400">
+                  <span>Low</span>
+                  <span>Medium</span>
+                  <span>High</span>
+                  <span>Critical</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== SECTION 3: ASSIGNMENT & COLLABORATION ========== -->
+          <div class="border-t pt-5 space-y-4">
+            <h4 class="text-sm font-semibold text-gray-900">Assignment & Collaboration</h4>
+            
+            <!-- Assignee -->
+            <div>
+              <label for="assignee" class="block text-sm font-medium text-gray-700 mb-1">
+                Assignee *
+              </label>
+
+              <!-- If user is Staff, show read-only field with their name -->
+              <div v-if="isStaffRole" class="input-field bg-gray-50 cursor-not-allowed">
+                {{ authStore.user?.name || 'Current User' }} (You)
+              </div>
+
+              <!-- If user is Manager/Director, show dropdown with subordinates -->
+              <select v-else-if="canAssignToOthers" id="assignee" v-model="form.assigneeId" class="input-field"
+                :class="{ 'border-red-500': errors.assigneeId }">
+                <option v-for="subordinate in subordinates" :key="subordinate.user_id" :value="subordinate.user_id">
+                  {{ subordinate.name }}{{ subordinate.isSelf ? ' (You)' : '' }} - {{ subordinate.role }}
+                </option>
+              </select>
+
+              <!-- If no subordinates available, fallback to current user -->
+              <div v-else class="input-field bg-gray-50 cursor-not-allowed">
+                {{ authStore.user?.name || 'Current User' }} (You)
+              </div>
+
+              <div v-if="errors.assigneeId" class="mt-1 text-sm text-red-600">
+                {{ errors.assigneeId }}
+              </div>
+
+              <div v-if="isStaffRole" class="mt-1 text-xs text-gray-600">
+                Tasks are automatically assigned to you as a Staff member
+              </div>
+
+              <div v-if="isLoadingSubordinates" class="mt-1 text-sm text-gray-600">
+                Loading team members...
+              </div>
+
+              <div v-if="canAssignToOthers && subordinates.length === 0 && !isLoadingSubordinates"
+                class="mt-1 text-sm text-gray-600">
+                No team members found. Task will be assigned to you.
+              </div>
             </div>
 
-            <div class="mt-1 text-sm text-gray-500">
-              Add members from your department to collaborate on this task
-              <!-- Reminder Customization -->
-              <div v-if="form.dueDate" class="border-t pt-4 mt-4">
-                <!-- Notification Channels -->
-                <div class="mb-4">
-                  <label class="block text-sm font-medium text-gray-700 mb-2">
-                    Send notifications via:
-                  </label>
-                  <div class="flex gap-4">
-                    <label class="flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        v-model="form.inAppEnabled"
-                        class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span class="text-sm text-gray-700">In-App Notifications</span>
-                    </label>
-                    <label class="flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        v-model="form.emailEnabled"
-                        class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <span class="text-sm text-gray-700">Email Notifications</span>
-                    </label>
-                  </div>
-                  <div v-if="!form.inAppEnabled && !form.emailEnabled" class="mt-2 text-xs text-red-600">
-                    ⚠️ You won't receive any notifications for this task
-                  </div>
+            <!-- Collaborators -->
+            <div>
+              <label for="collaborators" class="block text-sm font-medium text-gray-700 mb-1">
+                Collaborators
+                <span v-if="form.collaborators.length > 0" class="ml-2 text-xs text-blue-600 font-normal">
+                  ({{ form.collaborators.length }} selected)
+                </span>
+              </label>
+              <div class="relative">
+                <select id="collaborators" v-model="selectedCollaborator" @change="addCollaborator" class="input-field"
+                  :disabled="isLoadingDepartmentMembers">
+                  <option value="">Add a collaborator...</option>
+                  <option v-for="member in availableDepartmentMembers" :key="member.user_id" :value="member.user_id">
+                    {{ member.name }} ({{ member.role }})
+                  </option>
+                </select>
+              </div>
+
+              <!-- Selected Collaborators -->
+              <div v-if="form.collaborators.length > 0" class="mt-2 space-y-1">
+                <div v-for="collaborator in selectedCollaborators" :key="collaborator.user_id"
+                  class="flex items-center justify-between bg-blue-50 px-3 py-2 rounded-md">
+                  <span class="text-sm font-medium text-blue-700">
+                    {{ collaborator.name }} ({{ collaborator.role }})
+                  </span>
+                  <button type="button" @click="removeCollaborator(collaborator.user_id)"
+                    class="text-blue-400 hover:text-blue-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div v-if="isLoadingDepartmentMembers" class="mt-1 text-sm text-gray-600">
+                Loading department members...
+              </div>
+
+              <div v-else class="mt-1 text-xs text-gray-500">
+                Add members from your department to collaborate on this task
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== SECTION 4: RECURRING TASK (for non-subtasks) ========== -->
+          <div v-if="!form.isSubtask" class="border-t pt-5">
+            <h4 class="text-sm font-semibold text-gray-900 mb-3">Recurring Task</h4>
+            
+            <!-- Show read-only info when editing an existing task -->
+            <div v-if="task?.id">
+              <div class="input-field bg-gray-50 cursor-not-allowed">
+                {{ form.recurrence ? getRecurrenceLabel(form.recurrence) : 'Not a recurring task' }}
+              </div>
+              <div v-if="form.recurrence" class="mt-2 text-xs text-gray-600 bg-blue-50 p-2 rounded">
+                <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                  <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                </svg>
+                This is a recurring task. When completed, a new instance will be automatically created with the next due date.
+              </div>
+              <div v-else class="mt-2 text-xs text-gray-500">
+                Recurrence cannot be changed after task creation.
+              </div>
+            </div>
+            
+            <!-- Show editable controls when creating a new task -->
+            <div v-else>
+              <div class="flex items-center mb-3">
+                <input 
+                  type="checkbox" 
+                  id="isRecurring" 
+                  v-model="isRecurringEnabled"
+                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label for="isRecurring" class="ml-2 text-sm text-gray-700">
+                  Make this a recurring task
+                </label>
+              </div>
+              
+              <div v-if="isRecurringEnabled" class="mt-3">
+                <label for="recurrence" class="block text-sm font-medium text-gray-700 mb-1">
+                  Repeat Frequency *
+                </label>
+                <select 
+                  id="recurrence" 
+                  v-model="form.recurrence" 
+                  required
+                  class="input-field"
+                >
+                  <option value="">Select frequency...</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Biweekly (Every 2 weeks)</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                
+                <div class="mt-2 text-xs text-gray-600 bg-blue-50 p-2 rounded">
+                  <svg class="w-4 h-4 inline mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
+                  </svg>
+                  When this task is completed, a new instance will be automatically created with the next due date based on the selected frequency.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== SECTION 5: NOTIFICATIONS & REMINDERS ========== -->
+          <div v-if="form.dueDate" class="border-t pt-5">
+            <h4 class="text-sm font-semibold text-gray-900 mb-3">Notifications & Reminders</h4>
+            
+            <!-- Notification Channels -->
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Notification Channels
+              </label>
+              <div class="flex gap-4">
+                <label class="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    v-model="form.inAppEnabled"
+                    class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span class="text-sm text-gray-700">In-App</span>
+                </label>
+                <label class="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    v-model="form.emailEnabled"
+                    class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span class="text-sm text-gray-700">Email</span>
+                </label>
+              </div>
+              <div v-if="!form.inAppEnabled && !form.emailEnabled" class="mt-2 text-xs text-red-600">
+                ⚠️ You won't receive any notifications for this task
+              </div>
+            </div>
+
+            <!-- Reminder Schedule -->
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="block text-sm font-medium text-gray-700">
+                  Reminder Schedule
+                </label>
+                <button type="button" @click="toggleReminderCustomization"
+                  class="text-xs text-blue-600 hover:text-blue-800 font-medium">
+                  {{ showReminderCustomization ? '↓ Use Default' : '↑ Customize' }}
+                </button>
+              </div>
+
+              <div v-if="!showReminderCustomization" class="text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded">
+                Default: 7, 3, and 1 day(s) before due date
+              </div>
+
+              <div v-else class="space-y-3">
+                <div class="text-xs text-gray-600">
+                  Select reminder days (up to 5, max 10 days before):
                 </div>
 
-                <div class="flex items-center justify-between mb-2">
-                  <label class="block text-sm font-medium text-gray-700">
-                    Reminder Schedule
-                  </label>
-                  <button type="button" @click="toggleReminderCustomization"
-                    class="text-sm text-blue-600 hover:text-blue-800">
-                    {{ showReminderCustomization ? 'Use Default' : 'Customize' }}
+                <div class="grid grid-cols-5 gap-2">
+                  <button v-for="day in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]" :key="day" type="button"
+                    @click="toggleReminderDay(day)"
+                    :disabled="!canAddMoreReminders && !form.reminderDays.includes(day)"
+                    class="px-3 py-2 text-sm rounded border transition-colors"
+                    :class="form.reminderDays.includes(day)
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed'">
+                    {{ day }}d
                   </button>
                 </div>
 
-                <div v-if="!showReminderCustomization" class="text-sm text-gray-600">
-                  You'll be reminded 7, 3, and 1 day(s) before the due date
+                <div class="text-xs text-gray-500">
+                  Selected: {{form.reminderDays.length > 0 ? form.reminderDays.sort((a, b) => b - a).join(', ') + ' day(s) before' : 'None' }}
                 </div>
 
-                <div v-else class="space-y-3">
-                  <div class="text-sm text-gray-600 mb-2">
-                    Select when you want to receive reminders (up to 5, max 10 days before):
-                  </div>
-
-                  <div class="grid grid-cols-5 gap-2">
-                    <button v-for="day in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]" :key="day" type="button"
-                      @click="toggleReminderDay(day)"
-                      :disabled="!canAddMoreReminders && !form.reminderDays.includes(day)"
-                      class="px-3 py-2 text-sm rounded border transition-colors"
-                      :class="form.reminderDays.includes(day)
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-white text-gray-700 border-gray-300 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed'">
-                      {{ day }}d
-                    </button>
-                  </div>
-
-                  <div class="text-xs text-gray-500">
-                    Selected: {{form.reminderDays.length > 0 ? form.reminderDays.sort((a, b) => b - a).join(', ') + ' day(s) before' : 'None' }}
-                  </div>
-
-                  <div v-if="form.reminderDays.length === 0" class="text-xs text-red-600">
-                    ⚠️ No reminders selected. You won't receive any notifications.
-                  </div>
+                <div v-if="form.reminderDays.length === 0" class="text-xs text-red-600">
+                  ⚠️ No reminders selected. You won't receive any notifications.
                 </div>
               </div>
             </div>
           </div>
+
         </form>
 
         <!-- Footer -->
@@ -288,7 +393,7 @@
             Cancel
           </button>
           <button @click="saveTask" :disabled="isLoading"
-            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed">
+            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed submittaskcreate">
             {{ isLoading ? 'Creating...' : (task?.id ? 'Update Task' : (form.isSubtask ? 'Create Subtask' : 'Create Task')) }}
           </button>
         </div>
@@ -323,14 +428,15 @@ export default {
       description: '',
       dueDate: '',
       status: 'Unassigned',
-      priority: '2',
+      priority: 5,
       assigneeId: '',
       collaborators: [],
       isSubtask: false,
       parentTaskId: '',
       reminderDays: [7, 3, 1],  // Default reminder days
       emailEnabled: true,  // Default: email notifications enabled
-      inAppEnabled: true  // Default: in-app notifications enabled
+      inAppEnabled: true,  // Default: in-app notifications enabled
+      recurrence: ''  // Recurrence pattern: daily, weekly, biweekly, monthly, quarterly, yearly
     })
 
     const errors = ref({
@@ -348,6 +454,7 @@ export default {
     const departmentMembers = ref([])
     const userTasks = ref([])
     const selectedCollaborator = ref('')
+    const isRecurringEnabled = ref(false)
 
     // Check if current user is Staff role
     const isStaffRole = computed(() => {
@@ -407,17 +514,11 @@ export default {
       })
     })
 
-    // Get details of selected collaborators (excluding the assignee)
+    // Get details of selected collaborators
     const selectedCollaborators = computed(() => {
-      return form.value.collaborators
-        .filter(collaboratorId => {
-          // Don't show the assignee in the collaborators list
-          return collaboratorId !== form.value.assigneeId
-        })
-        .map(collaboratorId => {
-          return departmentMembers.value.find(member => member.user_id === collaboratorId)
-        })
-        .filter(Boolean)
+      return form.value.collaborators.map(collaboratorId => {
+        return departmentMembers.value.find(member => member.user_id === collaboratorId)
+      }).filter(Boolean)
     })
 
     // Fetch subordinates for Manager/Director users
@@ -433,7 +534,19 @@ export default {
 
         if (response.ok) {
           const data = await response.json()
-          subordinates.value = data.subordinates || []
+          const subordinatesList = data.subordinates || []
+
+          // Add current user (Manager/Director/HR) to the list so they can assign to themselves
+          const currentUser = {
+            user_id: authStore.user.user_id,
+            name: authStore.user.name,
+            role: authStore.user.role,
+            department: authStore.user.department,
+            isSelf: true  // Flag to identify it's the current user
+          }
+
+          // Put current user at the top of the list
+          subordinates.value = [currentUser, ...subordinatesList]
         } else {
           console.error('Failed to fetch subordinates:', response.status)
           subordinates.value = []
@@ -584,20 +697,27 @@ export default {
     // Watch for task changes to populate form
     watch(() => props.task, async (newTask) => {
       if (newTask) {
+        // Set recurring checkbox state FIRST before setting form values
+        // This prevents the watcher from clearing the recurrence value
+        isRecurringEnabled.value = !!newTask.recurrence
+
         form.value = {
           title: newTask.title || '',
           description: newTask.description || '',
           dueDate: newTask.dueDate ? new Date(newTask.dueDate).toISOString().split('T')[0] : '',
           status: newTask.status || (isStaffRole.value ? 'Ongoing' : 'Unassigned'),
-          priority: newTask.priority || 'Medium',
+          priority: newTask.priority || 5,
           assigneeId: newTask.owner_id || '',
           collaborators: newTask.collaborators || [],
           isSubtask: !!newTask.parent_task_id,
           parentTaskId: newTask.parent_task_id || '',
           reminderDays: [7, 3, 1],  // Will be updated by fetchReminderDays
           emailEnabled: true,  // Will be updated by fetchNotificationPreferences
-          inAppEnabled: true   // Will be updated by fetchNotificationPreferences
+          inAppEnabled: true,  // Will be updated by fetchNotificationPreferences
+          recurrence: newTask.recurrence || ''
         }
+
+        console.log('Loaded task for editing - recurrence:', newTask.recurrence, 'isRecurringEnabled:', isRecurringEnabled.value)
 
         // Fetch notification preferences and reminder days for existing task
         if (newTask.id) {
@@ -606,21 +726,23 @@ export default {
         }
       } else {
         // Reset form for new task
-        const defaultAssigneeId = isStaffRole.value ? authStore.user?.user_id || '' : ''
+        // Default assignee: always set to current user (Staff, Manager, Director, HR)
+        const defaultAssigneeId = authStore.user?.user_id || ''
 
         form.value = {
           title: '',
           description: '',
           dueDate: '',
           status: isStaffRole.value ? 'Ongoing' : 'Unassigned',
-          priority: '2',
+          priority: 5,
           assigneeId: defaultAssigneeId,
           collaborators: [],
           isSubtask: false,
           parentTaskId: '',
           reminderDays: [7, 3, 1],
           emailEnabled: true,
-          inAppEnabled: true
+          inAppEnabled: true,
+          recurrence: ''
         }
         // Reset errors
         errors.value = {
@@ -630,6 +752,7 @@ export default {
           parentTaskId: ''
         }
         showReminderCustomization.value = false
+        isRecurringEnabled.value = false
       }
     }, { immediate: true })
 
@@ -649,6 +772,13 @@ export default {
       if (!isSubtask) {
         form.value.parentTaskId = ''
         errors.value.parentTaskId = ''
+      }
+    })
+
+    // Watch for recurring toggle to clear recurrence
+    watch(isRecurringEnabled, (enabled) => {
+      if (!enabled) {
+        form.value.recurrence = ''
       }
     })
 
@@ -697,10 +827,10 @@ export default {
         // Staff always assigns to themselves
         finalAssigneeId = authStore.user?.user_id || ''
       } else if (canAssignToOthers.value) {
-        // Manager/Director must select an assignee
+        // Manager/Director: if no assignee selected, auto-assign to themselves
         if (!form.value.assigneeId) {
-          errors.value.assigneeId = 'Please select an assignee'
-          hasErrors = true
+          finalAssigneeId = authStore.user?.user_id || ''
+          console.log('No assignee selected - auto-assigning to current user:', finalAssigneeId)
         } else {
           finalAssigneeId = form.value.assigneeId
         }
@@ -731,13 +861,8 @@ export default {
             reminder_days: form.value.reminderDays,
             email_enabled: form.value.emailEnabled,
             in_app_enabled: form.value.inAppEnabled
+            // Note: recurrence is NOT included - it cannot be changed after task creation
           }
-
-          // Only include collaborators if user has permission to manage them (Manager/Director)
-          if (canAssignToOthers.value) {
-            updatePayload.collaborators = JSON.stringify(form.value.collaborators)
-          }
-          // Staff members should not be able to modify collaborators, so we don't send this field
 
           // Only include collaborators if user has permission to manage them (Manager/Director)
           if (canAssignToOthers.value) {
@@ -787,7 +912,8 @@ export default {
           reminder_days: form.value.reminderDays,
           email_enabled: form.value.emailEnabled,
           in_app_enabled: form.value.inAppEnabled,
-          created_by: authStore.user?.user_id // Add who is creating the task
+          created_by: authStore.user?.user_id, // Add who is creating the task
+          recurrence: isRecurringEnabled.value ? form.value.recurrence : null
         }
 
         const response = await fetch(`${taskServiceUrl}/tasks`, {
@@ -806,23 +932,26 @@ export default {
         const result = await response.json()
 
         // Reset form after successful creation
-        const defaultAssigneeId = isStaffRole.value ? authStore.user?.user_id || '' : ''
+        // Default assignee: always set to current user (Staff, Manager, Director, HR)
+        const defaultAssigneeId = authStore.user?.user_id || ''
 
         form.value = {
           title: '',
           description: '',
           dueDate: '',
           status: isStaffRole.value ? 'Ongoing' : 'Unassigned',
-          priority: '2',
+          priority: 5,
           assigneeId: defaultAssigneeId,
           collaborators: [],
           isSubtask: false,
           parentTaskId: '',
           reminderDays: [7, 3, 1],
           emailEnabled: true,
-          inAppEnabled: true
+          inAppEnabled: true,
+          recurrence: ''
         }
         showReminderCustomization.value = false
+        isRecurringEnabled.value = false
 
         // Reset errors
         errors.value = {
@@ -860,6 +989,47 @@ export default {
       }
     }
 
+    // Helper function to get readable recurrence label
+    const getRecurrenceLabel = (recurrence) => {
+      const labels = {
+        'daily': 'Daily',
+        'weekly': 'Weekly',
+        'biweekly': 'Biweekly (Every 2 weeks)',
+        'monthly': 'Monthly'
+      }
+      return labels[recurrence] || recurrence
+    }
+
+    // Helper function to get priority label
+    const getPriorityLabel = (priority) => {
+      if (priority <= 3) return 'Low Priority'
+      if (priority <= 6) return 'Medium Priority'
+      if (priority <= 8) return 'High Priority'
+      return 'Critical Priority'
+    }
+
+    // Helper function to get priority badge color
+    const getPriorityBadgeColor = (priority) => {
+      if (priority <= 3) return 'bg-gray-500'
+      if (priority <= 6) return 'bg-blue-500'
+      if (priority <= 8) return 'bg-orange-500'
+      return 'bg-red-500'
+    }
+
+    // Helper function to get slider gradient style
+    const getSliderStyle = (priority) => {
+      const percentage = ((priority - 1) / 9) * 100
+      let color = '#6B7280' // gray
+      if (priority <= 3) color = '#6B7280' // gray
+      else if (priority <= 6) color = '#3B82F6' // blue
+      else if (priority <= 8) color = '#F97316' // orange
+      else color = '#EF4444' // red
+      
+      return {
+        background: `linear-gradient(to right, ${color} 0%, ${color} ${percentage}%, #E5E7EB ${percentage}%, #E5E7EB 100%)`
+      }
+    }
+
     return {
       form,
       errors,
@@ -886,8 +1056,64 @@ export default {
       canAddMoreReminders,
       toggleReminderCustomization,
       toggleReminderDay,
+      isRecurringEnabled,
+      getRecurrenceLabel,
+      getPriorityLabel,
+      getPriorityBadgeColor,
+      getSliderStyle,
       saveTask
     }
   }
 }
 </script>
+
+<style scoped>
+/* Custom slider styling */
+.slider-priority {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 4px;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.slider-priority::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 3px solid currentColor;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider-priority::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+.slider-priority::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  cursor: pointer;
+  border: 3px solid currentColor;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.slider-priority::-moz-range-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* Color the thumb based on priority value */
+.slider-priority {
+  color: #3B82F6; /* Default blue */
+}
+</style>
