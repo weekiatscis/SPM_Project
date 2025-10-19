@@ -19,17 +19,9 @@
       <!-- Report Type Selection (only show if user has multiple options) -->
       <div class="filter-section" v-if="reportOptions.available_report_types.length > 1">
         <label class="filter-label">Report Type</label>
-        <a-select
-          v-model:value="selectedReportType"
-          :style="{ width: '100%' }"
-          :disabled="isGenerating"
-          @change="onReportTypeChange"
-        >
-          <a-select-option 
-            v-for="type in reportOptions.available_report_types" 
-            :key="type" 
-            :value="type"
-          >
+        <a-select v-model:value="selectedReportType" :style="{ width: '100%' }" :disabled="isGenerating"
+          @change="onReportTypeChange">
+          <a-select-option v-for="type in reportOptions.available_report_types" :key="type" :value="type">
             {{ formatReportType(type) }}
           </a-select-option>
         </a-select>
@@ -40,75 +32,82 @@
         <!-- For HR selecting individuals -->
         <div class="filter-section" v-if="currentUser?.role === 'HR'">
           <label class="filter-label">Select Individual</label>
-          <a-select
-            v-model:value="selectedIndividual"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            placeholder="Select an individual to analyze"
-            show-search
-            :filter-option="filterIndividualOption"
-          >
-            <a-select-option 
-              v-for="individual in availableIndividuals" 
-              :key="individual.user_id" 
-              :value="individual.user_id"
-            >
+          <a-select v-model:value="selectedIndividual" :style="{ width: '100%' }" :disabled="isGenerating"
+            placeholder="Select an individual to analyze" show-search :filter-option="filterIndividualOption">
+            <a-select-option v-for="individual in availableIndividuals" :key="individual.user_id"
+              :value="individual.user_id">
               {{ individual.name }} ({{ individual.department }}) - {{ individual.role }}
             </a-select-option>
           </a-select>
           <div class="filter-hint">
             <InfoCircleOutlined style="color: #1890ff; margin-right: 4px;" />
-            Generate detailed task report for a specific team member
+            Generate detailed task report for any team member in the organization
+          </div>
+        </div>
+
+        <!-- For Director selecting department members -->
+        <div class="filter-section" v-if="currentUser?.role === 'Director'">
+          <label class="filter-label">Select Individual</label>
+          <a-select v-model:value="selectedIndividual" :style="{ width: '100%' }" :disabled="isGenerating"
+            placeholder="Select yourself or a department member">
+            <!-- Self option -->
+            <a-select-option :value="currentUser.user_id">
+              {{ currentUser.name }} (Me)
+            </a-select-option>
+            <!-- Department members -->
+            <a-select-option v-for="member in departmentMembers" :key="member.user_id" :value="member.user_id">
+              {{ member.name }} ({{ member.role }})
+            </a-select-option>
+          </a-select>
+          <div class="filter-hint">
+            <InfoCircleOutlined style="color: #1890ff; margin-right: 4px;" />
+            Generate detailed task report for yourself or anyone in your department
           </div>
         </div>
 
         <!-- For Manager selecting subordinates -->
         <div class="filter-section" v-if="currentUser?.role === 'Manager'">
           <label class="filter-label">Select Team Member</label>
-          <a-select
-            v-model:value="selectedIndividual"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            placeholder="Select yourself or a team member"
-          >
+          <a-select v-model:value="selectedIndividual" :style="{ width: '100%' }" :disabled="isGenerating"
+            placeholder="Select yourself or a team member">
             <!-- Self option -->
             <a-select-option :value="currentUser.user_id">
               {{ currentUser.name }} (Me)
             </a-select-option>
             <!-- Team members -->
-            <a-select-option 
-              v-for="member in teamMembers" 
-              :key="member.user_id" 
-              :value="member.user_id"
-            >
+            <a-select-option v-for="member in teamMembers" :key="member.user_id" :value="member.user_id">
               {{ member.name }}
             </a-select-option>
           </a-select>
+          <div class="filter-hint">
+            <InfoCircleOutlined style="color: #1890ff; margin-right: 4px;" />
+            Generate detailed task report for yourself or your team members
+          </div>
         </div>
       </div>
 
       <!-- TEAM REPORT FILTERS -->
       <div v-if="selectedReportType === 'team'">
-        <!-- For Manager and HR -->
-        <div class="filter-section">
+        <!-- For Manager (their own team) -->
+        <div class="filter-section" v-if="currentUser?.role === 'Manager'">
+          <div class="filter-hint">
+            <InfoCircleOutlined style="color: #1890ff; margin-right: 4px;" />
+            Generating report for your team
+          </div>
+        </div>
+
+        <!-- For Director and HR (select a team) -->
+        <div class="filter-section" v-if="currentUser?.role === 'Director' || currentUser?.role === 'HR'">
           <label class="filter-label">Select Team</label>
-          <a-select
-            v-model:value="selectedTeam"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            placeholder="Select a team to analyze"
-          >
-            <a-select-option 
-              v-for="team in reportOptions.teams" 
-              :key="team" 
-              :value="team"
-            >
+          <a-select v-model:value="selectedTeam" :style="{ width: '100%' }" :disabled="isGenerating"
+            placeholder="Select a team to analyze">
+            <a-select-option v-for="team in reportOptions.teams" :key="team" :value="team">
               {{ team }}
             </a-select-option>
           </a-select>
           <div class="filter-hint">
             <InfoCircleOutlined style="color: #1890ff; margin-right: 4px;" />
-            Analyze performance metrics for an entire team
+            Analyze performance metrics for the selected team
           </div>
         </div>
       </div>
@@ -118,19 +117,9 @@
         <!-- For Director: Team Selection within their department -->
         <div class="filter-section" v-if="currentUser?.role === 'Director'">
           <label class="filter-label">Select Teams in Your Department</label>
-          <a-select
-            v-model:value="selectedTeams"
-            mode="multiple"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            placeholder="Select teams to compare (leave empty for all teams)"
-            allow-clear
-          >
-            <a-select-option 
-              v-for="team in reportOptions.teams" 
-              :key="team" 
-              :value="team"
-            >
+          <a-select v-model:value="selectedTeams" mode="multiple" :style="{ width: '100%' }" :disabled="isGenerating"
+            placeholder="Select teams to compare (leave empty for all teams)" allow-clear>
+            <a-select-option v-for="team in reportOptions.teams" :key="team" :value="team">
               {{ team }}
             </a-select-option>
           </a-select>
@@ -143,17 +132,9 @@
         <!-- For HR: Department Selection -->
         <div class="filter-section" v-if="currentUser?.role === 'HR'">
           <label class="filter-label">Select Department</label>
-          <a-select
-            v-model:value="selectedDepartment"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            placeholder="Select a department to analyze"
-          >
-            <a-select-option 
-              v-for="dept in reportOptions.departments" 
-              :key="dept" 
-              :value="dept"
-            >
+          <a-select v-model:value="selectedDepartment" :style="{ width: '100%' }" :disabled="isGenerating"
+            placeholder="Select a department to analyze">
+            <a-select-option v-for="dept in reportOptions.departments" :key="dept" :value="dept">
               {{ dept }}
             </a-select-option>
           </a-select>
@@ -179,19 +160,10 @@
         <!-- Department Selection (for organization scope) -->
         <div class="filter-section" v-if="scopeType === 'departments'">
           <label class="filter-label">Select Departments (Optional)</label>
-          <a-select
-            v-model:value="selectedDepartments"
-            mode="multiple"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            placeholder="Select specific departments (leave empty for all departments)"
-            allow-clear
-          >
-            <a-select-option 
-              v-for="dept in reportOptions.departments" 
-              :key="dept" 
-              :value="dept"
-            >
+          <a-select v-model:value="selectedDepartments" mode="multiple" :style="{ width: '100%' }"
+            :disabled="isGenerating" placeholder="Select specific departments (leave empty for all departments)"
+            allow-clear>
+            <a-select-option v-for="dept in reportOptions.departments" :key="dept" :value="dept">
               {{ dept }}
             </a-select-option>
           </a-select>
@@ -200,19 +172,9 @@
         <!-- Team Selection (for organization scope) -->
         <div class="filter-section" v-if="scopeType === 'teams'">
           <label class="filter-label">Select Teams (Optional)</label>
-          <a-select
-            v-model:value="selectedTeams"
-            mode="multiple"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            placeholder="Select specific teams (leave empty for all teams)"
-            allow-clear
-          >
-            <a-select-option 
-              v-for="team in reportOptions.teams" 
-              :key="team" 
-              :value="team"
-            >
+          <a-select v-model:value="selectedTeams" mode="multiple" :style="{ width: '100%' }" :disabled="isGenerating"
+            placeholder="Select specific teams (leave empty for all teams)" allow-clear>
+            <a-select-option v-for="team in reportOptions.teams" :key="team" :value="team">
               {{ team }}
             </a-select-option>
           </a-select>
@@ -221,20 +183,11 @@
         <!-- Individual Selection (for organization scope) -->
         <div class="filter-section" v-if="scopeType === 'individuals'">
           <label class="filter-label">Select Individuals</label>
-          <a-select
-            v-model:value="selectedIndividuals"
-            mode="multiple"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            placeholder="Select individuals to compare"
-            show-search
-            :filter-option="filterIndividualOption"
-          >
-            <a-select-option 
-              v-for="individual in availableIndividuals" 
-              :key="individual.user_id" 
-              :value="individual.user_id"
-            >
+          <a-select v-model:value="selectedIndividuals" mode="multiple" :style="{ width: '100%' }"
+            :disabled="isGenerating" placeholder="Select individuals to compare" show-search
+            :filter-option="filterIndividualOption">
+            <a-select-option v-for="individual in availableIndividuals" :key="individual.user_id"
+              :value="individual.user_id">
               {{ individual.name }} ({{ individual.department }}) - {{ individual.role }}
             </a-select-option>
           </a-select>
@@ -249,22 +202,14 @@
       <!-- Date Range Picker -->
       <div class="filter-section">
         <label class="filter-label">Date Range</label>
-        <a-range-picker
-          v-model:value="dateRange"
-          format="YYYY-MM-DD"
-          :style="{ width: '100%' }"
-          :disabled="isGenerating"
-        />
+        <a-range-picker v-model:value="dateRange" format="YYYY-MM-DD" :style="{ width: '100%' }"
+          :disabled="isGenerating" />
       </div>
 
       <!-- Status Filter -->
       <div class="filter-section">
         <label class="filter-label">Task Status</label>
-        <a-checkbox-group
-          v-model:value="statusFilter"
-          :style="{ width: '100%' }"
-          :disabled="isGenerating"
-        >
+        <a-checkbox-group v-model:value="statusFilter" :style="{ width: '100%' }" :disabled="isGenerating">
           <div class="checkbox-grid">
             <a-checkbox value="Unassigned">Unassigned</a-checkbox>
             <a-checkbox value="Ongoing">Ongoing</a-checkbox>
@@ -275,15 +220,8 @@
       </div>
 
       <!-- Generate Button -->
-      <a-button
-        type="primary"
-        block
-        size="large"
-        :loading="isGenerating"
-        :disabled="!currentUser || !canGenerateReport"
-        @click="generateReport"
-        class="generate-button"
-      >
+      <a-button type="primary" block size="large" :loading="isGenerating" :disabled="!currentUser || !canGenerateReport"
+        @click="generateReport" class="generate-button">
         <template #icon>
           <DownloadOutlined v-if="!isGenerating" />
         </template>
@@ -297,25 +235,11 @@
       </div>
 
       <!-- Success/Error Messages -->
-      <a-alert
-        v-if="successMessage"
-        :message="successMessage"
-        type="success"
-        show-icon
-        closable
-        @close="successMessage = ''"
-        style="margin-top: 12px"
-      />
+      <a-alert v-if="successMessage" :message="successMessage" type="success" show-icon closable
+        @close="successMessage = ''" style="margin-top: 12px" />
 
-      <a-alert
-        v-if="errorMessage"
-        :message="errorMessage"
-        type="error"
-        show-icon
-        closable
-        @close="errorMessage = ''"
-        style="margin-top: 12px"
-      />
+      <a-alert v-if="errorMessage" :message="errorMessage" type="error" show-icon closable @close="errorMessage = ''"
+        style="margin-top: 12px" />
 
       <!-- Role-Specific Report Info -->
       <div class="report-info">
@@ -375,7 +299,7 @@ export default {
     const isGenerating = ref(false)
     const successMessage = ref('')
     const errorMessage = ref('')
-    
+
     // Enhanced state for role-based reporting
     const reportOptions = ref({
       user_role: '',
@@ -393,13 +317,14 @@ export default {
     const scopeType = ref('departments')
     const availableIndividuals = ref([])
     const teamMembers = ref([])
+    const departmentMembers = ref([])
 
     // Computed properties
     const canGenerateReport = computed(() => {
       if (!currentUser.value) return false
-      
+
       const role = currentUser.value.role
-      
+
       // Individual report validations
       if (selectedReportType.value === 'individual') {
         if (role === 'HR' || role === 'Manager') {
@@ -407,12 +332,12 @@ export default {
         }
         return true // Staff can always generate their own report
       }
-      
+
       // Team report validations
       if (selectedReportType.value === 'team') {
         return selectedTeam.value !== null
       }
-      
+
       // Department report validations
       if (selectedReportType.value === 'department') {
         if (role === 'HR') {
@@ -420,7 +345,7 @@ export default {
         }
         return true // Director can generate for their department
       }
-      
+
       // Organization report validations
       if (selectedReportType.value === 'organization' && role === 'HR') {
         if (scopeType.value === 'individuals') {
@@ -428,30 +353,30 @@ export default {
         }
         return true
       }
-      
+
       return true
     })
 
     // Methods
     const fetchReportOptions = async () => {
       if (!currentUser.value) return
-      
+
       try {
         const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
         const response = await fetch(`${reportServiceUrl}/report-options?user_id=${currentUser.value.user_id}`)
-        
+
         if (response.ok) {
           const options = await response.json()
           reportOptions.value = options
           selectedReportType.value = options.available_report_types[0] || 'individual'
-          
+
           // Set default report type based on role
           if (currentUser.value.role === 'Director') {
             selectedReportType.value = 'department'
           } else if (currentUser.value.role === 'HR') {
             selectedReportType.value = 'organization'
           }
-          
+
           // Set default individual for Staff
           if (currentUser.value.role === 'Staff') {
             selectedIndividual.value = currentUser.value.user_id
@@ -464,19 +389,19 @@ export default {
 
     const fetchAvailableIndividuals = async () => {
       if (!currentUser.value || (currentUser.value.role !== 'HR' && currentUser.value.role !== 'Manager')) return
-      
+
       try {
         const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
         const response = await fetch(`${reportServiceUrl}/available-users`)
-        
+
         if (response.ok) {
           const users = await response.json()
           availableIndividuals.value = users
-          
+
           // For managers, filter to get team members
           if (currentUser.value.role === 'Manager') {
-            teamMembers.value = users.filter(user => 
-              user.superior === currentUser.value.user_id || 
+            teamMembers.value = users.filter(user =>
+              user.superior === currentUser.value.user_id ||
               user.user_id === currentUser.value.user_id
             )
           }
@@ -489,7 +414,7 @@ export default {
     const getRoleColor = (role) => {
       const colors = {
         'Staff': 'blue',
-        'Manager': 'green', 
+        'Manager': 'green',
         'Director': 'orange',
         'HR': 'purple'
       }
@@ -500,7 +425,7 @@ export default {
       const formats = {
         'individual': 'Individual Report',
         'team': 'Team Report',
-        'department': 'Department Report', 
+        'department': 'Department Report',
         'organization': 'Organization Report'
       }
       return formats[type] || type
@@ -515,25 +440,29 @@ export default {
       selectedTeam.value = null
       selectedDepartment.value = null
       scopeType.value = 'departments'
-      
+
       // Set defaults based on new report type and role
-      if (selectedReportType.value === 'individual' && currentUser.value?.role === 'Staff') {
-        selectedIndividual.value = currentUser.value.user_id
+      if (selectedReportType.value === 'individual') {
+        if (currentUser.value?.role === 'Staff') {
+          selectedIndividual.value = currentUser.value.user_id
+        } else if (currentUser.value?.role === 'Director' || currentUser.value?.role === 'Manager') {
+          // Directors and Managers default to their own report
+          selectedIndividual.value = currentUser.value.user_id
+        }
       }
-      
+
       // Fetch data if needed
-      if (selectedReportType.value === 'individual' || 
-          (selectedReportType.value === 'organization' && scopeType.value === 'individuals')) {
+      if (selectedReportType.value === 'individual' ||
+        (selectedReportType.value === 'organization' && scopeType.value === 'individuals')) {
         fetchAvailableIndividuals()
       }
     }
-
     const onScopeTypeChange = () => {
       // Reset selections when scope type changes
       selectedDepartments.value = []
       selectedTeams.value = []
       selectedIndividuals.value = []
-      
+
       if (scopeType.value === 'individuals') {
         fetchAvailableIndividuals()
       }
@@ -546,7 +475,7 @@ export default {
     const getGenerateButtonText = () => {
       const role = currentUser.value?.role
       const reportType = selectedReportType.value
-      
+
       if (reportType === 'individual') {
         return role === 'Staff' ? 'Generate My Task Report' : 'Generate Individual Report'
       } else if (reportType === 'team') {
@@ -556,13 +485,13 @@ export default {
       } else if (reportType === 'organization') {
         return `Generate ${scopeType.value.charAt(0).toUpperCase() + scopeType.value.slice(1)} Analysis`
       }
-      
+
       return 'Generate Report'
     }
 
     const getRoleSpecificTitle = () => {
       const reportType = selectedReportType.value
-      
+
       if (reportType === 'individual') {
         return 'Individual Task Analysis'
       } else if (reportType === 'team') {
@@ -572,13 +501,13 @@ export default {
       } else if (reportType === 'organization') {
         return 'Organization-Wide Analysis'
       }
-      
+
       return 'Report Features'
     }
 
     const getRoleSpecificFeatures = () => {
       const reportType = selectedReportType.value
-      
+
       if (reportType === 'individual') {
         return [
           { icon: CheckCircleOutlined, color: 'success', text: 'Personal task completion tracking' },
@@ -606,10 +535,29 @@ export default {
           { icon: BarChartOutlined, color: 'warning', text: 'Comprehensive reporting flexibility' }
         ]
       }
-      
+
       return []
     }
 
+    const fetchDepartmentMembers = async () => {
+      if (!currentUser.value || currentUser.value.role !== 'Director') return
+
+      try {
+        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+        const response = await fetch(`${reportServiceUrl}/available-users`)
+
+        if (response.ok) {
+          const users = await response.json()
+          // Filter to only department members (excluding self)
+          departmentMembers.value = users.filter(user =>
+            user.department === currentUser.value.department &&
+            user.user_id !== currentUser.value.user_id
+          )
+        }
+      } catch (error) {
+        console.error('Error fetching department members:', error)
+      }
+    }
     const generateReport = async () => {
       if (!currentUser.value) {
         message.error('Please log in to generate reports')
@@ -641,16 +589,16 @@ export default {
         if (selectedReportType.value === 'individual') {
           const targetUserId = selectedIndividual.value || currentUser.value.user_id
           requestBody.user_id = targetUserId
-          
+
           // Get user name for the target user
           if (targetUserId === currentUser.value.user_id) {
             requestBody.user_name = currentUser.value.name
           } else {
             const targetUser = availableIndividuals.value.find(u => u.user_id === targetUserId) ||
-                              teamMembers.value.find(u => u.user_id === targetUserId)
+              teamMembers.value.find(u => u.user_id === targetUserId)
             requestBody.user_name = targetUser?.name || 'Unknown User'
           }
-        } 
+        }
         else if (selectedReportType.value === 'team') {
           requestBody.teams = [selectedTeam.value]
         }
@@ -663,10 +611,10 @@ export default {
           } else if (role === 'HR') {
             requestBody.department = selectedDepartment.value
           }
-        } 
+        }
         else if (selectedReportType.value === 'organization' && role === 'HR') {
           requestBody.scope_type = scopeType.value
-          
+
           if (scopeType.value === 'departments' && selectedDepartments.value.length > 0) {
             requestBody.scope_values = selectedDepartments.value
           } else if (scopeType.value === 'teams' && selectedTeams.value.length > 0) {
@@ -697,11 +645,11 @@ export default {
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0]
         let filename = `${selectedReportType.value}_report_${timestamp}.pdf`
-        
+
         if (selectedReportType.value === 'organization') {
           filename = `organization_${scopeType.value}_report_${timestamp}.pdf`
         }
-        
+
         a.download = filename
 
         document.body.appendChild(a)

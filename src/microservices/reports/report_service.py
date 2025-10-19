@@ -3,6 +3,7 @@ import io
 import sys
 import json
 import logging
+import requests
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from collections import Counter
@@ -14,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 # Now import other packages
 from supabase import create_client, Client
-import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
@@ -683,38 +683,100 @@ def get_all_departments() -> List[str]:
         return []
 
 def validate_report_access(requesting_user: Dict[str, Any], report_data: Dict[str, Any]) -> bool:
-    """Validate if user has access to generate the requested report type."""
+    """
+    Validate if user has access to generate the requested report type.
+    Hierarchical access: HR > Director > Manager > Staff
+    """
     user_role = requesting_user.get('role')
     report_type = report_data.get('report_type', 'individual')
     
-    # Staff can only generate individual reports for themselves
-    if user_role == UserRole.STAFF.value:
-        return (report_type == ReportType.INDIVIDUAL.value and 
-                report_data.get('user_id') == requesting_user.get('user_id'))
+    logger.info(f"Validating access - User: {requesting_user.get('name')} ({user_role}), Report: {report_type}")
     
-    # Manager can generate team reports for their subordinates
+    # HR has access to ALL report types and can generate reports for anyone
+    if user_role == UserRole.HR.value:
+        logger.info("HR user - access granted to all reports")
+        return True
+    
+    # Director can generate: individual, team, department reports
+    elif user_role == UserRole.DIRECTOR.value:
+        if report_type == ReportType.INDIVIDUAL.value:
+            # Directors can generate individual reports for themselves or anyone in their department
+            target_user_id = report_data.get('user_id')
+            if target_user_id == requesting_user.get('user_id'):
+                logger.info("Director generating own individual report - access granted")
+                return True
+            
+            # Check if target user is in director's department
+            target_user = get_user_details(target_user_id)
+            if target_user and target_user.get('department') == requesting_user.get('department'):
+                logger.info("Director generating individual report for department member - access granted")
+                return True
+            
+            logger.warning(f"Director cannot generate individual report for user outside department")
+            return False
+            
+        elif report_type == ReportType.TEAM.value:
+            # Directors can generate team reports for teams in their department
+            logger.info("Director generating team report - access granted")
+            return True
+            
+        elif report_type == ReportType.DEPARTMENT.value:
+            # Directors can generate department reports for their own department
+            target_department = report_data.get('department')
+            if not target_department or target_department == requesting_user.get('department'):
+                logger.info("Director generating department report - access granted")
+                return True
+            
+            logger.warning(f"Director cannot generate department report for other departments")
+            return False
+            
+        elif report_type == ReportType.ORGANIZATION.value:
+            logger.warning("Director cannot generate organization reports")
+            return False
+    
+    # Manager can generate: individual, team reports
     elif user_role == UserRole.MANAGER.value:
+        if report_type == ReportType.INDIVIDUAL.value:
+            # Managers can generate individual reports for themselves or their direct reports
+            target_user_id = report_data.get('user_id')
+            if target_user_id == requesting_user.get('user_id'):
+                logger.info("Manager generating own individual report - access granted")
+                return True
+            
+            # Check if target user reports to this manager
+            target_user = get_user_details(target_user_id)
+            if target_user and target_user.get('superior') == requesting_user.get('user_id'):
+                logger.info("Manager generating individual report for subordinate - access granted")
+                return True
+            
+            logger.warning(f"Manager cannot generate individual report for non-subordinate")
+            return False
+            
+        elif report_type == ReportType.TEAM.value:
+            # Managers can generate team reports for their own team
+            logger.info("Manager generating team report - access granted")
+            return True
+            
+        elif report_type in [ReportType.DEPARTMENT.value, ReportType.ORGANIZATION.value]:
+            logger.warning(f"Manager cannot generate {report_type} reports")
+            return False
+    
+    # Staff can only generate individual reports for themselves
+    elif user_role == UserRole.STAFF.value:
         if report_type == ReportType.INDIVIDUAL.value:
             target_user_id = report_data.get('user_id')
             if target_user_id == requesting_user.get('user_id'):
+                logger.info("Staff generating own individual report - access granted")
                 return True
-            target_user = get_user_details(target_user_id)
-            return target_user and target_user.get('superior') == requesting_user.get('user_id')
-        elif report_type == ReportType.TEAM.value:
-            return True
-        return False
+            
+            logger.warning("Staff can only generate their own individual reports")
+            return False
+            
+        else:
+            logger.warning(f"Staff cannot generate {report_type} reports")
+            return False
     
-    # Director can generate department reports
-    elif user_role == UserRole.DIRECTOR.value:
-        if report_type in [ReportType.INDIVIDUAL.value, ReportType.TEAM.value, ReportType.DEPARTMENT.value]:
-            target_department = report_data.get('department')
-            return target_department == requesting_user.get('department')
-        return False
-    
-    # HR can generate organization-wide reports
-    elif user_role == UserRole.HR.value:
-        return True
-    
+    logger.warning(f"Unknown role or unauthorized access: {user_role}")
     return False
 
 def fetch_tasks_for_multiple_users(user_ids: List[str], start_date: Optional[str] = None,
@@ -790,6 +852,197 @@ def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
         'avg_completion_time': avg_completion_time
     }
 
+def generate_director_report(tasks_by_team: Dict[str, List[Dict[str, Any]]], 
+                           requesting_user: Dict[str, Any],
+                           filters: Dict[str, Any]) -> io.BytesIO:
+    """Generate director-level department/team comparison report."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title and header
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, 
+                                textColor=HexColor('#0f172a'), spaceAfter=20, fontName='Helvetica-Bold')
+    
+    elements.append(Paragraph("Department Performance Report", title_style))
+    elements.append(Spacer(1, 20))
+    
+    # Report metadata
+    metadata_data = [
+        ['Generated by:', requesting_user.get('name', 'Unknown')],
+        ['Role:', requesting_user.get('role', 'Unknown')],
+        ['Department:', requesting_user.get('department', 'Unknown')],
+        ['Report Date:', datetime.now().strftime('%B %d, %Y at %I:%M %p')],
+        ['Teams Analyzed:', ', '.join(tasks_by_team.keys())]
+    ]
+    
+    metadata_table = Table(metadata_data, colWidths=[1.5*inch, 4*inch])
+    metadata_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+    ]))
+    elements.append(metadata_table)
+    elements.append(Spacer(1, 30))
+    
+    # Team comparison table
+    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=16, 
+                                  textColor=HexColor('#1e40af'), fontName='Helvetica-Bold')
+    
+    elements.append(Paragraph("Team Performance Comparison", heading_style))
+    elements.append(Spacer(1, 15))
+    
+    # Calculate metrics for each team
+    comparison_data = [
+        ['Team/Department', 'Total Tasks', 'Completion Rate', 'Overdue %', 'Avg. Completion Time', 'Total Time Spent']
+    ]
+    
+    for team_name, tasks in tasks_by_team.items():
+        metrics = calculate_team_metrics(tasks)
+        comparison_data.append([
+            team_name,
+            str(metrics['total_tasks']),
+            f"{metrics['completion_rate']:.1f}%",
+            f"{metrics['overdue_percentage']:.1f}%",
+            f"{metrics['avg_completion_time']:.1f} days",
+            f"{metrics['total_time_spent']} days"
+        ])
+    
+    comparison_table = Table(comparison_data, colWidths=[1.2*inch, 0.8*inch, 1*inch, 0.8*inch, 1.2*inch, 1*inch])
+    comparison_table.setStyle(TableStyle([
+        # Header
+        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        
+        # Data rows
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+        
+        # Borders
+        ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    
+    # Alternate row colors
+    for row_idx in range(1, len(comparison_data)):
+        bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+        comparison_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+        ]))
+    
+    elements.append(comparison_table)
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+def generate_hr_report(data_by_scope: Dict[str, List[Dict[str, Any]]], 
+                      requesting_user: Dict[str, Any],
+                      filters: Dict[str, Any]) -> io.BytesIO:
+    """Generate HR-level organization-wide report."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, 
+                                textColor=HexColor('#0f172a'), spaceAfter=20, fontName='Helvetica-Bold')
+    
+    elements.append(Paragraph("Organization Performance Report", title_style))
+    elements.append(Spacer(1, 20))
+    
+    # Report metadata
+    scope_type = filters.get('scope_type', 'organization')
+    metadata_data = [
+        ['Generated by:', requesting_user.get('name', 'Unknown')],
+        ['Role:', requesting_user.get('role', 'Unknown')],
+        ['Report Scope:', scope_type.title()],
+        ['Report Date:', datetime.now().strftime('%B %d, %Y at %I:%M %p')],
+        ['Analysis Level:', ', '.join(data_by_scope.keys())]
+    ]
+    
+    metadata_table = Table(metadata_data, colWidths=[1.5*inch, 4*inch])
+    metadata_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+    ]))
+    elements.append(metadata_table)
+    elements.append(Spacer(1, 30))
+    
+    # Summary tables for each scope
+    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=16, 
+                                  textColor=HexColor('#1e40af'), fontName='Helvetica-Bold')
+    
+    for scope_name, tasks in data_by_scope.items():
+        elements.append(Paragraph(f"{scope_name} Summary", heading_style))
+        elements.append(Spacer(1, 10))
+        
+        metrics = calculate_team_metrics(tasks)
+        
+        # Summary table for this scope
+        summary_data = [
+            ['Metric', 'Value'],
+            ['Total Tasks', str(metrics['total_tasks'])],
+            ['Completed Tasks', str(metrics['completed_tasks'])],
+            ['Completion Rate', f"{metrics['completion_rate']:.1f}%"],
+            ['Overdue Tasks', str(metrics['overdue_tasks'])],
+            ['Overdue Percentage', f"{metrics['overdue_percentage']:.1f}%"],
+            ['Total Time Spent', f"{metrics['total_time_spent']} days"],
+            ['Average Completion Time', f"{metrics['avg_completion_time']:.1f} days"]
+        ]
+        
+        summary_table = Table(summary_data, colWidths=[2.5*inch, 2*inch])
+        summary_table.setStyle(TableStyle([
+            # Header
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+            
+            # Data rows
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+            
+            # Borders
+            ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        
+        # Alternate row colors
+        for row_idx in range(1, len(summary_data)):
+            bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+            ]))
+        
+        elements.append(summary_table)
+        elements.append(Spacer(1, 20))
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint."""
@@ -838,23 +1091,40 @@ def get_report_options():
             
         elif role == UserRole.MANAGER.value:
             options['available_report_types'] = ['individual', 'team']
-            options['teams'] = [member['name'] for member in get_team_members(department, user_id)]
+            # Teams is just their own team (managed by them)
+            options['teams'] = [f"{user.get('name', 'Unknown')}'s Team"]
             
         elif role == UserRole.DIRECTOR.value:
             options['available_report_types'] = ['individual', 'team', 'department']
             options['departments'] = [department]
-            # Get teams in their department
+            
+            # Get teams in their department (by finding all unique superiors in the department)
             dept_members = get_team_members(department)
             superiors = list(set([member.get('superior') for member in dept_members if member.get('superior')]))
-            options['teams'] = superiors
+            team_names = []
+            
+            for superior_id in superiors:
+                superior_user = get_user_details(superior_id)
+                if superior_user:
+                    team_names.append(superior_user.get('name', superior_id))
+            
+            options['teams'] = team_names
             
         elif role == UserRole.HR.value:
             options['available_report_types'] = ['individual', 'team', 'department', 'organization']
             options['departments'] = get_all_departments()
+            
             # Get all teams across organization
-            all_users = supabase.table('user').select('superior').execute().data
-            all_superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
-            options['teams'] = all_superiors
+            all_users = supabase.table('user').select('*').execute().data
+            superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
+            team_names = []
+            
+            for superior_id in superiors:
+                superior_user = get_user_details(superior_id)
+                if superior_user:
+                    team_names.append(superior_user.get('name', superior_id))
+            
+            options['teams'] = team_names
             
         return jsonify(options), 200
         
@@ -868,51 +1138,263 @@ def generate_report():
     Enhanced report generation supporting different roles and hierarchies.
     """
     try:
+        logger.info("=== GENERATE REPORT START ===")
         data = request.get_json()
+        logger.info(f"Request data: {data}")
         
         # Get requesting user details
         requesting_user_id = data.get('requesting_user_id') or data.get('user_id')
+        logger.info(f"Requesting user ID: {requesting_user_id}")
+        
         if not requesting_user_id:
+            logger.error("No requesting_user_id provided")
             return jsonify({"error": "requesting_user_id is required"}), 400
             
         requesting_user = get_user_details(requesting_user_id)
+        logger.info(f"Requesting user details: {requesting_user}")
+        
         if not requesting_user:
+            logger.error(f"User not found for ID: {requesting_user_id}")
             return jsonify({"error": "User not found"}), 404
         
         report_type = data.get('report_type', 'individual')
+        logger.info(f"Report type: {report_type}")
         
         # Validate access
         if not validate_report_access(requesting_user, data):
+            logger.error("Access validation failed")
             return jsonify({"error": "Unauthorized to generate this report type"}), 403
         
-        # Handle different report types based on user role
+        # Common parameters
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        status_filter = data.get('status_filter', ['All'])
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
         user_role = requesting_user.get('role')
+        logger.info(f"Processing {report_type} report for {user_role}")
         
         if report_type == ReportType.INDIVIDUAL.value:
-            # Individual report (existing functionality)
-            user_id = data.get('user_id', requesting_user_id)
-            user_name = data.get('user_name') or requesting_user.get('name', 'Unknown User')
+            # Individual report
+            target_user_id = data.get('user_id', requesting_user_id)
             
-            start_date = data.get('start_date')
-            end_date = data.get('end_date')
-            status_filter = data.get('status_filter', ['All'])
+            # Get the target user's name
+            if target_user_id == requesting_user_id:
+                user_name = requesting_user.get('name', 'Unknown User')
+            else:
+                target_user = get_user_details(target_user_id)
+                user_name = target_user.get('name', 'Unknown User') if target_user else 'Unknown User'
             
-            tasks = fetch_tasks_for_user(user_id, start_date, end_date, status_filter)
-            pdf_buffer = generate_pdf_report(user_id, user_name, tasks, start_date, end_date, status_filter)
+            logger.info(f"Generating individual report for user_id: {target_user_id}, name: {user_name}")
             
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            tasks = fetch_tasks_for_user(target_user_id, start_date, end_date, status_filter)
+            pdf_buffer = generate_pdf_report(target_user_id, user_name, tasks, start_date, end_date, status_filter)
             filename = f"individual_report_{user_name.replace(' ', '_')}_{timestamp}.pdf"
             
-            # Return PDF
-            return send_file(
-                pdf_buffer,
-                mimetype='application/pdf',
-                as_attachment=True,
-                download_name=filename
-            )
+        elif report_type == ReportType.TEAM.value:
+            # Team report
+            if user_role == UserRole.MANAGER.value:
+                # Manager's team report
+                team_members = get_team_members(requesting_user.get('department'), requesting_user_id)
+                team_name = f"{requesting_user.get('name', 'Unknown')}'s Team"
+                
+            elif user_role == UserRole.DIRECTOR.value:
+                # Director selecting a specific team
+                teams = data.get('teams', [])
+                if not teams:
+                    return jsonify({"error": "Team selection is required for Directors"}), 400
+                
+                selected_team = teams[0] if isinstance(teams, list) else teams
+                
+                # Find team members by team name (assuming team name is the superior's name)
+                all_users_response = supabase.table('user').select('*').execute()
+                team_members = []
+                
+                for user in all_users_response.data:
+                    if user.get('superior'):
+                        superior_user = get_user_details(user.get('superior'))
+                        if superior_user and superior_user.get('name') == selected_team:
+                            team_members.append(user)
+                
+                team_name = selected_team
+                
+            elif user_role == UserRole.HR.value:
+                # HR selecting any team
+                teams = data.get('teams', [])
+                if not teams:
+                    return jsonify({"error": "Team selection is required"}), 400
+                
+                selected_team = teams[0] if isinstance(teams, list) else teams
+                
+                # Find team members by team name
+                all_users_response = supabase.table('user').select('*').execute()
+                team_members = []
+                
+                for user in all_users_response.data:
+                    if user.get('superior'):
+                        superior_user = get_user_details(user.get('superior'))
+                        if superior_user and superior_user.get('name') == selected_team:
+                            team_members.append(user)
+                
+                team_name = selected_team
+            else:
+                return jsonify({"error": "Unauthorized for team reports"}), 403
+            
+            if not team_members:
+                return jsonify({"error": f"No team members found for team: {team_name}"}), 404
+            
+            user_ids = [member['user_id'] for member in team_members]
+            team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+            
+            # Generate team report using director report function with single team
+            tasks_by_team = {team_name: team_tasks}
+            pdf_buffer = generate_director_report(tasks_by_team, requesting_user, data)
+            filename = f"team_report_{team_name.replace(' ', '_')}_{timestamp}.pdf"
+            
+        elif report_type == ReportType.DEPARTMENT.value:
+            # Department report
+            if user_role == UserRole.DIRECTOR.value:
+                # Director department/team comparison report
+                department = requesting_user.get('department')
+                teams = data.get('teams', [])
+                
+                tasks_by_team = {}
+                
+                if teams:
+                    # Specific teams requested
+                    for team in teams:
+                        # Find team members by superior name
+                        all_users_response = supabase.table('user').select('*').execute()
+                        team_members = []
+                        
+                        for user in all_users_response.data:
+                            if user.get('superior'):
+                                superior_user = get_user_details(user.get('superior'))
+                                if superior_user and superior_user.get('name') == team and user.get('department') == department:
+                                    team_members.append(user)
+                        
+                        if team_members:
+                            user_ids = [member['user_id'] for member in team_members]
+                            team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                            tasks_by_team[team] = team_tasks
+                else:
+                    # All teams in department
+                    all_dept_members = get_team_members(department)
+                    # Group by superior (team lead)
+                    teams_dict = {}
+                    for member in all_dept_members:
+                        superior = member.get('superior', 'No Team')
+                        if superior not in teams_dict:
+                            teams_dict[superior] = []
+                        teams_dict[superior].append(member)
+                    
+                    for team_lead, members in teams_dict.items():
+                        user_ids = [member['user_id'] for member in members]
+                        team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                        
+                        # Get team lead name
+                        team_lead_name = 'Unassigned'
+                        if team_lead != 'No Team':
+                            team_lead_user = get_user_details(team_lead)
+                            team_lead_name = team_lead_user.get('name', team_lead) if team_lead_user else team_lead
+                        
+                        tasks_by_team[team_lead_name] = team_tasks
+                
+                pdf_buffer = generate_director_report(tasks_by_team, requesting_user, data)
+                filename = f"department_report_{department}_{timestamp}.pdf"
+                
+            elif user_role == UserRole.HR.value:
+                # HR department report
+                department = data.get('department')
+                if not department:
+                    return jsonify({"error": "Department selection is required"}), 400
+                
+                dept_members = get_team_members(department)
+                user_ids = [member['user_id'] for member in dept_members]
+                dept_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                
+                # Generate as single department analysis
+                data_by_scope = {department: dept_tasks}
+                pdf_buffer = generate_hr_report(data_by_scope, requesting_user, data)
+                filename = f"hr_department_report_{department}_{timestamp}.pdf"
+            else:
+                return jsonify({"error": "Unauthorized for department reports"}), 403
+                
+        elif report_type == ReportType.ORGANIZATION.value and user_role == UserRole.HR.value:
+            # HR organization-wide report
+            scope_type = data.get('scope_type', 'departments')
+            scope_values = data.get('scope_values', [])
+            
+            data_by_scope = {}
+            
+            logger.info(f"HR organization report - scope: {scope_type}, values: {scope_values}")
+            
+            if scope_type == 'departments':
+                departments = scope_values if scope_values else get_all_departments()
+                logger.info(f"Processing departments: {departments}")
+                
+                for dept in departments:
+                    dept_members = get_team_members(dept)
+                    user_ids = [member['user_id'] for member in dept_members]
+                    dept_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                    data_by_scope[dept] = dept_tasks
+                    
+            elif scope_type == 'teams':
+                if scope_values:
+                    teams = scope_values
+                else:
+                    # Get all teams (all unique superiors)
+                    all_users = supabase.table('user').select('*').execute().data
+                    superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
+                    teams = []
+                    for superior_id in superiors:
+                        superior_user = get_user_details(superior_id)
+                        if superior_user:
+                            teams.append(superior_user.get('name', superior_id))
+                
+                logger.info(f"Processing teams: {teams}")
+                
+                for team in teams:
+                    # Find team members by superior name
+                    all_users = supabase.table('user').select('*').execute().data
+                    team_members = []
+                    
+                    for user in all_users:
+                        if user.get('superior'):
+                            superior_user = get_user_details(user.get('superior'))
+                            if superior_user and superior_user.get('name') == team:
+                                team_members.append(user)
+                    
+                    user_ids = [member['user_id'] for member in team_members]
+                    team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                    data_by_scope[team] = team_tasks
+                        
+            elif scope_type == 'individuals':
+                individuals = scope_values if scope_values else []
+                logger.info(f"Processing individuals: {individuals}")
+                
+                for user_id in individuals:
+                    user = get_user_details(user_id)
+                    if user:
+                        user_tasks = fetch_tasks_for_user(user_id, start_date, end_date, status_filter)
+                        data_by_scope[user.get('name', user_id)] = user_tasks
+            
+            logger.info(f"Generated data for {len(data_by_scope)} scopes")
+            pdf_buffer = generate_hr_report(data_by_scope, requesting_user, data)
+            filename = f"organization_report_{scope_type}_{timestamp}.pdf"
             
         else:
-            return jsonify({"error": "Report type not implemented yet"}), 400
+            return jsonify({"error": f"Invalid report type '{report_type}' for user role '{user_role}'"}), 400
+        
+        logger.info(f"Report generated successfully: {filename}")
+        
+        # Return PDF
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
         
     except requests.RequestException as e:
         logger.error(f"Error communicating with task service: {e}")
