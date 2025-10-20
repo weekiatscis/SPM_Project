@@ -43,12 +43,6 @@
             <span class="value">{{ reportData.project.owner }}</span>
           </div>
           <div class="overview-item">
-            <span class="label">Status:</span>
-            <a-tag :color="getStatusColor(reportData.project.status)">
-              {{ reportData.project.status }}
-            </a-tag>
-          </div>
-          <div class="overview-item">
             <span class="label">Start Date:</span>
             <span class="value">{{ reportData.project.created_date }}</span>
           </div>
@@ -66,26 +60,38 @@
       <!-- Project Performance Summary -->
       <div class="report-section">
         <h2 class="section-title">Project Performance Summary</h2>
-        <div class="stats-grid">
-          <div class="stat-card">
-            <div class="stat-value">{{ reportData.summary.total_tasks }}</div>
-            <div class="stat-label">Total Tasks</div>
+        <div class="summary-container">
+          <!-- Pie Chart -->
+          <div class="pie-chart-container">
+            <canvas ref="pieChartCanvas" width="400" height="450"></canvas>
           </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ reportData.summary.completed_tasks }}</div>
-            <div class="stat-label">Completed</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ reportData.summary.ongoing_tasks }}</div>
-            <div class="stat-label">In Progress</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-value">{{ reportData.summary.under_review_tasks }}</div>
-            <div class="stat-label">Under Review</div>
-          </div>
-          <div class="stat-card highlight">
-            <div class="stat-value">{{ reportData.summary.completion_rate }}%</div>
-            <div class="stat-label">Completion Rate</div>
+
+          <!-- Stats Cards -->
+          <div class="stats-cards">
+            <div class="stat-item">
+              <span class="stat-label">Total Tasks</span>
+              <span class="stat-value">{{ reportData.summary.total_tasks }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Overdue</span>
+              <span class="stat-value overdue-color">{{ reportData.summary.overdue_tasks || 0 }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Completed</span>
+              <span class="stat-value completed-color">{{ reportData.summary.completed_tasks }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">In Progress</span>
+              <span class="stat-value progress-color">{{ reportData.summary.ongoing_tasks }}</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Under Review</span>
+              <span class="stat-value review-color">{{ reportData.summary.under_review_tasks }}</span>
+            </div>
+            <div class="stat-item highlight">
+              <span class="stat-label">Completion Rate</span>
+              <span class="stat-value">{{ reportData.summary.completion_rate }}%</span>
+            </div>
           </div>
         </div>
       </div>
@@ -153,7 +159,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, h } from 'vue'
+import { ref, computed, watch, h, nextTick } from 'vue'
 import {
   FileTextOutlined,
   CloseOutlined,
@@ -176,6 +182,7 @@ const emit = defineEmits(['close', 'export'])
 const modalVisible = ref(false)
 const isExporting = ref(false)
 const activeGroups = ref(['Overdue', 'Ongoing'])
+const pieChartCanvas = ref(null)
 
 // Watch for prop changes
 watch(() => props.isOpen, (newVal) => {
@@ -185,12 +192,121 @@ watch(() => props.isOpen, (newVal) => {
   }
 }, { immediate: true })
 
+// Watch for reportData changes to draw pie chart
+watch(() => props.reportData, (newVal) => {
+  if (newVal) {
+    nextTick(() => {
+      drawPieChart()
+    })
+  }
+}, { immediate: true })
+
+const drawPieChart = () => {
+  if (!pieChartCanvas.value || !props.reportData) return
+
+  const canvas = pieChartCanvas.value
+  const ctx = canvas.getContext('2d')
+  const summary = props.reportData.summary
+
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // Prepare data
+  const data = []
+  const labels = []
+  const colors = []
+
+  const overdueCount = summary.overdue_tasks || 0
+  if (overdueCount > 0) {
+    data.push(overdueCount)
+    labels.push('Overdue')
+    colors.push('#ef4444')
+  }
+
+  if (summary.completed_tasks > 0) {
+    data.push(summary.completed_tasks)
+    labels.push('Completed')
+    colors.push('#22c55e')
+  }
+
+  if (summary.ongoing_tasks > 0) {
+    data.push(summary.ongoing_tasks)
+    labels.push('In Progress')
+    colors.push('#3b82f6')
+  }
+
+  if (summary.under_review_tasks > 0) {
+    data.push(summary.under_review_tasks)
+    labels.push('Under Review')
+    colors.push('#a855f7')
+  }
+
+  if (data.length === 0) {
+    data.push(1)
+    labels.push('No Tasks')
+    colors.push('#e5e7eb')
+  }
+
+  // Calculate total
+  const total = data.reduce((a, b) => a + b, 0)
+
+  // Draw pie chart (centered and larger)
+  const centerX = canvas.width / 2
+  const centerY = 150
+  const radius = 120
+
+  let startAngle = -Math.PI / 2
+
+  data.forEach((value, index) => {
+    const sliceAngle = (value / total) * 2 * Math.PI
+
+    // Draw slice
+    ctx.beginPath()
+    ctx.moveTo(centerX, centerY)
+    ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle)
+    ctx.closePath()
+    ctx.fillStyle = colors[index]
+    ctx.fill()
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 3
+    ctx.stroke()
+
+    startAngle += sliceAngle
+  })
+
+  // Draw legend below the pie chart
+  const legendStartY = 320
+  let legendY = legendStartY
+  const legendX = 30
+
+  ctx.font = '14px Arial'
+  ctx.textAlign = 'left'
+
+  labels.forEach((label, index) => {
+    // Draw color box
+    ctx.fillStyle = colors[index]
+    ctx.fillRect(legendX, legendY - 12, 16, 16)
+
+    // Draw text
+    ctx.fillStyle = '#1f2937'
+    ctx.fillText(`${label}: ${data[index]}`, legendX + 24, legendY)
+
+    legendY += 28
+  })
+}
+
 // Team performance table columns
 const teamColumns = [
   {
     title: 'Team Member',
     dataIndex: 'member',
     key: 'member'
+  },
+  {
+    title: 'Department',
+    dataIndex: 'department',
+    key: 'department',
+    align: 'center'
   },
   {
     title: 'Total Tasks',
@@ -393,43 +509,82 @@ const handleExportPDF = () => {
   color: #1f2937;
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16px;
+.summary-container {
+  display: flex;
+  gap: 48px;
+  align-items: flex-start;
 }
 
-.stat-card {
+.pie-chart-container {
+  flex: 0 0 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: white;
-  border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 16px;
-  text-align: center;
+  margin-right: 20px;
 }
 
-.stat-card.highlight {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
+.stats-cards {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-left: 20px;
 }
 
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  margin-bottom: 4px;
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
 }
 
-.stat-card.highlight .stat-value {
-  color: white;
+.stat-item.highlight {
+  background: white;
+  border: 1px solid #e5e7eb;
 }
 
-.stat-label {
-  font-size: 12px;
+.stat-item .stat-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-item.highlight .stat-label {
   color: #6b7280;
 }
 
-.stat-card.highlight .stat-label {
-  color: rgba(255, 255, 255, 0.9);
+.stat-item .stat-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.stat-item.highlight .stat-value {
+  color: #1f2937;
+}
+
+.stat-value.overdue-color {
+  color: #ef4444;
+}
+
+.stat-value.completed-color {
+  color: #22c55e;
+}
+
+.stat-value.progress-color {
+  color: #3b82f6;
+}
+
+.stat-value.review-color {
+  color: #a855f7;
 }
 
 .team-table,
@@ -501,8 +656,13 @@ const handleExportPDF = () => {
 }
 
 @media (max-width: 768px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .summary-container {
+    flex-direction: column;
+  }
+
+  .pie-chart-container {
+    flex: 1;
+    width: 100%;
   }
 
   .overview-grid {

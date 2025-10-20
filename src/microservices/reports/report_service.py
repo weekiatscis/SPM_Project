@@ -32,6 +32,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..'
 # Environment variables
 TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://localhost:8080")
 PROJECT_SERVICE_URL = os.getenv("PROJECT_SERVICE_URL", "http://localhost:8082")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -110,6 +111,35 @@ def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
         raise
 
 
+def fetch_user_info(user_id: str) -> Dict[str, str]:
+    """
+    Fetch user information from user service.
+
+    Args:
+        user_id: The user ID (UUID)
+
+    Returns:
+        Dictionary with user's name and department or defaults if not found
+    """
+    try:
+        # Use the user-service endpoint which has full user info including department
+        user_url = f"{USER_SERVICE_URL}/users/{user_id}"
+        response = requests.get(user_url, timeout=5)
+
+        if response.ok:
+            user_data = response.json().get('user', {})
+            return {
+                'name': user_data.get('name', 'Unknown'),
+                'department': user_data.get('department', 'N/A')
+            }
+        else:
+            logger.warning(f"Could not fetch user {user_id}: HTTP {response.status_code}")
+            return {'name': 'Unknown', 'department': 'N/A'}
+    except Exception as e:
+        logger.warning(f"Error fetching user {user_id}: {e}")
+        return {'name': 'Unknown', 'department': 'N/A'}
+
+
 def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
     """
     Fetch and prepare project report data for preview or PDF generation.
@@ -147,6 +177,37 @@ def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
         tasks_response.raise_for_status()
         tasks = tasks_response.json().get('tasks', [])
 
+        # Enrich tasks with user names and departments
+        # Collect all unique user IDs
+        user_ids = set()
+        for task in tasks:
+            if task.get('owner_id'):
+                user_ids.add(task.get('owner_id'))
+
+        # Fetch user info in batch
+        user_info_cache = {}
+        for user_id in user_ids:
+            user_info_cache[user_id] = fetch_user_info(user_id)
+
+        # Add user names and departments to tasks
+        for task in tasks:
+            owner_id = task.get('owner_id')
+            if owner_id and owner_id in user_info_cache:
+                task['owner_name'] = user_info_cache[owner_id]['name']
+                task['assignee_name'] = user_info_cache[owner_id]['name']
+                task['owner_department'] = user_info_cache[owner_id]['department']
+            else:
+                task['owner_name'] = 'Unassigned'
+                task['assignee_name'] = 'Unassigned'
+                task['owner_department'] = 'N/A'
+
+        # Fetch project owner info
+        project_owner_id = project_data.get('created_by')
+        project_owner_name = 'Unknown'
+        if project_owner_id:
+            project_owner_info = fetch_user_info(project_owner_id)
+            project_owner_name = project_owner_info['name']
+
         logger.info(f"Fetched project {project_id} with {len(tasks)} tasks")
 
         # Calculate statistics
@@ -156,13 +217,17 @@ def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
         under_review_tasks = len([t for t in tasks if t.get('status', '').lower() == 'under review'])
         completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
 
-        # Count tasks by team member
+        # Count tasks by team member with department info
         tasks_by_member = {}
         completed_by_member = {}
+        member_departments = {}
 
         for task in tasks:
             assignee = task.get('assignee_name', task.get('owner_name', 'Unassigned'))
+            department = task.get('owner_department', 'N/A')
+
             tasks_by_member[assignee] = tasks_by_member.get(assignee, 0) + 1
+            member_departments[assignee] = department
 
             if task.get('status', '').lower() == 'completed':
                 completed_by_member[assignee] = completed_by_member.get(assignee, 0) + 1
@@ -240,10 +305,14 @@ def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
             rate = (completed / total * 100) if total > 0 else 0
             team_performance.append({
                 'member': member,
+                'department': member_departments.get(member, 'N/A'),
                 'total': total,
                 'completed': completed,
                 'rate': round(rate, 1)
             })
+
+        # Calculate overdue count
+        overdue_count = len(task_groups.get('Overdue', []))
 
         # Return structured report data
         return {
@@ -251,7 +320,7 @@ def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
                 'id': project_data.get('project_id'),
                 'name': project_data.get('project_name', 'Untitled Project'),
                 'description': project_data.get('project_description', 'No description'),
-                'owner': project_data.get('created_by_name', 'Unknown'),
+                'owner': project_owner_name,
                 'status': project_data.get('status', 'Active'),
                 'created_date': created_date,
                 'due_date': due_date,
@@ -259,6 +328,7 @@ def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
             },
             'summary': {
                 'total_tasks': total_tasks,
+                'overdue_tasks': overdue_count,
                 'completed_tasks': completed_tasks,
                 'ongoing_tasks': ongoing_tasks,
                 'under_review_tasks': under_review_tasks,
@@ -888,7 +958,6 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     overview_data = [
         ['Project Name:', project['name']],
         ['Project Owner:', project['owner']],
-        ['Status:', project['status'] or 'N/A'],
         ['Start Date:', project['created_date']],
         ['Due Date:', project['due_date']],
         ['Description:', project['description'] or 'No description']
@@ -912,48 +981,132 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(overview_table)
     elements.append(Spacer(1, 20))
 
-    # Summary statistics
+    # Summary statistics with pie chart
     summary = report_data['summary']
     summary_heading = Paragraph("Project Performance Summary", heading_style)
     elements.append(summary_heading)
-    elements.append(Spacer(1, 8))
+    elements.append(Spacer(1, 12))
 
-    summary_data = [
-        ['Total Tasks', 'Completed', 'In Progress', 'Under Review', 'Completion Rate'],
-        [
-            str(summary['total_tasks']),
-            str(summary['completed_tasks']),
-            str(summary['ongoing_tasks']),
-            str(summary['under_review_tasks']),
-            f"{summary['completion_rate']}%"
-        ]
+    # Calculate overdue count from task groups
+    overdue_count = len(report_data['task_groups'].get('Overdue', []))
+
+    # Create pie chart for task distribution
+    from reportlab.graphics.charts.piecharts import Pie
+    from reportlab.graphics.shapes import Drawing, Rect, String
+
+    # Prepare pie chart data
+    pie_labels = []
+    pie_data = []
+    pie_colors = []
+
+    if overdue_count > 0:
+        pie_labels.append('Overdue')
+        pie_data.append(overdue_count)
+        pie_colors.append(HexColor('#ef4444'))
+
+    if summary['completed_tasks'] > 0:
+        pie_labels.append('Completed')
+        pie_data.append(summary['completed_tasks'])
+        pie_colors.append(HexColor('#22c55e'))
+
+    if summary['ongoing_tasks'] > 0:
+        pie_labels.append('In Progress')
+        pie_data.append(summary['ongoing_tasks'])
+        pie_colors.append(HexColor('#3b82f6'))
+
+    if summary['under_review_tasks'] > 0:
+        pie_labels.append('Under Review')
+        pie_data.append(summary['under_review_tasks'])
+        pie_colors.append(HexColor('#a855f7'))
+
+    # Create pie chart
+    pie_drawing = Drawing(240, 200)
+    pie = Pie()
+    pie.x = 40
+    pie.y = 30
+    pie.width = 140
+    pie.height = 140
+    pie.data = pie_data if pie_data else [1]  # Show single slice if no data
+    pie.slices.strokeWidth = 2
+    pie.slices.strokeColor = colors.white
+    pie.simpleLabels = 0
+    pie.sideLabels = 0
+
+    # Apply colors
+    if pie_data:
+        for i, color in enumerate(pie_colors):
+            pie.slices[i].fillColor = color
+    else:
+        pie.slices[0].fillColor = HexColor('#e5e7eb')
+
+    pie_drawing.add(pie)
+
+    # Add legend to pie chart
+    legend_x = 190
+    legend_y = 150
+    box_size = 10
+    spacing = 20
+
+    for i, (label, count) in enumerate(zip(pie_labels, pie_data)):
+        y_pos = legend_y - (i * spacing)
+
+        # Color box
+        rect = Rect(legend_x, y_pos - box_size/2, box_size, box_size)
+        rect.fillColor = pie_colors[i]
+        rect.strokeColor = colors.whitesmoke
+        rect.strokeWidth = 0.5
+        pie_drawing.add(rect)
+
+        # Label text
+        text = String(legend_x + box_size + 5, y_pos - 3, f"{label}: {count}")
+        text.fontSize = 8
+        text.fillColor = HexColor('#1e293b')
+        text.fontName = 'Helvetica'
+        pie_drawing.add(text)
+
+    # Statistics table
+    stats_data = [
+        ['Total Tasks', str(summary['total_tasks'])],
+        ['Overdue', str(overdue_count)],
+        ['Completed', str(summary['completed_tasks'])],
+        ['In Progress', str(summary['ongoing_tasks'])],
+        ['Under Review', str(summary['under_review_tasks'])],
+        ['Completion Rate', f"{summary['completion_rate']}%"]
     ]
 
-    summary_table = Table(summary_data, colWidths=[1.2*inch]*5)
-    summary_table.setStyle(TableStyle([
-        # Header row
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#64748b')),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-
-        # Data row
-        ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 1), (-1, 1), 18),
-        ('TEXTCOLOR', (0, 1), (-1, 1), HexColor('#1e293b')),
-        ('ALIGN', (0, 1), (-1, 1), 'CENTER'),
-        ('BOTTOMPADDING', (0, 1), (-1, 1), 10),
-        ('TOPPADDING', (0, 1), (-1, 1), 5),
-
-        # Styling
-        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#ffffff')),
-        ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
-        ('LINEBELOW', (0, 0), (-1, 0), 1, HexColor('#e2e8f0')),
-        ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#f1f5f9')),
+    stats_table = Table(stats_data, colWidths=[1.6*inch, 1*inch])
+    stats_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('TEXTCOLOR', (0, 0), (0, -1), HexColor('#475569')),
+        ('TEXTCOLOR', (1, 0), (1, -1), HexColor('#1e293b')),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+        ('LINEAFTER', (0, 0), (0, -1), 0.5, HexColor('#e2e8f0')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
     ]))
-    elements.append(summary_table)
+
+    # Combine pie chart and stats in a single row
+    summary_combined = Table([[pie_drawing, stats_table]], colWidths=[2.8*inch, 2.8*inch])
+    summary_combined.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+        ('ALIGN', (1, 0), (1, 0), 'LEFT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+
+    elements.append(summary_combined)
     elements.append(Spacer(1, 20))
 
     # Team performance
@@ -962,16 +1115,17 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(team_heading)
         elements.append(Spacer(1, 8))
 
-        team_data = [['Team Member', 'Total Tasks', 'Completed', 'Completion Rate']]
+        team_data = [['Team Member', 'Department', 'Total Tasks', 'Completed', 'Completion Rate']]
         for member in report_data['team_performance']:
             team_data.append([
                 member['member'],
+                member.get('department', 'N/A'),
                 str(member['total']),
                 str(member['completed']),
                 f"{member['rate']}%"
             ])
 
-        team_table = Table(team_data, colWidths=[2.5*inch, 1.3*inch, 1.3*inch, 1.5*inch])
+        team_table = Table(team_data, colWidths=[1.8*inch, 1.4*inch, 1*inch, 1*inch, 1.2*inch])
         team_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),

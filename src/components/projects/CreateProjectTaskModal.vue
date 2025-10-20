@@ -66,7 +66,8 @@
               Status
             </label>
             <select id="status" v-model="form.status" class="input-field">
-              <option value="Unassigned">Unassigned</option>
+              <!-- Staff users cannot create unassigned tasks -->
+              <option v-if="!isStaffRole" value="Unassigned">Unassigned</option>
               <option value="Ongoing">Ongoing</option>
               <option value="Under Review">Under Review</option>
               <option value="Completed">Completed</option>
@@ -101,7 +102,14 @@
             <label for="assignee" class="block text-sm font-medium text-gray-700 mb-1">
               Assign to Project Member *
             </label>
-            <select id="assignee" v-model="form.assigneeId" required class="input-field"
+
+            <!-- If user is Staff, show read-only field with their name -->
+            <div v-if="isStaffRole" class="input-field bg-gray-50 cursor-not-allowed">
+              {{ authStore.user?.name || 'Current User' }} (You)
+            </div>
+
+            <!-- If user can assign to others, show dropdown -->
+            <select v-else id="assignee" v-model="form.assigneeId" required class="input-field"
               :class="{ 'border-red-500': errors.assigneeId }"
               :disabled="isLoadingMembers">
               <option value="">Select team member...</option>
@@ -109,13 +117,17 @@
                 {{ member.name }}{{ member.isOwner ? ' (Owner)' : '' }}
               </option>
             </select>
+
             <div v-if="errors.assigneeId" class="mt-1 text-sm text-red-600">
               {{ errors.assigneeId }}
             </div>
-            <div v-if="isLoadingMembers" class="mt-1 text-sm text-gray-600">
+            <div v-if="isLoadingMembers && !isStaffRole" class="mt-1 text-sm text-gray-600">
               Loading team members...
             </div>
-            <div class="mt-1 text-sm text-blue-600">
+            <div v-if="isStaffRole" class="mt-1 text-xs text-gray-600">
+              Tasks are automatically assigned to you as a Staff member
+            </div>
+            <div v-else class="mt-1 text-sm text-blue-600">
               Task will be automatically added to this project
             </div>
           </div>
@@ -286,6 +298,17 @@ export default {
     const selectedCollaborator = ref('')
     const showReminderCustomization = ref(false)
 
+    // Check if current user is Staff role
+    const isStaffRole = computed(() => {
+      return authStore.user?.role === 'Staff'
+    })
+
+    // Check if user can assign tasks to others (Manager, Director, or HR)
+    const canAssignToOthers = computed(() => {
+      const role = authStore.user?.role
+      return role === 'Manager' || role === 'Director' || role === 'HR'
+    })
+
     const minDate = computed(() => {
       return new Date().toISOString().split('T')[0]
     })
@@ -441,14 +464,18 @@ export default {
     watch(() => props.isOpen, (isOpen) => {
       if (isOpen) {
         loadProjectMembers()
-        // Reset form
+
+        // Reset form - if Staff, auto-assign to themselves
+        const defaultAssigneeId = isStaffRole.value ? (authStore.user?.user_id || '') : ''
+        const defaultStatus = isStaffRole.value ? 'Ongoing' : 'Ongoing'
+
         form.value = {
           title: '',
           description: '',
           dueDate: '',
-          status: 'Ongoing',
+          status: defaultStatus,
           priority: 5,
-          assigneeId: '',
+          assigneeId: defaultAssigneeId,
           collaborators: [],
           reminderDays: [7, 3, 1],
           emailEnabled: true,
@@ -493,7 +520,13 @@ export default {
         }
       }
 
-      if (!form.value.assigneeId) {
+      // Determine final assignee based on role
+      let finalAssigneeId = form.value.assigneeId
+
+      if (isStaffRole.value) {
+        // Staff always assigns to themselves
+        finalAssigneeId = authStore.user?.user_id || ''
+      } else if (!form.value.assigneeId) {
         errors.value.assigneeId = 'Please select a team member to assign this task'
         hasErrors = true
       }
@@ -512,7 +545,7 @@ export default {
           due_date: form.value.dueDate,
           status: form.value.status,
           priority: form.value.priority,
-          owner_id: form.value.assigneeId,
+          owner_id: finalAssigneeId,
           collaborators: JSON.stringify(form.value.collaborators),
           project_id: props.project.project_id, // Automatically link to this project
           project: props.project.project_name, // Include project name
@@ -562,6 +595,8 @@ export default {
       errors,
       isLoading,
       isLoadingMembers,
+      isStaffRole,
+      canAssignToOthers,
       projectMembers,
       selectedCollaborator,
       availableCollaborators,
