@@ -160,6 +160,8 @@ services:
     ports:
       - "8090:8090"
     environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - TASK_SERVICE_URL=http://task-service:8080
       - PROJECT_SERVICE_URL=http://project-service:8082
       - USER_SERVICE_URL=http://user-service:8081
