@@ -68,6 +68,8 @@ except Exception as e:
 
 # Environment variables
 TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://task-service:8080")
+PROJECT_SERVICE_URL = os.getenv("PROJECT_SERVICE_URL", "http://project-service:8082")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user-service:8081")
 # Add after TASK_SERVICE_URL line
 SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -1851,6 +1853,165 @@ def generate_hr_report(data_by_scope: Dict[str, List[Dict[str, Any]]],
     buffer.seek(0)
     return buffer
 
+
+def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
+    """
+    Generate a PDF report for a project.
+
+    Args:
+        report_data: Dictionary containing project report data
+
+    Returns:
+        BytesIO buffer containing the PDF
+    """
+    # Create a buffer to hold the PDF
+    buffer = io.BytesIO()
+
+    # Create the PDF document
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                           rightMargin=50, leftMargin=50,
+                           topMargin=50, bottomMargin=50)
+
+    # Container for PDF elements
+    elements = []
+
+    # Styles
+    styles = getSampleStyleSheet()
+
+    # Title style
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=HexColor('#0f172a'),
+        spaceAfter=10,
+        spaceBefore=0,
+        alignment=TA_LEFT,
+        fontName='Helvetica-Bold',
+        leading=28,
+        leftIndent=0,
+        rightIndent=0
+    )
+
+    # Heading style
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=HexColor('#1e40af'),
+        spaceAfter=12,
+        spaceBefore=12,
+        alignment=TA_LEFT,
+        fontName='Helvetica-Bold',
+        leftIndent=0,
+        rightIndent=0,
+    )
+
+    # Project title
+    project = report_data.get('project', {})
+    title = Paragraph(f"Project Report: {project.get('name', 'Unknown Project')}", title_style)
+    elements.append(title)
+    elements.append(Spacer(1, 20))
+
+    # Project information table
+    project_info = [
+        ['Project Name:', project.get('name', 'N/A')],
+        ['Project Owner:', project.get('owner', 'N/A')],
+        ['Status:', project.get('status', 'N/A')],
+        ['Created Date:', project.get('created_date', 'N/A')],
+        ['Due Date:', project.get('due_date', 'N/A')],
+        ['Report Generated:', report_data.get('generated_at', 'N/A')]
+    ]
+
+    project_table = Table(project_info, colWidths=[2*inch, 4*inch])
+    project_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(project_table)
+    elements.append(Spacer(1, 20))
+
+    # Summary statistics
+    summary = report_data.get('summary', {})
+    summary_heading = Paragraph("Project Summary", heading_style)
+    elements.append(summary_heading)
+
+    summary_data = [
+        ['Total Tasks', 'Completed', 'Ongoing', 'Overdue', 'Completion Rate'],
+        [
+            str(summary.get('total_tasks', 0)),
+            str(summary.get('completed_tasks', 0)),
+            str(summary.get('ongoing_tasks', 0)),
+            str(summary.get('overdue_tasks', 0)),
+            f"{summary.get('completion_rate', 0):.1f}%"
+        ]
+    ]
+
+    summary_table = Table(summary_data, colWidths=[1.2*inch] * 5)
+    summary_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 1), (-1, 1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+        ('LINEBELOW', (0, 0), (-1, 0), 1.5, HexColor('#2563eb')),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 20))
+
+    # Team performance
+    team_performance = report_data.get('team_performance', [])
+    if team_performance:
+        team_heading = Paragraph("Team Performance", heading_style)
+        elements.append(team_heading)
+
+        team_data = [['Team Member', 'Department', 'Total Tasks', 'Completed', 'Completion Rate']]
+        
+        for member in team_performance:
+            team_data.append([
+                member.get('member', 'Unknown'),
+                member.get('department', 'N/A'),
+                str(member.get('total', 0)),
+                str(member.get('completed', 0)),
+                f"{member.get('rate', 0):.1f}%"
+            ])
+
+        team_table = Table(team_data, colWidths=[1.5*inch, 1.2*inch, 1*inch, 1*inch, 1.1*inch])
+        team_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+            ('INNERGRID', (0, 1), (-1, -1), 0.5, HexColor('#e2e8f0')),
+        ]))
+        elements.append(team_table)
+        elements.append(Spacer(1, 20))
+
+    # Build PDF
+    doc.build(elements)
+
+    # Reset buffer position to beginning
+    buffer.seek(0)
+    return buffer
+
+
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint."""
@@ -2435,6 +2596,91 @@ def debug_tasks():
     except Exception as e:
         logger.error(f"Error in debug tasks: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/preview-project-report", methods=["POST"])
+def preview_project_report():
+    """
+    Generate project report data for preview (returns JSON).
+
+    Request body:
+    {
+        "project_id": "project-uuid"
+    }
+
+    Returns:
+        JSON with report data
+    """
+    try:
+        data = request.get_json()
+        project_id = data.get('project_id')
+
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+
+        logger.info(f"Generating preview for project {project_id}")
+        report_data = fetch_project_report_data(project_id)
+
+        return jsonify(report_data), 200
+
+    except requests.RequestException as e:
+        logger.error(f"Error communicating with services: {e}")
+        return jsonify({"error": "Failed to fetch project data", "details": str(e)}), 503
+
+    except Exception as e:
+        logger.error(f"Error generating project report preview: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate preview", "details": str(e)}), 500
+
+
+@app.route("/generate-project-report", methods=["POST"])
+def generate_project_report_pdf():
+    """
+    Generate a PDF report for a project.
+
+    Request body:
+    {
+        "project_id": "project-uuid"
+    }
+
+    Returns:
+        PDF file stream
+    """
+    try:
+        data = request.get_json()
+        project_id = data.get('project_id')
+
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+
+        logger.info(f"Generating PDF report for project {project_id}")
+
+        # Fetch project report data
+        report_data = fetch_project_report_data(project_id)
+
+        # Generate PDF
+        pdf_buffer = generate_project_pdf_report(report_data)
+
+        # Generate filename
+        project_name = report_data['project']['name'].replace(' ', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"project_report_{project_name}_{timestamp}.pdf"
+
+        # Return PDF as response
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except requests.RequestException as e:
+        logger.error(f"Error communicating with services: {e}")
+        return jsonify({"error": "Failed to fetch project data", "details": str(e)}), 503
+
+    except Exception as e:
+        logger.error(f"Error generating project report PDF: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate PDF", "details": str(e)}), 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8090, debug=True)
