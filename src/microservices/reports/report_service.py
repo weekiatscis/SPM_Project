@@ -25,7 +25,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.shapes import Drawing, Line
 from reportlab.graphics.charts.piecharts import Pie
 from reportlab.lib.colors import HexColor
 
@@ -331,17 +331,6 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
         rightIndent=0
     )
 
-    # Subtitle style
-    subtitle_style = ParagraphStyle(
-        'Subtitle',
-        parent=styles['Normal'],
-        fontSize=11,
-        textColor=HexColor('#64748b'),
-        spaceAfter=20,
-        alignment=TA_LEFT,
-        fontName='Helvetica'
-    )
-
     # Section heading style - bold with more prominent appearance
     heading_style = ParagraphStyle(
         'CustomHeading',
@@ -368,70 +357,8 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
         leading=14
     )
 
-    # Header with Title and Logo
-    from reportlab.graphics.shapes import Line, Drawing as ShapeDrawing
-    from svglib.svglib import svg2rlg
-
-    # Load logo
-    logo_path = os.path.join(os.path.dirname(__file__), 'taskio-logo.svg')
-    logo = None
-    if os.path.exists(logo_path) and svg2rlg:
-        try:
-            logo_drawing = svg2rlg(logo_path)
-            # Scale logo to reasonable size
-            scale_factor = 0.35  # Adjust this to make logo smaller/larger
-            logo_drawing.width = logo_drawing.width * scale_factor
-            logo_drawing.height = logo_drawing.height * scale_factor
-            logo_drawing.scale(scale_factor, scale_factor)
-            logo = logo_drawing
-        except Exception as e:
-            logger.warning(f"Could not load logo: {e}")
-
-    # Create header table with title on left and logo on right
-    if logo:
-        header_data = [[
-            Paragraph("Task Progress Report", title_style),
-            logo
-        ]]
-        header_table = Table(header_data, colWidths=[4*inch, 2.5*inch])
-        header_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ]))
-    else:
-        # Fallback to text if logo not found
-        header_data = [[
-            Paragraph("Task Progress Report", title_style),
-            Paragraph('<font name="Helvetica-Bold" size="16" color="#3b82f6">TASKIO</font><br/><font name="Helvetica" size="10" color="#64748b">PROJECT MANAGEMENT</font>',
-                     ParagraphStyle('Logo', alignment=TA_RIGHT, leading=14))
-        ]]
-        header_table = Table(header_data, colWidths=[4*inch, 2.5*inch])
-        header_table.setStyle(TableStyle([
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ]))
-
-    elements.append(header_table)
-    elements.append(Spacer(1, 8))
-
-    # Add a horizontal line under header
-    line_drawing = ShapeDrawing(500, 3)
-    line = Line(0, 0, 500, 0)
-    line.strokeColor = HexColor('#3b82f6')
-    line.strokeWidth = 3
-    line_drawing.add(line)
-    elements.append(line_drawing)
-    elements.append(Spacer(1, 18))
+    # Branded header with logo (shared across reports)
+    elements.extend(build_report_header("Task Progress Report", styles))
 
     # Report metadata in a clean info box
     metadata_data = [
@@ -661,6 +588,70 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
 
     return buffer
 
+def build_report_header(title: str, styles) -> List[Any]:
+    """Construct a reusable report header with logo branding."""
+    header_elements: List[Any] = []
+
+    title_style = ParagraphStyle(
+        'ReportTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=HexColor('#0f172a'),
+        spaceAfter=10,
+        spaceBefore=0,
+        alignment=TA_LEFT,
+        fontName='Helvetica-Bold',
+        leading=28
+    )
+
+    logo_path = os.path.join(os.path.dirname(__file__), 'taskio-logo.svg')
+    logo = None
+    if os.path.exists(logo_path) and svg2rlg:
+        try:
+            logo_drawing = svg2rlg(logo_path)
+            scale_factor = 0.35
+            logo_drawing.width = logo_drawing.width * scale_factor
+            logo_drawing.height = logo_drawing.height * scale_factor
+            logo_drawing.scale(scale_factor, scale_factor)
+            logo = logo_drawing
+        except Exception as exc:
+            logger.warning(f"Could not load logo: {exc}")
+
+    if logo:
+        header_data = [[Paragraph(title, title_style), logo]]
+    else:
+        fallback_style = ParagraphStyle('LogoFallback', parent=styles['Normal'], alignment=TA_RIGHT, leading=14)
+        fallback_markup = (
+            '<font name="Helvetica-Bold" size="16" color="#3b82f6">TASKIO</font>'
+            '<br/><font name="Helvetica" size="10" color="#64748b">PROJECT MANAGEMENT</font>'
+        )
+        header_data = [[Paragraph(title, title_style), Paragraph(fallback_markup, fallback_style)]]
+
+    header_table = Table(header_data, colWidths=[4 * inch, 2.5 * inch])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+        ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+
+    header_elements.append(header_table)
+    header_elements.append(Spacer(1, 8))
+
+    line_drawing = Drawing(500, 3)
+    header_line = Line(0, 0, 500, 0)
+    header_line.strokeColor = HexColor('#3b82f6')
+    header_line.strokeWidth = 3
+    line_drawing.add(header_line)
+
+    header_elements.append(line_drawing)
+    header_elements.append(Spacer(1, 18))
+
+    return header_elements
+
 class UserRole(Enum):
     STAFF = "Staff"
     MANAGER = "Manager"
@@ -822,7 +813,9 @@ def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
     if total_tasks == 0:
         return {
             'total_tasks': 0,
+            'completed_tasks': 0,
             'completion_rate': 0,
+            'overdue_tasks': 0,
             'overdue_percentage': 0,
             'total_time_spent': 0,
             'avg_completion_time': 0
@@ -876,150 +869,275 @@ def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
         'avg_completion_time': avg_completion_time
     }
 
-def generate_director_report(tasks_by_team: Dict[str, List[Dict[str, Any]]], 
-                           requesting_user: Dict[str, Any],
-                           filters: Dict[str, Any]) -> io.BytesIO:
-    """Generate director-level department/team comparison report."""
+def generate_director_report(tasks_by_scope: Dict[str, List[Dict[str, Any]]],
+                             requesting_user: Dict[str, Any],
+                             filters: Dict[str, Any]) -> io.BytesIO:
+    """Generate comparative report for directors/managers/HR with branded layout."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
-    elements = []
+    elements: List[Any] = []
     styles = getSampleStyleSheet()
-    
-    # Title and header
-    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, 
-                                textColor=HexColor('#0f172a'), spaceAfter=20, fontName='Helvetica-Bold')
-    
-    elements.append(Paragraph("Department Performance Report", title_style))
-    elements.append(Spacer(1, 20))
-    
-    # Report metadata
-    metadata_data = [
+
+    report_type = filters.get('report_type')
+    report_title = filters.get('report_title')
+    if not report_title:
+        if report_type == ReportType.TEAM.value:
+            report_title = "Team Performance Report"
+        elif report_type == ReportType.DEPARTMENT.value:
+            report_title = "Department Performance Report"
+        else:
+            report_title = "Performance Comparison Report"
+
+    elements.extend(build_report_header(report_title, styles))
+
+    start_date = filters.get('start_date')
+    end_date = filters.get('end_date')
+    status_filter = filters.get('status_filter') or []
+
+    metadata_rows: List[List[str]] = [
         ['Generated by:', requesting_user.get('name', 'Unknown')],
         ['Role:', requesting_user.get('role', 'Unknown')],
-        ['Department:', requesting_user.get('department', 'Unknown')],
-        ['Report Date:', datetime.now().strftime('%B %d, %Y at %I:%M %p')],
-        ['Teams Analyzed:', ', '.join(tasks_by_team.keys())]
+        ['Report Date:', datetime.now().strftime('%B %d, %Y at %I:%M %p')]
     ]
-    
-    metadata_table = Table(metadata_data, colWidths=[1.5*inch, 4*inch])
+
+    departments = filters.get('departments') or []
+    if isinstance(departments, str):
+        departments = [departments]
+    if not departments and filters.get('department'):
+        departments = [filters.get('department')]
+    if departments:
+        metadata_rows.append(['Departments:', ', '.join(departments)])
+    elif requesting_user.get('department'):
+        metadata_rows.append(['Department:', requesting_user.get('department')])
+
+    scope_label = 'Scopes Analyzed:'
+    if report_type == ReportType.TEAM.value:
+        scope_label = 'Teams Analyzed:'
+    elif report_type == ReportType.DEPARTMENT.value:
+        scope_label = 'Teams Compared:' if len(tasks_by_scope) != 1 else 'Team Analyzed:'
+    scope_value = ', '.join(tasks_by_scope.keys()) if tasks_by_scope else 'None'
+    metadata_rows.append([scope_label, scope_value])
+
+    if start_date and end_date:
+        metadata_rows.append(['Date Range:', f"{start_date} to {end_date}"])
+    elif start_date:
+        metadata_rows.append(['Date Range:', f"From {start_date}"])
+    elif end_date:
+        metadata_rows.append(['Date Range:', f"Until {end_date}"])
+
+    if status_filter and 'All' not in status_filter:
+        metadata_rows.append(['Status Filter:', ', '.join(status_filter)])
+
+    metadata_table = Table(metadata_rows, colWidths=[1.8 * inch, 3.7 * inch])
     metadata_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), HexColor('#475569')),
+        ('TEXTCOLOR', (1, 0), (1, -1), HexColor('#1e293b')),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
         ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
         ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
     ]))
     elements.append(metadata_table)
-    elements.append(Spacer(1, 30))
-    
-    # Team comparison table
-    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=16, 
-                                  textColor=HexColor('#1e40af'), fontName='Helvetica-Bold')
-    
-    elements.append(Paragraph("Team Performance Comparison", heading_style))
+    elements.append(Spacer(1, 24))
+
+    heading_style = ParagraphStyle(
+        'ComparisonHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=HexColor('#1e40af'),
+        fontName='Helvetica-Bold'
+    )
+
+    elements.append(Paragraph("Performance Comparison", heading_style))
     elements.append(Spacer(1, 15))
-    
-    # Calculate metrics for each team
-    comparison_data = [
-        ['Team/Department', 'Total Tasks', 'Completion Rate', 'Overdue %', 'Avg. Completion Time', 'Total Time Spent']
+
+    comparison_data: List[List[str]] = [
+        ['Scope', 'Total Tasks', 'Completed', 'Completion Rate', 'Overdue %', 'Avg. Duration (days)', 'Total Time (days)']
     ]
-    
-    for team_name, tasks in tasks_by_team.items():
-        metrics = calculate_team_metrics(tasks)
+
+    for scope_name, scope_tasks in tasks_by_scope.items():
+        metrics = calculate_team_metrics(scope_tasks)
         comparison_data.append([
-            team_name,
+            scope_name,
             str(metrics['total_tasks']),
+            str(metrics['completed_tasks']),
             f"{metrics['completion_rate']:.1f}%",
             f"{metrics['overdue_percentage']:.1f}%",
-            f"{metrics['avg_completion_time']:.1f} days",
-            f"{metrics['total_time_spent']} days"
+            f"{metrics['avg_completion_time']:.1f}",
+            str(metrics['total_time_spent'])
         ])
-    
-    comparison_table = Table(comparison_data, colWidths=[1.2*inch, 0.8*inch, 1*inch, 0.8*inch, 1.2*inch, 1*inch])
+
+    if len(comparison_data) == 1:
+        comparison_data.append(['No data available', '-', '-', '-', '-', '-', '-'])
+
+    comparison_table = Table(
+        comparison_data,
+        colWidths=[1.6 * inch, 0.9 * inch, 0.9 * inch, 1.1 * inch, 0.9 * inch, 1.2 * inch, 1.0 * inch]
+    )
     comparison_table.setStyle(TableStyle([
-        # Header
         ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, 0), 9),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        
-        # Data rows
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+
         ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 1), (-1, -1), 8),
         ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
         ('ALIGN', (0, 1), (0, -1), 'LEFT'),
         ('TOPPADDING', (0, 1), (-1, -1), 8),
         ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
-        
-        # Borders
+
         ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
         ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
-    
-    # Alternate row colors
+
     for row_idx in range(1, len(comparison_data)):
         bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
         comparison_table.setStyle(TableStyle([
             ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
         ]))
-    
+
     elements.append(comparison_table)
-    
+
     doc.build(elements)
     buffer.seek(0)
     return buffer
 
-def generate_hr_report(data_by_scope: Dict[str, List[Dict[str, Any]]], 
+def generate_hr_report(data_by_scope: Dict[str, List[Dict[str, Any]]],
                       requesting_user: Dict[str, Any],
                       filters: Dict[str, Any]) -> io.BytesIO:
-    """Generate HR-level organization-wide report."""
+    """Generate HR-level organization-wide report with comparison insights."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
-    elements = []
+    elements: List[Any] = []
     styles = getSampleStyleSheet()
-    
-    # Title
-    title_style = ParagraphStyle('CustomTitle', parent=styles['Heading1'], fontSize=24, 
-                                textColor=HexColor('#0f172a'), spaceAfter=20, fontName='Helvetica-Bold')
-    
-    elements.append(Paragraph("Organization Performance Report", title_style))
-    elements.append(Spacer(1, 20))
-    
-    # Report metadata
+
+    report_title = filters.get('report_title') or "Organization Performance Report"
+    elements.extend(build_report_header(report_title, styles))
+
     scope_type = filters.get('scope_type', 'organization')
-    metadata_data = [
+    scope_values = filters.get('scope_values') or list(data_by_scope.keys())
+    start_date = filters.get('start_date')
+    end_date = filters.get('end_date')
+    status_filter = filters.get('status_filter') or []
+
+    scope_label_map = {
+        'departments': 'Departments Included:',
+        'teams': 'Teams Included:',
+        'individuals': 'Individuals Included:'
+    }
+
+    metadata_rows: List[List[str]] = [
         ['Generated by:', requesting_user.get('name', 'Unknown')],
         ['Role:', requesting_user.get('role', 'Unknown')],
-        ['Report Scope:', scope_type.title()],
+        ['Scope Type:', scope_type.replace('_', ' ').title()],
         ['Report Date:', datetime.now().strftime('%B %d, %Y at %I:%M %p')],
-        ['Analysis Level:', ', '.join(data_by_scope.keys())]
+        [scope_label_map.get(scope_type, 'Scopes Analyzed:'), ', '.join(scope_values) if scope_values else 'Organization-wide']
     ]
-    
-    metadata_table = Table(metadata_data, colWidths=[1.5*inch, 4*inch])
+
+    if start_date and end_date:
+        metadata_rows.append(['Date Range:', f"{start_date} to {end_date}"])
+    elif start_date:
+        metadata_rows.append(['Date Range:', f"From {start_date}"])
+    elif end_date:
+        metadata_rows.append(['Date Range:', f"Until {end_date}"])
+
+    if status_filter and 'All' not in status_filter:
+        metadata_rows.append(['Status Filter:', ', '.join(status_filter)])
+
+    metadata_table = Table(metadata_rows, colWidths=[1.8 * inch, 3.7 * inch])
     metadata_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), HexColor('#475569')),
+        ('TEXTCOLOR', (1, 0), (1, -1), HexColor('#1e293b')),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
         ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
         ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
     ]))
     elements.append(metadata_table)
-    elements.append(Spacer(1, 30))
-    
-    # Summary tables for each scope
-    heading_style = ParagraphStyle('CustomHeading', parent=styles['Heading2'], fontSize=16, 
-                                  textColor=HexColor('#1e40af'), fontName='Helvetica-Bold')
-    
+    elements.append(Spacer(1, 24))
+
+    heading_style = ParagraphStyle(
+        'ScopeHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=HexColor('#1e40af'),
+        fontName='Helvetica-Bold'
+    )
+
+    # Comparison overview
+    elements.append(Paragraph("Scope Comparison Overview", heading_style))
+    elements.append(Spacer(1, 15))
+
+    comparison_data: List[List[str]] = [
+        ['Scope', 'Total Tasks', 'Completed', 'Completion Rate', 'Overdue %', 'Avg. Duration (days)', 'Total Time (days)']
+    ]
+
+    for scope_name, tasks in data_by_scope.items():
+        metrics = calculate_team_metrics(tasks)
+        comparison_data.append([
+            scope_name,
+            str(metrics['total_tasks']),
+            str(metrics['completed_tasks']),
+            f"{metrics['completion_rate']:.1f}%",
+            f"{metrics['overdue_percentage']:.1f}%",
+            f"{metrics['avg_completion_time']:.1f}",
+            str(metrics['total_time_spent'])
+        ])
+
+    if len(comparison_data) == 1:
+        comparison_data.append(['No data available', '-', '-', '-', '-', '-', '-'])
+
+    comparison_table = Table(
+        comparison_data,
+        colWidths=[1.6 * inch, 0.9 * inch, 0.9 * inch, 1.1 * inch, 0.9 * inch, 1.2 * inch, 1.0 * inch]
+    )
+    comparison_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+        ('TOPPADDING', (0, 1), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+
+        ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+
+    for row_idx in range(1, len(comparison_data)):
+        bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+        comparison_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+        ]))
+
+    elements.append(comparison_table)
+    elements.append(Spacer(1, 24))
+
+    # Detailed summaries per scope
     for scope_name, tasks in data_by_scope.items():
         elements.append(Paragraph(f"{scope_name} Summary", heading_style))
         elements.append(Spacer(1, 10))
-        
+
         metrics = calculate_team_metrics(tasks)
-        
-        # Summary table for this scope
         summary_data = [
             ['Metric', 'Value'],
             ['Total Tasks', str(metrics['total_tasks'])],
@@ -1030,39 +1148,43 @@ def generate_hr_report(data_by_scope: Dict[str, List[Dict[str, Any]]],
             ['Total Time Spent', f"{metrics['total_time_spent']} days"],
             ['Average Completion Time', f"{metrics['avg_completion_time']:.1f} days"]
         ]
-        
-        summary_table = Table(summary_data, colWidths=[2.5*inch, 2*inch])
+
+        summary_table = Table(summary_data, colWidths=[2.5 * inch, 2.0 * inch])
         summary_table.setStyle(TableStyle([
-            # Header
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
-            
-            # Data rows
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
             ('FONTSIZE', (0, 1), (-1, -1), 9),
             ('TOPPADDING', (0, 1), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
-            
-            # Borders
             ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
             ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
-        
-        # Alternate row colors
+
         for row_idx in range(1, len(summary_data)):
             bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
             summary_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
             ]))
-        
+
         elements.append(summary_table)
-        elements.append(Spacer(1, 20))
-    
+        elements.append(Spacer(1, 18))
+
+    if not data_by_scope:
+        no_data_style = ParagraphStyle(
+            'NoData',
+            parent=styles['Normal'],
+            fontSize=11,
+            textColor=HexColor('#64748b'),
+            alignment=TA_CENTER
+        )
+        elements.append(Paragraph("No data available for the selected scope and filters.", no_data_style))
+
     doc.build(elements)
     buffer.seek(0)
     return buffer
@@ -1216,64 +1338,83 @@ def generate_report():
             filename = f"individual_report_{user_name.replace(' ', '_')}_{timestamp}.pdf"
             
         elif report_type == ReportType.TEAM.value:
-            # Team report
+            tasks_by_scope: Dict[str, List[Dict[str, Any]]] = {}
+
             if user_role == UserRole.MANAGER.value:
-                # Manager's team report
-                team_members = get_team_members(requesting_user.get('department'), requesting_user_id)
-                team_name = f"{requesting_user.get('name', 'Unknown')}'s Team"
-                
-            elif user_role == UserRole.DIRECTOR.value:
-                # Director selecting a specific team
-                teams = data.get('teams', [])
-                if not teams:
-                    return jsonify({"error": "Team selection is required for Directors"}), 400
-                
-                selected_team = teams[0] if isinstance(teams, list) else teams
-                
-                # Find team members by team name (assuming team name is the superior's name)
-                all_users_response = supabase.table('user').select('*').execute()
-                team_members = []
-                
-                for user in all_users_response.data:
-                    if user.get('superior'):
-                        superior_user = get_user_details(user.get('superior'))
-                        if superior_user and superior_user.get('name') == selected_team:
-                            team_members.append(user)
-                
-                team_name = selected_team
-                
-            elif user_role == UserRole.HR.value:
-                # HR selecting any team
-                teams = data.get('teams', [])
-                if not teams:
-                    return jsonify({"error": "Team selection is required"}), 400
-                
-                selected_team = teams[0] if isinstance(teams, list) else teams
-                
-                # Find team members by team name
-                all_users_response = supabase.table('user').select('*').execute()
-                team_members = []
-                
-                for user in all_users_response.data:
-                    if user.get('superior'):
-                        superior_user = get_user_details(user.get('superior'))
-                        if superior_user and superior_user.get('name') == selected_team:
-                            team_members.append(user)
-                
-                team_name = selected_team
+                team_members = get_team_members(requesting_user.get('department'), requesting_user_id) or []
+                member_ids = {requesting_user_id}
+                member_ids.update({member['user_id'] for member in team_members if member.get('user_id')})
+
+                team_label = f"{requesting_user.get('name', 'Unknown')}'s Team"
+                team_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
+                tasks_by_scope[team_label] = team_tasks
+
+            elif user_role in (UserRole.DIRECTOR.value, UserRole.HR.value):
+                selected_teams = data.get('teams', [])
+                if isinstance(selected_teams, str):
+                    selected_teams = [selected_teams]
+
+                if not selected_teams:
+                    message = "Team selection is required for Directors" if user_role == UserRole.DIRECTOR.value else "At least one team must be selected"
+                    return jsonify({"error": message}), 400
+
+                try:
+                    all_users_response = supabase.table('user').select('*').execute()
+                    all_users = all_users_response.data or []
+                except Exception as exc:
+                    logger.error(f"Error fetching users for team report: {exc}")
+                    all_users = []
+
+                for team_name in selected_teams:
+                    team_members = []
+                    team_lead_id = None
+
+                    for user in all_users:
+                        superior_id = user.get('superior')
+                        if not superior_id:
+                            continue
+
+                        superior_user = get_user_details(superior_id)
+                        if not superior_user or superior_user.get('name') != team_name:
+                            continue
+
+                        if user_role == UserRole.DIRECTOR.value and user.get('department') != requesting_user.get('department'):
+                            continue
+
+                        team_members.append(user)
+                        team_lead_id = superior_id
+
+                    if team_lead_id:
+                        lead_user = get_user_details(team_lead_id)
+                        if lead_user and (user_role != UserRole.DIRECTOR.value or lead_user.get('department') == requesting_user.get('department')):
+                            team_members.append(lead_user)
+
+                    unique_members = {member['user_id']: member for member in team_members if member.get('user_id')}
+                    user_ids = list(unique_members.keys())
+
+                    if user_ids:
+                        team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                        tasks_by_scope[team_name] = team_tasks
+
+                if not tasks_by_scope:
+                    return jsonify({"error": "No team members found for the selected teams"}), 404
+
+                if user_role == UserRole.HR.value:
+                    data.setdefault('scope_type', 'teams')
+                    data.setdefault('scope_values', selected_teams)
+
             else:
                 return jsonify({"error": "Unauthorized for team reports"}), 403
-            
-            if not team_members:
-                return jsonify({"error": f"No team members found for team: {team_name}"}), 404
-            
-            user_ids = [member['user_id'] for member in team_members]
-            team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
-            
-            # Generate team report using director report function with single team
-            tasks_by_team = {team_name: team_tasks}
-            pdf_buffer = generate_director_report(tasks_by_team, requesting_user, data)
-            filename = f"team_report_{team_name.replace(' ', '_')}_{timestamp}.pdf"
+
+            data['report_title'] = "Team Performance Report"
+            if user_role == UserRole.DIRECTOR.value:
+                data.setdefault('departments', [requesting_user.get('department')])
+
+            scope_key = next(iter(tasks_by_scope)) if tasks_by_scope else 'team'
+            raw_scope = 'comparison' if len(tasks_by_scope) > 1 else scope_key
+            safe_scope = ''.join(ch for ch in raw_scope.replace(' ', '_') if ch.isalnum() or ch in ('_', '-')).lower()
+            filename = f"team_report_{safe_scope}_{timestamp}.pdf"
+            pdf_buffer = generate_director_report(tasks_by_scope, requesting_user, data)
             
         elif report_type == ReportType.DEPARTMENT.value:
             # Department report
@@ -1286,19 +1427,31 @@ def generate_report():
                 
                 if teams:
                     # Specific teams requested
+                    all_users_response = supabase.table('user').select('*').execute()
+                    all_users = all_users_response.data if all_users_response.data else []
+
                     for team in teams:
-                        # Find team members by superior name
-                        all_users_response = supabase.table('user').select('*').execute()
                         team_members = []
-                        
-                        for user in all_users_response.data:
-                            if user.get('superior'):
-                                superior_user = get_user_details(user.get('superior'))
-                                if superior_user and superior_user.get('name') == team and user.get('department') == department:
-                                    team_members.append(user)
-                        
-                        if team_members:
-                            user_ids = [member['user_id'] for member in team_members]
+                        team_lead_user = None
+
+                        for user in all_users:
+                            superior_id = user.get('superior')
+                            if not superior_id:
+                                continue
+
+                            superior_user = get_user_details(superior_id)
+                            if superior_user and superior_user.get('name') == team and user.get('department') == department:
+                                team_members.append(user)
+                                team_lead_user = superior_user
+
+                        unique_members = {member['user_id']: member for member in team_members if member.get('user_id')}
+
+                        if team_lead_user and team_lead_user.get('user_id'):
+                            unique_members[team_lead_user['user_id']] = team_lead_user
+
+                        user_ids = list(unique_members.keys())
+
+                        if user_ids:
                             team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
                             tasks_by_team[team] = team_tasks
                 else:
@@ -1313,34 +1466,78 @@ def generate_report():
                         teams_dict[superior].append(member)
                     
                     for team_lead, members in teams_dict.items():
-                        user_ids = [member['user_id'] for member in members]
+                        unique_ids = {member['user_id'] for member in members if member.get('user_id')}
+                        team_lead_user = None
+
+                        if team_lead != 'No Team':
+                            team_lead_user = get_user_details(team_lead)
+                            if team_lead_user and team_lead_user.get('department') == department and team_lead_user.get('user_id'):
+                                unique_ids.add(team_lead_user['user_id'])
+
+                        user_ids = list(unique_ids)
+
+                        if not user_ids:
+                            continue
+
                         team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
-                        
+
                         # Get team lead name
                         team_lead_name = 'Unassigned'
                         if team_lead != 'No Team':
                             team_lead_user = get_user_details(team_lead)
                             team_lead_name = team_lead_user.get('name', team_lead) if team_lead_user else team_lead
-                        
+
                         tasks_by_team[team_lead_name] = team_tasks
                 
+                if not tasks_by_team:
+                    return jsonify({"error": "No team data found for the selected department"}), 404
+
+                data.setdefault('departments', [department])
+                data['report_title'] = "Department Performance Report"
+
+                scope_key = next(iter(tasks_by_team)) if tasks_by_team else department
+                raw_scope = 'comparison' if len(tasks_by_team) > 1 else scope_key
+                safe_scope = ''.join(ch for ch in raw_scope.replace(' ', '_') if ch.isalnum() or ch in ('_', '-')).lower()
+
                 pdf_buffer = generate_director_report(tasks_by_team, requesting_user, data)
-                filename = f"department_report_{department}_{timestamp}.pdf"
+                filename = f"department_report_{safe_scope}_{timestamp}.pdf"
                 
             elif user_role == UserRole.HR.value:
-                # HR department report
-                department = data.get('department')
-                if not department:
-                    return jsonify({"error": "Department selection is required"}), 400
-                
-                dept_members = get_team_members(department)
-                user_ids = [member['user_id'] for member in dept_members]
-                dept_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
-                
-                # Generate as single department analysis
-                data_by_scope = {department: dept_tasks}
+                # HR department report with multi-department comparison support
+                selected_departments = data.get('departments') or []
+                if isinstance(selected_departments, str):
+                    selected_departments = [selected_departments]
+
+                legacy_department = data.get('department')
+                if legacy_department and legacy_department not in selected_departments:
+                    selected_departments.append(legacy_department)
+
+                if not selected_departments:
+                    return jsonify({"error": "Please select at least one department"}), 400
+
+                data_by_scope: Dict[str, List[Dict[str, Any]]] = {}
+                for dept in selected_departments:
+                    dept_members = get_team_members(dept)
+                    member_ids = {member['user_id'] for member in dept_members if member.get('user_id')}
+                    if not member_ids:
+                        logger.info(f"No members found for department {dept}")
+                        continue
+
+                    dept_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
+                    data_by_scope[dept] = dept_tasks
+
+                if not data_by_scope:
+                    return jsonify({"error": "No task data found for the selected departments"}), 404
+
+                data['scope_type'] = 'departments'
+                data['scope_values'] = list(data_by_scope.keys())
+                data['report_title'] = "Department Performance Report"
+
+                scope_key = 'comparison' if len(data_by_scope) > 1 else next(iter(data_by_scope))
+                safe_scope = ''.join(ch for ch in scope_key.replace(' ', '_') if ch.isalnum() or ch in ('_', '-')).lower()
+
                 pdf_buffer = generate_hr_report(data_by_scope, requesting_user, data)
-                filename = f"hr_department_report_{department}_{timestamp}.pdf"
+                filename = f"hr_department_report_{safe_scope}_{timestamp}.pdf"
             else:
                 return jsonify({"error": "Unauthorized for department reports"}), 403
                 

@@ -98,16 +98,23 @@
 
         <!-- For Director and HR (select a team) -->
         <div class="filter-section" v-if="currentUser?.role === 'Director' || currentUser?.role === 'HR'">
-          <label class="filter-label">Select Team</label>
-          <a-select v-model:value="selectedTeam" :style="{ width: '100%' }" :disabled="isGenerating"
-            placeholder="Select a team to analyze">
+          <label class="filter-label">Select Teams</label>
+          <a-select
+            v-model:value="selectedTeams"
+            mode="multiple"
+            :style="{ width: '100%' }"
+            :disabled="isGenerating"
+            placeholder="Select one or more teams to analyze"
+            allow-clear
+            :max-tag-count="3"
+          >
             <a-select-option v-for="team in reportOptions.teams" :key="team" :value="team">
               {{ team }}
             </a-select-option>
           </a-select>
           <div class="filter-hint">
             <InfoCircleOutlined style="color: #1890ff; margin-right: 4px;" />
-            Analyze performance metrics for the selected team
+            Compare performance across selected teams or focus on a single team
           </div>
         </div>
       </div>
@@ -131,16 +138,23 @@
 
         <!-- For HR: Department Selection -->
         <div class="filter-section" v-if="currentUser?.role === 'HR'">
-          <label class="filter-label">Select Department</label>
-          <a-select v-model:value="selectedDepartment" :style="{ width: '100%' }" :disabled="isGenerating"
-            placeholder="Select a department to analyze">
+          <label class="filter-label">Select Departments</label>
+          <a-select
+            v-model:value="selectedDepartments"
+            mode="multiple"
+            :style="{ width: '100%' }"
+            :disabled="isGenerating"
+            placeholder="Select one or more departments to analyze"
+            allow-clear
+            :max-tag-count="3"
+          >
             <a-select-option v-for="dept in reportOptions.departments" :key="dept" :value="dept">
               {{ dept }}
             </a-select-option>
           </a-select>
           <div class="filter-hint">
             <InfoCircleOutlined style="color: #1890ff; margin-right: 4px;" />
-            Analyze department-wide performance metrics
+            Analyze department-wide performance metrics and cross-department comparisons
           </div>
         </div>
       </div>
@@ -312,8 +326,6 @@ export default {
     const selectedTeams = ref([])
     const selectedIndividuals = ref([])
     const selectedIndividual = ref(null) // Single individual selection
-    const selectedTeam = ref(null) // Single team selection
-    const selectedDepartment = ref(null) // Single department selection
     const scopeType = ref('departments')
     const availableIndividuals = ref([])
     const teamMembers = ref([])
@@ -338,13 +350,13 @@ export default {
         if (role === 'Manager') {
           return true // Managers don't need to select - it's automatically their team
         }
-        return selectedTeam.value !== null // Directors and HR need to select a team
+        return selectedTeams.value.length > 0 // Directors and HR need at least one team
       }
 
       // Department report validations
       if (selectedReportType.value === 'department') {
         if (role === 'HR') {
-          return selectedDepartment.value !== null
+          return selectedDepartments.value.length > 0
         }
         return true // Director can generate for their department
       }
@@ -440,8 +452,6 @@ export default {
       selectedTeams.value = []
       selectedIndividuals.value = []
       selectedIndividual.value = null
-      selectedTeam.value = null
-      selectedDepartment.value = null
       scopeType.value = 'departments'
 
       // Set defaults based on new report type and role
@@ -604,16 +614,12 @@ export default {
       }
     } 
     else if (selectedReportType.value === 'team') {
-      if (role === 'Manager') {
-        // For managers, don't send teams array - let backend handle it
-        // The backend will automatically get their team members
-      } else if (role === 'Director' || role === 'HR') {
-        // Only send teams array for Director/HR who need to select a team
-        if (!selectedTeam.value) {
-          message.error('Please select a team')
+      if (role === 'Director' || role === 'HR') {
+        if (selectedTeams.value.length === 0) {
+          message.error('Please select at least one team')
           return
         }
-        requestBody.teams = [selectedTeam.value]
+        requestBody.teams = selectedTeams.value
       }
     } 
     else if (selectedReportType.value === 'department') {
@@ -623,11 +629,11 @@ export default {
           requestBody.teams = selectedTeams.value
         }
       } else if (role === 'HR') {
-        if (!selectedDepartment.value) {
-          message.error('Please select a department')
+        if (selectedDepartments.value.length === 0) {
+          message.error('Please select at least one department')
           return
         }
-        requestBody.department = selectedDepartment.value
+        requestBody.departments = selectedDepartments.value
       }
     } 
     else if (selectedReportType.value === 'organization' && role === 'HR') {
@@ -715,8 +721,6 @@ return {
   selectedTeams,
   selectedIndividuals,
   selectedIndividual,
-  selectedTeam,
-  selectedDepartment,
   scopeType,
   availableIndividuals,
   teamMembers,
