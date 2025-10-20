@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'))
 
 # Environment variables
-TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://task-service:8080")
+TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://localhost:8080")
+PROJECT_SERVICE_URL = os.getenv("PROJECT_SERVICE_URL", "http://localhost:8082")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -106,6 +108,248 @@ def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
         raise
     except Exception as e:
         logger.error(f"Unexpected error fetching tasks: {e}")
+        raise
+
+
+def fetch_user_info(user_id: str) -> Dict[str, str]:
+    """
+    Fetch user information from user service.
+
+    Args:
+        user_id: The user ID (UUID)
+
+    Returns:
+        Dictionary with user's name and department or defaults if not found
+    """
+    try:
+        # Use the user-service endpoint which has full user info including department
+        user_url = f"{USER_SERVICE_URL}/users/{user_id}"
+        response = requests.get(user_url, timeout=5)
+
+        if response.ok:
+            user_data = response.json().get('user', {})
+            return {
+                'name': user_data.get('name', 'Unknown'),
+                'department': user_data.get('department', 'N/A')
+            }
+        else:
+            logger.warning(f"Could not fetch user {user_id}: HTTP {response.status_code}")
+            return {'name': 'Unknown', 'department': 'N/A'}
+    except Exception as e:
+        logger.warning(f"Error fetching user {user_id}: {e}")
+        return {'name': 'Unknown', 'department': 'N/A'}
+
+
+def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
+    """
+    Fetch and prepare project report data for preview or PDF generation.
+
+    Args:
+        project_id: The project ID to generate report for
+
+    Returns:
+        Dictionary containing all report data
+    """
+    try:
+        # Fetch project details
+        project_url = f"{PROJECT_SERVICE_URL}/projects"
+        logger.info(f"Fetching project from: {project_url}")
+
+        project_response = requests.get(project_url, timeout=10)
+        project_response.raise_for_status()
+        all_projects = project_response.json().get('projects', [])
+
+        # Find the specific project
+        project_data = None
+        for proj in all_projects:
+            if proj.get('project_id') == project_id:
+                project_data = proj
+                break
+
+        if not project_data:
+            raise Exception(f"Project {project_id} not found")
+
+        # Fetch tasks for this project (tasks with matching project_id)
+        tasks_url = f"{TASK_SERVICE_URL}/tasks?project_id={project_id}"
+        logger.info(f"Fetching project tasks from: {tasks_url}")
+
+        tasks_response = requests.get(tasks_url, timeout=10)
+        tasks_response.raise_for_status()
+        tasks = tasks_response.json().get('tasks', [])
+
+        # Enrich tasks with user names and departments
+        # Collect all unique user IDs
+        user_ids = set()
+        for task in tasks:
+            if task.get('owner_id'):
+                user_ids.add(task.get('owner_id'))
+
+        # Fetch user info in batch
+        user_info_cache = {}
+        for user_id in user_ids:
+            user_info_cache[user_id] = fetch_user_info(user_id)
+
+        # Add user names and departments to tasks
+        for task in tasks:
+            owner_id = task.get('owner_id')
+            if owner_id and owner_id in user_info_cache:
+                task['owner_name'] = user_info_cache[owner_id]['name']
+                task['assignee_name'] = user_info_cache[owner_id]['name']
+                task['owner_department'] = user_info_cache[owner_id]['department']
+            else:
+                task['owner_name'] = 'Unassigned'
+                task['assignee_name'] = 'Unassigned'
+                task['owner_department'] = 'N/A'
+
+        # Fetch project owner info
+        project_owner_id = project_data.get('created_by')
+        project_owner_name = 'Unknown'
+        if project_owner_id:
+            project_owner_info = fetch_user_info(project_owner_id)
+            project_owner_name = project_owner_info['name']
+
+        logger.info(f"Fetched project {project_id} with {len(tasks)} tasks")
+
+        # Calculate statistics
+        total_tasks = len(tasks)
+        completed_tasks = len([t for t in tasks if t.get('status', '').lower() == 'completed'])
+        ongoing_tasks = len([t for t in tasks if t.get('status', '').lower() == 'ongoing'])
+        under_review_tasks = len([t for t in tasks if t.get('status', '').lower() == 'under review'])
+        completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+        # Count tasks by team member with department info
+        tasks_by_member = {}
+        completed_by_member = {}
+        member_departments = {}
+
+        for task in tasks:
+            assignee = task.get('assignee_name', task.get('owner_name', 'Unassigned'))
+            department = task.get('owner_department', 'N/A')
+
+            tasks_by_member[assignee] = tasks_by_member.get(assignee, 0) + 1
+            member_departments[assignee] = department
+
+            if task.get('status', '').lower() == 'completed':
+                completed_by_member[assignee] = completed_by_member.get(assignee, 0) + 1
+
+        # Group tasks by status with overdue calculation
+        today = datetime.now(timezone.utc).date()
+        task_groups = {
+            'Overdue': [],
+            'Ongoing': [],
+            'Under Review': [],
+            'Completed': [],
+            'Unassigned': []
+        }
+
+        for task in tasks:
+            status = task.get('status', 'Unassigned')
+            due_date_str = task.get('dueDate', task.get('due_date', ''))
+
+            # Check if task is overdue
+            is_overdue = False
+            if due_date_str and status.lower() != 'completed':
+                try:
+                    if 'T' in due_date_str:
+                        task_due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00')).date()
+                    else:
+                        task_due_date = datetime.fromisoformat(due_date_str).date()
+
+                    if task_due_date < today:
+                        is_overdue = True
+                except:
+                    pass
+
+            # Categorize task
+            if is_overdue:
+                task_groups['Overdue'].append(task)
+            elif status in task_groups:
+                task_groups[status].append(task)
+            else:
+                status_lower = status.lower()
+                if 'ongoing' in status_lower or 'progress' in status_lower:
+                    task_groups['Ongoing'].append(task)
+                elif 'review' in status_lower:
+                    task_groups['Under Review'].append(task)
+                elif 'completed' in status_lower:
+                    task_groups['Completed'].append(task)
+                else:
+                    task_groups['Unassigned'].append(task)
+
+        # Format dates
+        created_date = project_data.get('created_at', 'N/A')
+        due_date = project_data.get('due_date', 'N/A')
+
+        if created_date and created_date != 'N/A':
+            try:
+                if 'T' in created_date:
+                    created_date = datetime.fromisoformat(created_date.replace('Z', '+00:00')).strftime('%B %d, %Y')
+                else:
+                    created_date = datetime.fromisoformat(created_date).strftime('%B %d, %Y')
+            except:
+                created_date = 'N/A'
+
+        if due_date and due_date != 'N/A':
+            try:
+                if 'T' in due_date:
+                    due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00')).strftime('%B %d, %Y')
+                else:
+                    due_date = datetime.fromisoformat(due_date).strftime('%B %d, %Y')
+            except:
+                due_date = 'N/A'
+
+        # Build team member performance list
+        team_performance = []
+        for member, total in sorted(tasks_by_member.items(), key=lambda x: x[1], reverse=True):
+            completed = completed_by_member.get(member, 0)
+            rate = (completed / total * 100) if total > 0 else 0
+            team_performance.append({
+                'member': member,
+                'department': member_departments.get(member, 'N/A'),
+                'total': total,
+                'completed': completed,
+                'rate': round(rate, 1)
+            })
+
+        # Calculate overdue count
+        overdue_count = len(task_groups.get('Overdue', []))
+
+        # Return structured report data
+        return {
+            'project': {
+                'id': project_data.get('project_id'),
+                'name': project_data.get('project_name', 'Untitled Project'),
+                'description': project_data.get('project_description', 'No description'),
+                'owner': project_owner_name,
+                'status': project_data.get('status', 'Active'),
+                'created_date': created_date,
+                'due_date': due_date,
+                'collaborators': project_data.get('collaborators', [])
+            },
+            'summary': {
+                'total_tasks': total_tasks,
+                'overdue_tasks': overdue_count,
+                'completed_tasks': completed_tasks,
+                'ongoing_tasks': ongoing_tasks,
+                'under_review_tasks': under_review_tasks,
+                'completion_rate': round(completion_rate, 1)
+            },
+            'team_performance': team_performance,
+            'task_groups': {
+                'Overdue': task_groups['Overdue'],
+                'Ongoing': task_groups['Ongoing'],
+                'Under Review': task_groups['Under Review'],
+                'Completed': task_groups['Completed'],
+                'Unassigned': task_groups['Unassigned']
+            },
+            'generated_at': datetime.now().strftime('%B %d, %Y at %I:%M %p')
+        }
+
+    except requests.RequestException as e:
+        logger.error(f"Error fetching project data: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error preparing project report data: {e}")
         raise
 
 
@@ -593,6 +837,426 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
     return buffer
 
 
+def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
+    """
+    Generate a PDF report for a project.
+
+    Args:
+        report_data: Dictionary containing project report data
+
+    Returns:
+        BytesIO buffer containing the PDF
+    """
+    # Create a buffer to hold the PDF
+    buffer = io.BytesIO()
+
+    # Create the PDF document
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                           rightMargin=50, leftMargin=50,
+                           topMargin=50, bottomMargin=50)
+
+    # Container for PDF elements
+    elements = []
+
+    # Styles
+    styles = getSampleStyleSheet()
+
+    # Title style
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=HexColor('#0f172a'),
+        spaceAfter=10,
+        spaceBefore=0,
+        alignment=TA_LEFT,
+        fontName='Helvetica-Bold',
+        leading=28,
+        leftIndent=0,
+        rightIndent=0
+    )
+
+    # Heading style
+    heading_style = ParagraphStyle(
+        'CustomHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=HexColor('#1e40af'),
+        spaceAfter=12,
+        spaceBefore=12,
+        alignment=TA_LEFT,
+        fontName='Helvetica-Bold',
+        leftIndent=0,
+        rightIndent=0,
+        borderPadding=(0, 0, 6, 0)
+    )
+
+    # Load logo
+    from reportlab.graphics.shapes import Line, Drawing as ShapeDrawing
+    from svglib.svglib import svg2rlg
+
+    logo_path = os.path.join(os.path.dirname(__file__), 'taskio-logo.svg')
+    logo = None
+    if os.path.exists(logo_path):
+        try:
+            logo_drawing = svg2rlg(logo_path)
+            scale_factor = 0.35
+            logo_drawing.width = logo_drawing.width * scale_factor
+            logo_drawing.height = logo_drawing.height * scale_factor
+            logo_drawing.scale(scale_factor, scale_factor)
+            logo = logo_drawing
+        except Exception as e:
+            logger.warning(f"Could not load logo: {e}")
+
+    # Create header table
+    if logo:
+        header_data = [[
+            Paragraph("Project Report", title_style),
+            logo
+        ]]
+        header_table = Table(header_data, colWidths=[4*inch, 2.5*inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+    else:
+        header_data = [[
+            Paragraph("Project Report", title_style),
+            Paragraph('<font name="Helvetica-Bold" size="16" color="#3b82f6">TASKIO</font><br/><font name="Helvetica" size="10" color="#64748b">PROJECT MANAGEMENT</font>',
+                     ParagraphStyle('Logo', alignment=TA_RIGHT, leading=14))
+        ]]
+        header_table = Table(header_data, colWidths=[4*inch, 2.5*inch])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+            ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ]))
+
+    elements.append(header_table)
+    elements.append(Spacer(1, 8))
+
+    # Horizontal line
+    line_drawing = ShapeDrawing(500, 3)
+    line = Line(0, 0, 500, 0)
+    line.strokeColor = HexColor('#3b82f6')
+    line.strokeWidth = 3
+    line_drawing.add(line)
+    elements.append(line_drawing)
+    elements.append(Spacer(1, 18))
+
+    # Project Overview
+    project = report_data['project']
+    overview_data = [
+        ['Project Name:', project['name']],
+        ['Project Owner:', project['owner']],
+        ['Start Date:', project['created_date']],
+        ['Due Date:', project['due_date']],
+        ['Description:', project['description'] or 'No description']
+    ]
+
+    overview_table = Table(overview_data, colWidths=[1.5*inch, 4.5*inch])
+    overview_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), HexColor('#475569')),
+        ('TEXTCOLOR', (1, 0), (1, -1), HexColor('#1e293b')),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+    ]))
+    elements.append(overview_table)
+    elements.append(Spacer(1, 20))
+
+    # Summary statistics with pie chart
+    summary = report_data['summary']
+    summary_heading = Paragraph("Project Performance Summary", heading_style)
+    elements.append(summary_heading)
+    elements.append(Spacer(1, 12))
+
+    # Calculate overdue count from task groups
+    overdue_count = len(report_data['task_groups'].get('Overdue', []))
+
+    # Create pie chart for task distribution
+    from reportlab.graphics.charts.piecharts import Pie
+    from reportlab.graphics.shapes import Drawing, Rect, String
+
+    # Prepare pie chart data
+    pie_labels = []
+    pie_data = []
+    pie_colors = []
+
+    if overdue_count > 0:
+        pie_labels.append('Overdue')
+        pie_data.append(overdue_count)
+        pie_colors.append(HexColor('#ef4444'))
+
+    if summary['completed_tasks'] > 0:
+        pie_labels.append('Completed')
+        pie_data.append(summary['completed_tasks'])
+        pie_colors.append(HexColor('#22c55e'))
+
+    if summary['ongoing_tasks'] > 0:
+        pie_labels.append('In Progress')
+        pie_data.append(summary['ongoing_tasks'])
+        pie_colors.append(HexColor('#3b82f6'))
+
+    if summary['under_review_tasks'] > 0:
+        pie_labels.append('Under Review')
+        pie_data.append(summary['under_review_tasks'])
+        pie_colors.append(HexColor('#a855f7'))
+
+    # Create pie chart
+    pie_drawing = Drawing(240, 200)
+    pie = Pie()
+    pie.x = 40
+    pie.y = 30
+    pie.width = 140
+    pie.height = 140
+    pie.data = pie_data if pie_data else [1]  # Show single slice if no data
+    pie.slices.strokeWidth = 2
+    pie.slices.strokeColor = colors.white
+    pie.simpleLabels = 0
+    pie.sideLabels = 0
+
+    # Apply colors
+    if pie_data:
+        for i, color in enumerate(pie_colors):
+            pie.slices[i].fillColor = color
+    else:
+        pie.slices[0].fillColor = HexColor('#e5e7eb')
+
+    pie_drawing.add(pie)
+
+    # Add legend to pie chart
+    legend_x = 190
+    legend_y = 150
+    box_size = 10
+    spacing = 20
+
+    for i, (label, count) in enumerate(zip(pie_labels, pie_data)):
+        y_pos = legend_y - (i * spacing)
+
+        # Color box
+        rect = Rect(legend_x, y_pos - box_size/2, box_size, box_size)
+        rect.fillColor = pie_colors[i]
+        rect.strokeColor = colors.whitesmoke
+        rect.strokeWidth = 0.5
+        pie_drawing.add(rect)
+
+        # Label text
+        text = String(legend_x + box_size + 5, y_pos - 3, f"{label}: {count}")
+        text.fontSize = 8
+        text.fillColor = HexColor('#1e293b')
+        text.fontName = 'Helvetica'
+        pie_drawing.add(text)
+
+    # Statistics table
+    stats_data = [
+        ['Total Tasks', str(summary['total_tasks'])],
+        ['Overdue', str(overdue_count)],
+        ['Completed', str(summary['completed_tasks'])],
+        ['In Progress', str(summary['ongoing_tasks'])],
+        ['Under Review', str(summary['under_review_tasks'])],
+        ['Completion Rate', f"{summary['completion_rate']}%"]
+    ]
+
+    stats_table = Table(stats_data, colWidths=[1.6*inch, 1*inch])
+    stats_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (1, 0), (1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('TEXTCOLOR', (0, 0), (0, -1), HexColor('#475569')),
+        ('TEXTCOLOR', (1, 0), (1, -1), HexColor('#1e293b')),
+        ('ALIGN', (0, 0), (0, -1), 'LEFT'),
+        ('ALIGN', (1, 0), (1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 12),
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+        ('LINEAFTER', (0, 0), (0, -1), 0.5, HexColor('#e2e8f0')),
+        ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+    ]))
+
+    # Combine pie chart and stats in a single row
+    summary_combined = Table([[pie_drawing, stats_table]], colWidths=[2.8*inch, 2.8*inch])
+    summary_combined.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+        ('ALIGN', (1, 0), (1, 0), 'LEFT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+
+    elements.append(summary_combined)
+    elements.append(Spacer(1, 20))
+
+    # Team performance
+    if report_data['team_performance']:
+        team_heading = Paragraph("Team Member Performance", heading_style)
+        elements.append(team_heading)
+        elements.append(Spacer(1, 8))
+
+        team_data = [['Team Member', 'Department', 'Total Tasks', 'Completed', 'Completion Rate']]
+        for member in report_data['team_performance']:
+            team_data.append([
+                member['member'],
+                member.get('department', 'N/A'),
+                str(member['total']),
+                str(member['completed']),
+                f"{member['rate']}%"
+            ])
+
+        team_table = Table(team_data, colWidths=[1.8*inch, 1.4*inch, 1*inch, 1*inch, 1.2*inch])
+        team_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('TEXTCOLOR', (0, 1), (-1, -1), HexColor('#1e293b')),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+            ('LINEBELOW', (0, 0), (-1, 0), 1.5, HexColor('#2563eb')),
+            ('INNERGRID', (0, 1), (-1, -1), 0.5, HexColor('#e2e8f0')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        # Alternating row colors
+        for row_idx in range(1, len(team_data)):
+            bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+            team_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+            ]))
+
+        elements.append(team_table)
+        elements.append(Spacer(1, 20))
+
+    # Task breakdown - new page
+    elements.append(PageBreak())
+    tasks_heading = Paragraph("Task Breakdown by Status", heading_style)
+    elements.append(tasks_heading)
+    elements.append(Spacer(1, 8))
+
+    # Iterate through task groups
+    task_groups = report_data['task_groups']
+    for status, tasks in task_groups.items():
+        if not tasks:
+            continue
+
+        # Status section header
+        status_para = Paragraph(f"<b>{status}</b> ({len(tasks)} tasks)",
+                               ParagraphStyle('StatusHeader', fontSize=12, textColor=HexColor('#1e293b'), spaceAfter=8))
+        elements.append(status_para)
+
+        # Tasks table
+        task_data = [['Task Title', 'Assignee', 'Priority', 'Due Date']]
+        for task in tasks:
+            assignee = task.get('assignee_name') or task.get('owner_name') or 'Unassigned'
+            priority = task.get('priority', 'N/A')
+            if priority != 'N/A':
+                try:
+                    priority = f"{int(priority)} / 10"
+                except:
+                    pass
+
+            due_date = task.get('dueDate') or task.get('due_date') or 'N/A'
+            if due_date != 'N/A':
+                try:
+                    if 'T' in due_date:
+                        due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00')).strftime('%Y-%m-%d')
+                    else:
+                        due_date = datetime.fromisoformat(due_date).strftime('%Y-%m-%d')
+                except:
+                    pass
+
+            task_data.append([
+                task.get('title', 'Untitled')[:40],
+                assignee,
+                priority,
+                due_date
+            ])
+
+        task_table = Table(task_data, colWidths=[3*inch, 1.5*inch, 1*inch, 1.1*inch])
+        task_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#e5e7eb')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#1e293b')),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('ALIGN', (2, 0), (2, -1), 'CENTER'),
+            ('ALIGN', (3, 0), (3, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('TEXTCOLOR', (0, 1), (-1, -1), HexColor('#1e293b')),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, HexColor('#f1f5f9')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        # Alternating row colors
+        for row_idx in range(1, len(task_data)):
+            bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+            task_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+            ]))
+
+        elements.append(task_table)
+        elements.append(Spacer(1, 16))
+
+    # Footer
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=HexColor('#6b7280'),
+        alignment=TA_CENTER
+    )
+    footer_text = Paragraph(f"Report generated at: {report_data['generated_at']}", footer_style)
+    elements.append(Spacer(1, 20))
+    elements.append(footer_text)
+
+    # Build PDF
+    doc.build(elements)
+
+    # Reset buffer position
+    buffer.seek(0)
+
+    return buffer
+
+
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint."""
@@ -674,6 +1338,90 @@ def generate_report():
     except Exception as e:
         logger.error(f"Error generating report: {e}", exc_info=True)
         return jsonify({"error": "Failed to generate report", "details": str(e)}), 500
+
+
+@app.route("/preview-project-report", methods=["POST"])
+def preview_project_report():
+    """
+    Generate project report data for preview (returns JSON).
+
+    Request body:
+    {
+        "project_id": "project-uuid"
+    }
+
+    Returns:
+        JSON with report data
+    """
+    try:
+        data = request.get_json()
+        project_id = data.get('project_id')
+
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+
+        logger.info(f"Generating preview for project {project_id}")
+        report_data = fetch_project_report_data(project_id)
+
+        return jsonify(report_data), 200
+
+    except requests.RequestException as e:
+        logger.error(f"Error communicating with services: {e}")
+        return jsonify({"error": "Failed to fetch project data", "details": str(e)}), 503
+
+    except Exception as e:
+        logger.error(f"Error generating project report preview: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate preview", "details": str(e)}), 500
+
+
+@app.route("/generate-project-report", methods=["POST"])
+def generate_project_report():
+    """
+    Generate a PDF report for a project.
+
+    Request body:
+    {
+        "project_id": "project-uuid"
+    }
+
+    Returns:
+        PDF file stream
+    """
+    try:
+        data = request.get_json()
+        project_id = data.get('project_id')
+
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+
+        logger.info(f"Generating PDF report for project {project_id}")
+
+        # Fetch project report data
+        report_data = fetch_project_report_data(project_id)
+
+        # Generate PDF
+        pdf_buffer = generate_project_pdf_report(report_data)
+
+        # Generate filename
+        project_name = report_data['project']['name'].replace(' ', '_')
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"project_report_{project_name}_{timestamp}.pdf"
+
+        # Return PDF as response
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except requests.RequestException as e:
+        logger.error(f"Error communicating with services: {e}")
+        return jsonify({"error": "Failed to fetch project data", "details": str(e)}), 503
+
+    except Exception as e:
+        logger.error(f"Error generating project report PDF: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate PDF", "details": str(e)}), 500
 
 
 if __name__ == "__main__":

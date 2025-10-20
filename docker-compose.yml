@@ -161,9 +161,15 @@ services:
       - "8090:8090"
     environment:
       - TASK_SERVICE_URL=http://task-service:8080
+      - PROJECT_SERVICE_URL=http://project-service:8082
+      - USER_SERVICE_URL=http://user-service:8081
       - PORT=8090
     depends_on:
       task-service:
+        condition: service_healthy
+      project-service:
+        condition: service_healthy
+      user-service:
         condition: service_healthy
     command: ["python", "report_service.py"]
     restart: unless-stopped
