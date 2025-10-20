@@ -202,7 +202,7 @@
                     <div class="flex-1 min-w-0">
                       <p class="text-xs text-gray-700 leading-tight">
                         <span class="font-medium text-gray-500">{{ formatLogDate(log.created_at) }}</span>: 
-                        <span class="font-medium text-indigo-600">{{ getUserName(log.user_id, log.user_name) }}</span>
+                        <span class="font-medium text-indigo-600">{{ getUserName(log.user_id) }}</span>
                         {{ formatLogMessage(log) }}
                       </p>
                     </div>
@@ -301,181 +301,6 @@ export default {
     const isLoadingParentTask = ref(false)
     const assigneeName = ref('Unassigned')
 
-    const USER_ID_FIELDS = new Set([
-      'owner_id',
-      'ownerid',
-      'assignee',
-      'assignee_id',
-      'created_by',
-      'updated_by',
-      'actor_id',
-      'user_id'
-    ])
-
-    const USER_ID_ARRAY_FIELDS = new Set(['collaborators'])
-
-    const normalizeFieldName = (field) => {
-      if (!field || typeof field !== 'string') return ''
-      return field.replace(/\s+/g, '_').toLowerCase()
-    }
-
-    const tryParseJson = (value) => {
-      if (value === null || value === undefined) return null
-      if (typeof value !== 'string') return value
-      const trimmed = value.trim()
-      if (!trimmed) return ''
-      try {
-        return JSON.parse(trimmed)
-      } catch (error) {
-        return value
-      }
-    }
-
-    const extractFieldValue = (source, field, normalizedField) => {
-      const data = tryParseJson(source)
-      if (data === null || data === undefined) return null
-
-      if (typeof data === 'object' && !Array.isArray(data)) {
-        if (field && Object.prototype.hasOwnProperty.call(data, field)) {
-          return data[field]
-        }
-
-        const normalizedKey = Object.keys(data).find(
-          (key) => normalizeFieldName(key) === normalizedField
-        )
-        if (normalizedKey) {
-          return data[normalizedKey]
-        }
-
-        const values = Object.values(data)
-        if (values.length === 1) {
-          return values[0]
-        }
-      }
-
-      return data
-    }
-
-    const ensureArray = (value) => {
-      if (Array.isArray(value)) {
-        return value
-      }
-
-      const parsed = tryParseJson(value)
-      if (Array.isArray(parsed)) {
-        return parsed
-      }
-
-      if (parsed === null || parsed === undefined || parsed === '') {
-        return []
-      }
-
-      return [parsed]
-    }
-
-    const looksLikeUuid = (value) => {
-      if (typeof value !== 'string') return false
-      return /^[0-9a-fA-F-]{8,}$/.test(value)
-    }
-
-    const formatUserIdValue = (rawValue) => {
-      if (rawValue === null || rawValue === undefined || rawValue === '') {
-        return 'None'
-      }
-
-      if (Array.isArray(rawValue)) {
-        const resolved = rawValue.map((item) => formatUserIdValue(item)).filter(Boolean)
-        return resolved.length > 0 ? resolved.join(', ') : 'None'
-      }
-
-      const stringValue = String(rawValue)
-      if (!looksLikeUuid(stringValue)) {
-        return stringValue
-      }
-
-      return getUserName(stringValue)
-    }
-
-    const formatPrimitiveValue = (value) => {
-      if (value === null || value === undefined || value === '') return 'None'
-      if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-      if (value instanceof Date) return value.toLocaleString('en-US')
-      if (typeof value === 'object') return JSON.stringify(value)
-      return String(value)
-    }
-
-    const formatFieldLabel = (field) => {
-      const normalized = normalizeFieldName(field)
-      const overrides = {
-        owner_id: 'Owner',
-        ownerid: 'Owner',
-        assignee: 'Assignee',
-        assignee_id: 'Assignee',
-        due_date: 'Due Date',
-        created_by: 'Created By',
-        updated_by: 'Updated By',
-        actor_id: 'Actor'
-      }
-
-      if (normalized && overrides[normalized]) {
-        return overrides[normalized]
-      }
-
-      const safeField = field || 'field'
-      return safeField
-        .replace(/[_-]+/g, ' ')
-        .replace(/\s+/g, ' ')
-        .replace(/\b\w/g, (char) => char.toUpperCase())
-        .trim()
-    }
-
-    const formatValueByField = (field, container) => {
-      const normalizedField = normalizeFieldName(field)
-      const value = extractFieldValue(container, field, normalizedField)
-
-      if (USER_ID_FIELDS.has(normalizedField)) {
-        return formatUserIdValue(value)
-      }
-
-      if (USER_ID_ARRAY_FIELDS.has(normalizedField)) {
-        const arrayValues = ensureArray(value)
-        if (arrayValues.length === 0) return 'None'
-        return arrayValues.map((item) => formatUserIdValue(item)).join(', ')
-      }
-
-      if (Array.isArray(value)) {
-        const formatted = value.map((item) => formatPrimitiveValue(item)).filter(Boolean)
-        return formatted.length > 0 ? formatted.join(', ') : 'None'
-      }
-
-      return formatPrimitiveValue(value)
-    }
-
-    const collectUserIdsFromLog = (log) => {
-      const ids = new Set()
-      if (!log || !log.field) return ids
-
-      const normalizedField = normalizeFieldName(log.field)
-
-      const addId = (value) => {
-        if (!value) return
-        if (Array.isArray(value)) {
-          value.forEach((item) => addId(item))
-        } else if (looksLikeUuid(String(value))) {
-          ids.add(String(value))
-        }
-      }
-
-      if (USER_ID_FIELDS.has(normalizedField) || USER_ID_ARRAY_FIELDS.has(normalizedField)) {
-        const oldValue = extractFieldValue(log.old_value, log.field, normalizedField)
-        const newValue = extractFieldValue(log.new_value, log.field, normalizedField)
-        addId(oldValue)
-        addId(newValue)
-      }
-
-      return ids
-    }
-
     // Fetch audit logs when modal opens or task changes
     const fetchAuditLogs = async () => {
       if (!props.task?.id) return
@@ -493,24 +318,10 @@ export default {
         
         // Logs are already sorted by the backend (latest first)
         auditLogs.value = result.logs || []
-
-        const userIdsToFetch = new Set()
-
-        auditLogs.value.forEach((log) => {
-          if (log.user_id && log.user_name) {
-            userCache.value[log.user_id] = log.user_name
-          }
-
-          if (log.user_id && looksLikeUuid(String(log.user_id))) {
-            userIdsToFetch.add(String(log.user_id))
-          }
-
-          const relatedIds = collectUserIdsFromLog(log)
-          relatedIds.forEach((id) => userIdsToFetch.add(id))
-        })
         
-        // Fetch user names for all unique user_ids (actors and referenced users)
-        await fetchUserNames([...userIdsToFetch])
+        // Fetch user names for all unique user_ids
+        const userIds = [...new Set(auditLogs.value.map(log => log.user_id))]
+        await fetchUserNames(userIds)
         
       } catch (error) {
         console.error('Failed to fetch audit logs:', error)
@@ -765,20 +576,15 @@ export default {
       }
     }
 
-    const getUserName = (userId, preferredName) => {
-      if (preferredName && userId) {
-        userCache.value[userId] = preferredName
-        return preferredName
-      }
-
-      if (!userId) {
-        return preferredName || 'Unknown User'
-      }
+    const getUserName = (userId) => {
+      if (!userId) return 'Unknown User'
       
+      // Check if we have a cached name
       if (userCache.value[userId]) {
         return userCache.value[userId]
       }
       
+      // Create a user-friendly fallback name from the UUID
       const shortId = userId.slice(0, 8)
       const friendlyName = `User-${shortId}`
       userCache.value[userId] = friendlyName
@@ -789,35 +595,68 @@ export default {
     const formatLogMessage = (log) => {
       if (log.action === 'create') {
         return 'created task.'
-      }
-
-      if (log.action === 'assign_task') {
-        const assigneeId =
-          extractFieldValue(log.new_value, 'assignee', 'assignee') ?? log.new_value?.assignee
+      } else if (log.action === 'assign_task') {
+        // Handle task assignment: "assigned task to [User Name]"
+        const assigneeId = log.new_value?.assignee
         if (assigneeId) {
-          const assigneeName = formatUserIdValue(assigneeId)
+          const assigneeName = getUserName(assigneeId)
           return `assigned task to ${assigneeName}.`
         }
         return 'assigned task.'
-      }
-
-      if (log.action === 'auto_add_collaborator') {
+      } else if (log.action === 'auto_add_collaborator') {
+        // Handle auto-collaboration: "is added as collaborator automatically"
         return 'is added as collaborator automatically.'
-      }
-
-      if (log.action === 'update') {
-        const fieldName = log.field || 'field'
-        const readableFieldName = formatFieldLabel(fieldName)
-        const oldValue = formatValueByField(fieldName, log.old_value)
-        const newValue = formatValueByField(fieldName, log.new_value)
-        return `updated ${readableFieldName} from ${oldValue} to ${newValue}.`
-      }
-
-      if (log.action === 'delete') {
+      } else if (log.action === 'update') {
+        const fieldName = log.field
+        
+        // Handle JSONB structure for old and new values
+        let oldValue = 'null'
+        let newValue = 'null'
+        
+        if (log.old_value && typeof log.old_value === 'object' && log.old_value[fieldName] !== undefined) {
+          oldValue = log.old_value[fieldName] === null ? 'null' : String(log.old_value[fieldName])
+        }
+        
+        if (log.new_value && typeof log.new_value === 'object' && log.new_value[fieldName] !== undefined) {
+          newValue = log.new_value[fieldName] === null ? 'null' : String(log.new_value[fieldName])
+        }
+        
+        // Format field names to be more readable
+        const readableFieldName = fieldName.replace(/_/g, ' ')
+        
+        return `updated ${readableFieldName} from "${oldValue}" to "${newValue}".`
+      } else if (log.action === 'delete') {
         return 'deleted task.'
       }
-
       return `performed ${log.action} action.`
+    }
+
+    const formatValue = (field, valueObj) => {
+      if (!valueObj) return 'null'
+      
+      // Handle JSONB objects from the database
+      if (typeof valueObj === 'object') {
+        // For single field updates, the structure is: { "field_name": "value" }
+        if (valueObj[field] !== undefined) {
+          const value = valueObj[field]
+          return value === null ? 'null' : String(value)
+        }
+        
+        // For create actions, the structure contains all created fields
+        if (field === 'task' && typeof valueObj === 'object') {
+          // For create actions, show a summary of created fields
+          const fields = Object.keys(valueObj).filter(key => valueObj[key] !== null)
+          return `with ${fields.join(', ')}`
+        }
+        
+        // Fallback: try to extract any non-null value from the object
+        const nonNullValues = Object.entries(valueObj).filter(([_, value]) => value !== null)
+        if (nonNullValues.length > 0) {
+          return nonNullValues.map(([_, value]) => String(value)).join(', ')
+        }
+      }
+      
+      return valueObj === null ? 'null' : String(valueObj)
     }
 
     const formatActivityDate = (dateString) => {
