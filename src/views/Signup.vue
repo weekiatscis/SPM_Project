@@ -92,7 +92,7 @@
             <a-select-option value="Staff">Staff</a-select-option>
             <a-select-option value="Manager">Manager</a-select-option>
             <a-select-option value="Director">Director</a-select-option>
-            <a-select-option value="Hr">HR</a-select-option>
+            <a-select-option value="HR">HR</a-select-option>
           </a-select>
         </a-form-item>
 
@@ -324,7 +324,7 @@ export default {
             potentialSuperiors = potentialSuperiors.filter(user => 
               user.role === 'Director'
             )
-          } else if (form.role === 'Hr') {
+          } else if (form.role === 'HR') {
             // HR can report to Directors
             potentialSuperiors = potentialSuperiors.filter(user => 
               user.role === 'Director'

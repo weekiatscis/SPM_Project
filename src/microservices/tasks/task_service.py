@@ -1657,6 +1657,32 @@ def get_task_logs(task_id: str):
         ).eq("task_id", task_id).order("created_at", desc=True).execute()
         logs = response.data or []
 
+        # Enrich logs with user display names
+        user_ids = list({log.get("user_id") for log in logs if log.get("user_id")})
+        user_name_map: Dict[str, str] = {}
+
+        if user_ids:
+            try:
+                users_response = supabase.table("user").select("user_id,name").in_("user_id", user_ids).execute()
+                for user in users_response.data or []:
+                    user_id = user.get("user_id")
+                    if not user_id:
+                        continue
+                    name = (user.get("name") or "").strip()
+                    if not name:
+                        name = f"User-{user_id[:8]}" if isinstance(user_id, str) and len(user_id) >= 8 else "Unknown User"
+                    user_name_map[user_id] = name
+            except Exception as user_exc:
+                logger.warning("Failed to enrich audit logs with user names: %s", user_exc)
+
+        for log in logs:
+            user_id = log.get("user_id")
+            if user_id:
+                fallback_name = f"User-{user_id[:8]}" if isinstance(user_id, str) and len(user_id) >= 8 else "Unknown User"
+                log["user_name"] = user_name_map.get(user_id, fallback_name)
+            else:
+                log["user_name"] = "Unknown User"
+
         # Keep logs as JSON objects for frontend processing - do not stringify
         # The frontend will handle formatting the values appropriately
         return jsonify({"logs": logs, "count": len(logs)}), 200
@@ -2269,20 +2295,6 @@ def add_task_comment(task_id: str):
             if not user_name:  # If the name is empty after stripping
                 user_name = "Unknown User"
         
-        # Log the comment activity
-        try:
-            log_task_change(
-                task_id=task_id,
-                action="comment",
-                field="comments",
-                user_id=user_id,
-                old_value=None,
-                new_value=comment_data.comment_text
-            )
-        except Exception as log_error:
-            # Don't fail the entire request if logging fails
-            pass
-
         # Send notifications to all stakeholders (owner + collaborators) except the commenter
         print(f"\n🔔 Attempting to send comment notifications for task {task_id}...")
         print(f"   Task object keys: {list(task.keys())}")
