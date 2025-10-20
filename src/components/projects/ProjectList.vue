@@ -74,22 +74,17 @@
       <template #title>
         <div style="display: flex; align-items: center; gap: 12px;">
           <span>Ongoing Projects</span>
-          <a-space size="small">
-            <a-button
-              size="small"
-              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
-              @click="toggleDateSort"
-            >
-              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
-            </a-button>
-            <a-button
-              size="small"
-              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
-              @click="toggleStatusSort"
-            >
-              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
-            </a-button>
-          </a-space>
+          <a-select
+            v-model:value="sortBy"
+            size="small"
+            style="width: 180px;"
+            @change="handleSortChange"
+          >
+            <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+            <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+            <a-select-option value="created_at">Created Date</a-select-option>
+            <a-select-option value="due_date">Due Date</a-select-option>
+          </a-select>
         </div>
       </template>
 
@@ -117,6 +112,7 @@
         >
           <ProjectCard
             :project="project"
+            :current-user-id="currentUserId"
             @view-details="handleProjectClick"
           />
         </a-col>
@@ -131,22 +127,17 @@
       <template #title>
         <div style="display: flex; align-items: center; gap: 12px;">
           <span>My Projects</span>
-          <a-space size="small">
-            <a-button
-              size="small"
-              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
-              @click="toggleDateSort"
-            >
-              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
-            </a-button>
-            <a-button
-              size="small"
-              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
-              @click="toggleStatusSort"
-            >
-              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
-            </a-button>
-          </a-space>
+          <a-select
+            v-model:value="sortBy"
+            size="small"
+            style="width: 180px;"
+            @change="handleSortChange"
+          >
+            <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+            <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+            <a-select-option value="created_at">Created Date</a-select-option>
+            <a-select-option value="due_date">Due Date</a-select-option>
+          </a-select>
         </div>
       </template>
 
@@ -174,6 +165,7 @@
         >
           <ProjectCard
             :project="project"
+            :current-user-id="currentUserId"
             @view-details="handleProjectClick"
           />
         </a-col>
@@ -188,22 +180,17 @@
       <template #title>
         <div style="display: flex; align-items: center; gap: 12px;">
           <span>Collaborating</span>
-          <a-space size="small">
-            <a-button
-              size="small"
-              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
-              @click="toggleDateSort"
-            >
-              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
-            </a-button>
-            <a-button
-              size="small"
-              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
-              @click="toggleStatusSort"
-            >
-              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
-            </a-button>
-          </a-space>
+          <a-select
+            v-model:value="sortBy"
+            size="small"
+            style="width: 180px;"
+            @change="handleSortChange"
+          >
+            <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+            <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+            <a-select-option value="created_at">Created Date</a-select-option>
+            <a-select-option value="due_date">Due Date</a-select-option>
+          </a-select>
         </div>
       </template>
 
@@ -227,6 +214,7 @@
         >
           <ProjectCard
             :project="project"
+            :current-user-id="currentUserId"
             @view-details="handleProjectClick"
           />
         </a-col>
@@ -241,22 +229,17 @@
       <template #title>
         <div style="display: flex; align-items: center; gap: 12px;">
           <span>Completed Projects</span>
-          <a-space size="small">
-            <a-button
-              size="small"
-              :type="sortBy.startsWith('created_at') ? 'primary' : 'default'"
-              @click="toggleDateSort"
-            >
-              Date {{ sortBy === 'created_at-asc' ? '↑' : sortBy === 'created_at-desc' ? '↓' : '↑' }}
-            </a-button>
-            <a-button
-              size="small"
-              :type="sortBy.startsWith('status') ? 'primary' : 'default'"
-              @click="toggleStatusSort"
-            >
-              Status {{ sortBy === 'status-asc' ? '↑' : sortBy === 'status-desc' ? '↓' : '↑' }}
-            </a-button>
-          </a-space>
+          <a-select
+            v-model:value="sortBy"
+            size="small"
+            style="width: 180px;"
+            @change="handleSortChange"
+          >
+            <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+            <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+            <a-select-option value="created_at">Created Date</a-select-option>
+            <a-select-option value="due_date">Due Date</a-select-option>
+          </a-select>
         </div>
       </template>
 
@@ -280,6 +263,7 @@
         >
           <ProjectCard
             :project="project"
+            :current-user-id="currentUserId"
             @view-details="handleProjectClick"
           />
         </a-col>
@@ -488,7 +472,7 @@ export default {
     const router = useRouter()
     const projects = ref([])
     const isLoading = ref(false)
-    const sortBy = ref('created_at-desc')
+    const sortBy = ref('due_date')
     const authStore = useAuthStore()
 
     // Tab state for switching between sections
@@ -576,14 +560,20 @@ export default {
     const applySorting = (projectList) => {
       const sorted = [...projectList]
 
-      if (sortBy.value === 'created_at-asc') {
-        return sorted.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-      } else if (sortBy.value === 'created_at-desc') {
+      if (sortBy.value === 'name-asc') {
+        return sorted.sort((a, b) => a.project_name.localeCompare(b.project_name))
+      } else if (sortBy.value === 'name-desc') {
+        return sorted.sort((a, b) => b.project_name.localeCompare(a.project_name))
+      } else if (sortBy.value === 'created_at') {
         return sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      } else if (sortBy.value === 'status-asc') {
-        return sorted.sort((a, b) => (a.status || 'Active').localeCompare(b.status || 'Active'))
-      } else if (sortBy.value === 'status-desc') {
-        return sorted.sort((a, b) => (b.status || 'Active').localeCompare(a.status || 'Active'))
+      } else if (sortBy.value === 'due_date') {
+        // Sort by due date - closest to due date first (ascending)
+        return sorted.sort((a, b) => {
+          // Handle null/undefined due dates - push them to the end
+          if (!a.due_date) return 1
+          if (!b.due_date) return -1
+          return new Date(a.due_date) - new Date(b.due_date)
+        })
       }
 
       return sorted
@@ -628,23 +618,15 @@ export default {
       return applySorting(completed)
     })
 
-    // Function to toggle date sort between ascending and descending
-    const toggleDateSort = () => {
-      if (sortBy.value === 'created_at-asc') {
-        sortBy.value = 'created_at-desc'
-      } else {
-        sortBy.value = 'created_at-asc'
-      }
+    // Function to handle sort change
+    const handleSortChange = (value) => {
+      sortBy.value = value
     }
 
-    // Function to toggle status sort between ascending and descending
-    const toggleStatusSort = () => {
-      if (sortBy.value === 'status-asc') {
-        sortBy.value = 'status-desc'
-      } else {
-        sortBy.value = 'status-asc'
-      }
-    }
+    // Computed property for current user ID (safely handles undefined authStore)
+    const currentUserId = computed(() => {
+      return authStore?.user?.user_id || null
+    })
 
     // Task-related functions
     const loadTasks = async () => {
@@ -779,11 +761,10 @@ export default {
 
     const getTaskStatusColor = (status) => {
       const colors = {
-        'Completed': 'green',
-        'In Progress': 'blue',
-        'Pending': 'orange',
-        'On Hold': 'red',
-        'Unassigned': 'default'
+        'Unassigned': 'default',
+        'Ongoing': 'blue',
+        'Under Review': 'gold',
+        'Completed': 'green'
       }
       return colors[status] || 'default'
     }
@@ -995,12 +976,12 @@ export default {
       activeTab,
       showProjectModal,
       sortBy,
-      toggleDateSort,
-      toggleStatusSort,
+      handleSortChange,
       handleProjectSaved,
       addNewProject, // Expose this method to parent
       handleProjectClick,
       handleOpenModal, // Expose to handle button click
+      currentUserId, // Expose current user ID
       // Task assignment related
       allAvailableTasks,
       isLoadingTasks,
@@ -1040,19 +1021,19 @@ export default {
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(229, 231, 235, 0.6);
   border-radius: 16px;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 :deep(.ant-card:hover) {
-  box-shadow: 0 12px 24px rgba(139, 92, 246, 0.15);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
   transform: translateY(-4px);
-  border-color: rgba(139, 92, 246, 0.2);
+  border-color: rgba(209, 213, 219, 0.8);
 }
 
 :deep(.ant-card-head) {
-  border-bottom: 1px solid rgba(139, 92, 246, 0.1);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.6);
   background: transparent;
   font-weight: 600;
 }
@@ -1067,7 +1048,7 @@ export default {
   background: #ffffff;
   border-radius: 12px;
   padding: 4px;
-  border: 1px solid rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.1);
 }
 
 :deep(.ant-tabs-nav) {
@@ -1085,14 +1066,14 @@ export default {
 }
 
 :deep(.ant-tabs-tab:hover) {
-  color: #8B5CF6;
-  background: rgba(139, 92, 246, 0.05);
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.05);
 }
 
 :deep(.ant-tabs-tab-active) {
-  background: #D78FEE !important;
+  background: #10B981 !important;
   color: white !important;
-  box-shadow: 0 2px 8px rgba(215, 143, 238, 0.3);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
 }
 
 :deep(.ant-tabs-tab-active .ant-tabs-tab-btn) {
@@ -1104,22 +1085,22 @@ export default {
 }
 
 :deep(.ant-btn-primary) {
-  background: linear-gradient(135deg, #8B5CF6, #06B6D4);
+  background: linear-gradient(135deg, #10B981, #059669);
   border: none;
   border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
   font-weight: 600;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 :deep(.ant-btn-primary:hover) {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
+  box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
 }
 
 :deep(.ant-btn-default) {
   background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(139, 92, 246, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.2);
   border-radius: 8px;
   color: #6B7280;
   font-weight: 500;
@@ -1127,9 +1108,9 @@ export default {
 }
 
 :deep(.ant-btn-default:hover) {
-  border-color: #8B5CF6;
-  color: #8B5CF6;
-  background: rgba(139, 92, 246, 0.05);
+  border-color: #10B981;
+  color: #10B981;
+  background: rgba(16, 185, 129, 0.05);
 }
 
 :deep(.ant-empty) {
@@ -1211,30 +1192,30 @@ export default {
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(215, 143, 238, 0.2);
+  border: 1px solid rgba(229, 231, 235, 0.6);
   border-radius: 10px;
   min-width: 90px;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 2px 8px rgba(215, 143, 238, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(215, 143, 238, 0.2);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
 }
 
 .stat-total {
-  border-color: rgba(107, 114, 128, 0.2);
+  border-color: rgba(229, 231, 235, 0.6);
 }
 
 .stat-active {
-  border-color: rgba(215, 143, 238, 0.4);
-  background: linear-gradient(135deg, rgba(215, 143, 238, 0.08), rgba(167, 139, 250, 0.04));
+  border-color: rgba(229, 231, 235, 0.6);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .stat-completed {
-  border-color: rgba(16, 185, 129, 0.3);
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(5, 150, 105, 0.02));
+  border-color: rgba(229, 231, 235, 0.6);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .stat-icon {
@@ -1257,7 +1238,7 @@ export default {
 }
 
 .stat-active .stat-value {
-  background: linear-gradient(135deg, #D78FEE, #A78BFA);
+  background: linear-gradient(135deg, #3B82F6, #2563EB);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1285,20 +1266,20 @@ export default {
   gap: 6px;
   padding: 10px 20px;
   border: none;
-  background: linear-gradient(135deg, #D78FEE, #A78BFA);
+  background: linear-gradient(135deg, #10B981, #059669);
   color: white;
   border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 4px 14px rgba(215, 143, 238, 0.4);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
   white-space: nowrap;
 }
 
 .new-project-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(215, 143, 238, 0.5);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5);
 }
 
 .new-project-btn:active {

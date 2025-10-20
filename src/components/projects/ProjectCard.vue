@@ -44,14 +44,28 @@
 
       <!-- Project Info -->
       <div>
-        <!-- Status and Date -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <!-- Status and Due Date -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
           <a-tag :color="getStatusColor(project.status)" size="small">
             {{ getStatusText(project.status) }}
           </a-tag>
-          <a-typography-text type="secondary" style="font-size: 11px;">
-            {{ formatDate(project.created_at) }}
-          </a-typography-text>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
+            <a-typography-text
+              type="secondary"
+              style="font-size: 11px; line-height: 1.4;"
+              :class="{ 'urgent-due-date': isUrgent(project.due_date) && project.status !== 'Completed' }"
+            >
+              {{ formatDueDateWithDays(project.due_date) }}
+            </a-typography-text>
+            <a-typography-text
+              v-if="getDaysUntilDue(project.due_date) !== null"
+              type="secondary"
+              style="font-size: 10px; line-height: 1.2;"
+              :class="{ 'urgent-due-date': isUrgent(project.due_date) && project.status !== 'Completed' }"
+            >
+              {{ getDaysUntilDue(project.due_date) < 0 ? `Overdue by ${Math.abs(getDaysUntilDue(project.due_date))} day(s)` : getDaysUntilDue(project.due_date) === 0 ? 'Due today' : getDaysUntilDue(project.due_date) === 1 ? 'Due tomorrow' : `Due in ${getDaysUntilDue(project.due_date)} day(s)` }}
+            </a-typography-text>
+          </div>
         </div>
 
         <!-- Created by -->
@@ -62,12 +76,17 @@
           </a-typography-text>
         </div>
 
-        <!-- Due date -->
-        <div style="display: flex; align-items: center; gap: 4px;">
-          <CalendarOutlined style="font-size: 11px; color: #999;" />
-          <a-typography-text type="secondary" style="font-size: 11px;">
-            Due: {{ formatDueDate(project.due_date) }}
-          </a-typography-text>
+        <!-- Created date and Collaborator badge -->
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+          <div style="display: flex; align-items: center; gap: 4px;">
+            <CalendarOutlined style="font-size: 11px; color: #999;" />
+            <a-typography-text type="secondary" style="font-size: 11px;">
+              Created: {{ formatDate(project.created_at) }}
+            </a-typography-text>
+          </div>
+          <a-tag v-if="isCollaborator()" class="collaborator-badge" size="small">
+            Collaborator
+          </a-tag>
         </div>
       </div>
     </div>
@@ -87,6 +106,10 @@ export default {
     project: {
       type: Object,
       required: true
+    },
+    currentUserId: {
+      type: String,
+      default: null
     }
   },
   emits: ['view-details'],
@@ -96,22 +119,12 @@ export default {
 
       const date = new Date(dateString)
       const now = new Date()
-      const diffTime = now.getTime() - date.getTime()
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 
-      if (diffDays === 0) {
-        return 'Today'
-      } else if (diffDays === 1) {
-        return 'Yesterday'
-      } else if (diffDays < 7) {
-        return `${diffDays} days ago`
-      } else {
-        return date.toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-        })
-      }
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+      })
     }
 
     const getStatusColor = (status) => {
@@ -177,13 +190,46 @@ export default {
       return daysDiff >= 0 && daysDiff <= 7
     }
 
+    const getDaysUntilDue = (dateString) => {
+      if (!dateString) return null
+
+      const date = new Date(dateString)
+      const now = new Date()
+      const timeDiff = date.getTime() - now.getTime()
+      const daysDiff = Math.ceil(timeDiff / (1000 * 60 * 60 * 24))
+
+      return daysDiff
+    }
+
+    const formatDueDateWithDays = (dateString) => {
+      if (!dateString) return 'No due date'
+
+      const date = new Date(dateString)
+      const now = new Date()
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+      })
+    }
+
+    const isCollaborator = () => {
+      if (!props.currentUserId || !props.project) return false
+      const isOwner = props.project.created_by_id === props.currentUserId
+      const isCollab = props.project.collaborators && props.project.collaborators.includes(props.currentUserId)
+      return !isOwner && isCollab
+    }
+
     return {
       formatDate,
       formatDueDate,
+      formatDueDateWithDays,
+      getDaysUntilDue,
       getStatusColor,
       getStatusText,
       getProjectColor,
-      isUrgent
+      isUrgent,
+      isCollaborator
     }
   }
 }
@@ -198,7 +244,7 @@ export default {
 
 .project-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(139, 92, 246, 0.15) !important;
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1) !important;
 }
 
 .urgent-project {
@@ -210,14 +256,14 @@ export default {
   background: rgba(255, 255, 255, 0.8);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(139, 92, 246, 0.1);
-  box-shadow: 0 4px 6px rgba(139, 92, 246, 0.05);
+  border: 1px solid rgba(229, 231, 235, 0.6);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
 }
 
 :deep(.ant-card-head) {
   padding: 16px 20px;
   min-height: auto;
-  border-bottom: 1px solid rgba(139, 92, 246, 0.08);
+  border-bottom: 1px solid rgba(229, 231, 235, 0.6);
   background: transparent;
 }
 
@@ -242,5 +288,21 @@ export default {
 
 :deep(.ant-typography) {
   color: #6B7280;
+}
+
+.urgent-due-date {
+  color: #EF4444 !important;
+  font-weight: 600 !important;
+}
+
+.collaborator-badge {
+  background: #FEF3C7 !important;
+  color: #D97706 !important;
+  border: 1px solid #FDE68A !important;
+  border-radius: 12px !important;
+  padding: 2px 10px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
 }
 </style>

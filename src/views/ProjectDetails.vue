@@ -183,37 +183,55 @@
           <a-empty description="You have no tasks in this project yet" />
         </div>
 
-        <div v-else class="tasks-grid">
-          <div
-            v-for="task in getMyTasks()"
-            :key="task.id"
-            @click="handleTaskClick(task)"
-            :class="['task-card', { 'overdue': isOverdue(task.dueDate) }]"
+        <div v-else class="tasks-table-container">
+          <a-table
+            :dataSource="getMyTasks()"
+            :columns="taskColumns"
+            :pagination="false"
+            :rowKey="record => record.id"
+            :customRow="(record) => ({
+              onClick: () => handleTaskClick(record)
+            })"
+            class="tasks-table"
           >
-            <div class="task-header">
-              <h3 class="task-title">{{ task.title }}</h3>
-              <a-tag :class="['task-status', getStatusClass(task.status)]">
-                {{ getStatusText(task.status) }}
-              </a-tag>
-            </div>
-
-            <p class="task-description">{{ truncateText(task.description, 80) }}</p>
-
-            <div class="task-footer">
-              <div class="task-meta">
-                <CalendarOutlined />
-                <span :class="{ 'overdue-text': isOverdue(task.dueDate) }">
-                  {{ formatTaskDate(task.dueDate) }}
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'title'">
+                <div class="task-title-cell">
+                  {{ record.title }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'description'">
+                <div class="task-description-cell">
+                  {{ truncateText(record.description, 100) }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'status'">
+                <a-tag :class="['task-status', getStatusClass(record.status)]">
+                  {{ getStatusText(record.status) }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'priority'">
+                <div :class="['task-priority-cell', getPriorityClass(record.priority)]">
+                  <FlagOutlined />
+                  {{ getPriorityText(record.priority) }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'dueDate'">
+                <span :class="{
+                  'overdue-text': isOverdue(record.dueDate) && record.status !== 'Completed',
+                  'completed-text': record.status === 'Completed'
+                }">
+                  {{ formatTaskDate(record.dueDate) }}
                 </span>
-              </div>
-              <div :class="['task-priority', getPriorityClass(task.priority)]">
-                <FlagOutlined />
-                {{ getPriorityText(task.priority) }}
-              </div>
-            </div>
-
-            <div :class="['priority-indicator', getPriorityClass(task.priority)]"></div>
-          </div>
+              </template>
+              <template v-else-if="column.key === 'department'">
+                {{ record.department || 'N/A' }}
+              </template>
+              <template v-else-if="column.key === 'assignee'">
+                {{ record.assignee_name || record.owner_name || 'Unassigned' }}
+              </template>
+            </template>
+          </a-table>
         </div>
       </div>
 
@@ -227,37 +245,55 @@
           <span class="task-count">{{ getOtherTasks().length }}</span>
         </div>
 
-        <div class="tasks-grid">
-          <div
-            v-for="task in getOtherTasks()"
-            :key="task.id"
-            @click="handleTaskClick(task)"
-            :class="['task-card', 'other-task', { 'overdue': isOverdue(task.dueDate) }]"
+        <div class="tasks-table-container">
+          <a-table
+            :dataSource="getOtherTasks()"
+            :columns="taskColumns"
+            :pagination="false"
+            :rowKey="record => record.id"
+            :customRow="(record) => ({
+              onClick: () => handleTaskClick(record)
+            })"
+            class="tasks-table"
           >
-            <div class="task-header">
-              <h3 class="task-title">{{ task.title }}</h3>
-              <a-tag :class="['task-status', getStatusClass(task.status)]">
-                {{ getStatusText(task.status) }}
-              </a-tag>
-            </div>
-
-            <p class="task-description">{{ truncateText(task.description, 80) }}</p>
-
-            <div class="task-footer">
-              <div class="task-meta">
-                <CalendarOutlined />
-                <span :class="{ 'overdue-text': isOverdue(task.dueDate) }">
-                  {{ formatTaskDate(task.dueDate) }}
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'title'">
+                <div class="task-title-cell">
+                  {{ record.title }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'description'">
+                <div class="task-description-cell">
+                  {{ truncateText(record.description, 100) }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'status'">
+                <a-tag :class="['task-status', getStatusClass(record.status)]">
+                  {{ getStatusText(record.status) }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'priority'">
+                <div :class="['task-priority-cell', getPriorityClass(record.priority)]">
+                  <FlagOutlined />
+                  {{ getPriorityText(record.priority) }}
+                </div>
+              </template>
+              <template v-else-if="column.key === 'dueDate'">
+                <span :class="{
+                  'overdue-text': isOverdue(record.dueDate) && record.status !== 'Completed',
+                  'completed-text': record.status === 'Completed'
+                }">
+                  {{ formatTaskDate(record.dueDate) }}
                 </span>
-              </div>
-              <div :class="['task-priority', getPriorityClass(task.priority)]">
-                <FlagOutlined />
-                {{ getPriorityText(task.priority) }}
-              </div>
-            </div>
-
-            <div :class="['priority-indicator', getPriorityClass(task.priority)]"></div>
-          </div>
+              </template>
+              <template v-else-if="column.key === 'department'">
+                {{ record.department || 'N/A' }}
+              </template>
+              <template v-else-if="column.key === 'assignee'">
+                {{ record.assignee_name || record.owner_name || 'Unassigned' }}
+              </template>
+            </template>
+          </a-table>
         </div>
       </div>
 
@@ -293,6 +329,17 @@
       :task="selectedTask"
       :isOpen="showTaskDetailModal"
       @close="closeTaskDetailModal"
+      @edit="handleTaskEdit"
+      @delete="handleTaskDelete"
+    />
+
+    <!-- Task Edit Modal -->
+    <TaskFormModal
+      v-if="editingTask"
+      :task="editingTask"
+      :isOpen="showEditTaskModal"
+      @close="closeEditTaskModal"
+      @save="handleTaskUpdated"
     />
 
     <!-- Team Members Modal -->
@@ -311,6 +358,14 @@
       :project="project"
       @close="showCreateTaskModal = false"
       @save="handleTaskCreated"
+    />
+
+    <!-- Project Report Preview Modal -->
+    <ProjectReportPreviewModal
+      :isOpen="showReportPreviewModal"
+      :reportData="reportPreviewData"
+      @close="closeReportPreview"
+      @export="handleExportPDF"
     />
 
     <!-- Delete Confirmation Modal -->
@@ -404,18 +459,22 @@ import { useAuthStore } from '../stores/auth'
 import { useProjectEvents } from '../composables/useProjectEvents'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
+import TaskFormModal from '../components/tasks/TaskFormModal.vue'
 import ProjectComments from '../components/projects/ProjectComments.vue'
 import TeamMembersModal from '../components/projects/TeamMembersModal.vue'
 import CreateProjectTaskModal from '../components/projects/CreateProjectTaskModal.vue'
+import ProjectReportPreviewModal from '../components/projects/ProjectReportPreviewModal.vue'
 
 export default {
   name: 'ProjectDetails',
   components: {
     ProjectFormModal,
     TaskDetailModal,
+    TaskFormModal,
     ProjectComments,
     TeamMembersModal,
     CreateProjectTaskModal,
+    ProjectReportPreviewModal,
     FileTextOutlined,
     EditOutlined,
     DeleteOutlined,
@@ -449,6 +508,8 @@ export default {
     const isLoadingTasks = ref(false)
     const selectedTask = ref(null)
     const showTaskDetailModal = ref(false)
+    const editingTask = ref(null)
+    const showEditTaskModal = ref(false)
 
     // Delete modal state
     const showDeleteModal = ref(false)
@@ -460,6 +521,10 @@ export default {
 
     // Create task modal state
     const showCreateTaskModal = ref(false)
+
+    // Report preview modal state
+    const showReportPreviewModal = ref(false)
+    const reportPreviewData = ref(null)
 
     // Check if current user is the project owner
     const isProjectOwner = computed(() => {
@@ -480,26 +545,7 @@ export default {
 
     const formatTaskDate = (dateString) => {
       if (!dateString) return 'No due date'
-
-      const dueDate = new Date(dateString + 'T00:00:00')
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      dueDate.setHours(0, 0, 0, 0)
-
-      const diffTime = dueDate.getTime() - today.getTime()
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
-
-      if (diffDays < 0) {
-        return `${Math.abs(diffDays)} days overdue`
-      } else if (diffDays === 0) {
-        return 'Due today'
-      } else if (diffDays === 1) {
-        return 'Due tomorrow'
-      } else if (diffDays <= 7) {
-        return `Due in ${diffDays} days`
-      } else {
-        return formatDate(dateString)
-      }
+      return formatDate(dateString)
     }
 
     const isOverdue = (dateString) => {
@@ -536,21 +582,34 @@ export default {
     }
 
     const getPriorityClass = (priority) => {
+      const priorityNum = parseInt(priority)
+      if (!isNaN(priorityNum)) {
+        if (priorityNum >= 8) return 'priority-high'        // 8-10: High priority
+        if (priorityNum >= 5) return 'priority-medium'      // 5-7: Medium priority
+        if (priorityNum >= 3) return 'priority-low'         // 3-4: Low priority
+        return 'priority-lowest'                             // 1-2: Lowest priority
+      }
+      // Fallback for legacy text values
       const priorityStr = String(priority).toLowerCase()
-      if (priorityStr === 'high' || priorityStr === '1') return 'priority-high'
-      if (priorityStr === 'medium' || priorityStr === '2' || priorityStr === '3') return 'priority-medium'
-      if (priorityStr === 'low' || priorityStr === '4') return 'priority-low'
-      if (priorityStr === 'lowest' || priorityStr === '5') return 'priority-lowest'
+      if (priorityStr === 'high') return 'priority-high'
+      if (priorityStr === 'medium') return 'priority-medium'
+      if (priorityStr === 'low') return 'priority-low'
+      if (priorityStr === 'lowest') return 'priority-lowest'
       return 'priority-medium'
     }
 
     const getPriorityText = (priority) => {
+      const priorityNum = parseInt(priority)
+      if (!isNaN(priorityNum) && priorityNum >= 1 && priorityNum <= 10) {
+        return `Priority: ${priorityNum} / 10`
+      }
+      // Fallback for legacy text values
       const priorityStr = String(priority).toLowerCase()
-      if (priorityStr === 'high' || priorityStr === '1') return 'High'
-      if (priorityStr === 'medium' || priorityStr === '2' || priorityStr === '3') return 'Medium'
-      if (priorityStr === 'low' || priorityStr === '4') return 'Low'
-      if (priorityStr === 'lowest' || priorityStr === '5') return 'Lowest'
-      return 'Medium'
+      if (priorityStr === 'high') return 'Priority: 9 / 10'
+      if (priorityStr === 'medium') return 'Priority: 5 / 10'
+      if (priorityStr === 'low') return 'Priority: 3 / 10'
+      if (priorityStr === 'lowest') return 'Priority: 1 / 10'
+      return 'Priority: 5 / 10'
     }
 
     const getTeamMembersCount = () => {
@@ -583,6 +642,80 @@ export default {
       if (projectTasks.value.length === 0) return 0
       return Math.round((getCompletedTasksCount() / projectTasks.value.length) * 100)
     }
+
+    // Table columns definition
+    const taskColumns = [
+      {
+        title: 'Task Name',
+        dataIndex: 'title',
+        key: 'title',
+        width: '18%',
+        ellipsis: true,
+        sorter: (a, b) => a.title.localeCompare(b.title),
+        sortDirections: ['ascend', 'descend']
+      },
+      {
+        title: 'Description',
+        dataIndex: 'description',
+        key: 'description',
+        width: '25%',
+        ellipsis: true
+      },
+      {
+        title: 'Status',
+        dataIndex: 'status',
+        key: 'status',
+        width: '10%',
+        align: 'center',
+        sorter: (a, b) => a.status.localeCompare(b.status),
+        sortDirections: ['ascend', 'descend']
+      },
+      {
+        title: 'Priority',
+        dataIndex: 'priority',
+        key: 'priority',
+        width: '10%',
+        align: 'center',
+        sorter: (a, b) => {
+          // Priority is stored as a number (1-10), higher number = higher priority
+          const priorityA = parseInt(a.priority) || 5
+          const priorityB = parseInt(b.priority) || 5
+          return priorityB - priorityA  // Descending by default (10 first, then 9, 8, etc.)
+        },
+        sortDirections: ['ascend', 'descend']
+      },
+      {
+        title: 'Due Date',
+        dataIndex: 'dueDate',
+        key: 'dueDate',
+        width: '12%',
+        align: 'center',
+        sorter: (a, b) => {
+          if (!a.dueDate) return 1
+          if (!b.dueDate) return -1
+          return new Date(a.dueDate) - new Date(b.dueDate)
+        },
+        sortDirections: ['ascend', 'descend']
+      },
+      {
+        title: 'Department',
+        dataIndex: 'department',
+        key: 'department',
+        width: '12%',
+        align: 'center',
+        sorter: (a, b) => (a.department || 'N/A').localeCompare(b.department || 'N/A'),
+        sortDirections: ['ascend', 'descend']
+      },
+      {
+        title: 'Assignee',
+        dataIndex: 'assignee_name',
+        key: 'assignee',
+        width: '13%',
+        align: 'center',
+        sorter: (a, b) => (a.assignee_name || 'Unassigned').localeCompare(b.assignee_name || 'Unassigned'),
+        sortDirections: ['ascend', 'descend']
+      }
+    ]
 
     const getMyTasks = () => {
       const userId = authStore.user?.user_id
@@ -628,6 +761,27 @@ export default {
           task.project_id === project.value.project_id
         )
 
+        // Get all unique owner_ids
+        const ownerIds = [...new Set(filteredTasks.map(t => t.owner_id).filter(Boolean))]
+
+        // Fetch user names and departments for all owner_ids
+        const userNameMap = {}
+        const userDepartmentMap = {}
+        for (const ownerId of ownerIds) {
+          try {
+            const userResponse = await fetch(`${baseUrl}/users/${ownerId}`)
+            if (userResponse.ok) {
+              const userData = await userResponse.json()
+              userNameMap[ownerId] = userData.user?.name || 'Unknown'
+              userDepartmentMap[ownerId] = userData.user?.department || 'N/A'
+            }
+          } catch (err) {
+            console.error(`Failed to fetch user name for ${ownerId}:`, err)
+            userNameMap[ownerId] = 'Unknown'
+            userDepartmentMap[ownerId] = 'N/A'
+          }
+        }
+
         projectTasks.value = filteredTasks.map(t => ({
           id: t.id,
           title: t.title,
@@ -636,6 +790,9 @@ export default {
           description: t.description || 'No description available',
           priority: t.priority || 'Medium',
           owner_id: t.owner_id,
+          owner_name: userNameMap[t.owner_id] || 'Unassigned',
+          assignee_name: userNameMap[t.owner_id] || 'Unassigned',
+          department: userDepartmentMap[t.owner_id] || 'N/A',
           collaborators: t.collaborators || [],
           project: t.project || project.value.project_name
         }))
@@ -838,18 +995,183 @@ export default {
       loadProject()
     }
 
-    const handleGenerateReport = () => {
-      notification.info({
-        message: 'Feature Coming Soon',
-        description: 'Project report generation will be available soon.',
-        placement: 'topRight',
-        duration: 3
-      })
+    const handleGenerateReport = async () => {
+      try {
+        // Show loading notification
+        notification.info({
+          message: 'Loading Report Preview',
+          description: 'Please wait while we prepare your project report...',
+          placement: 'topRight',
+          duration: 2
+        })
+
+        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+
+        // Fetch report preview data
+        const response = await fetch(`${reportServiceUrl}/preview-project-report`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            project_id: project.value.project_id
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to load report preview')
+        }
+
+        const data = await response.json()
+        reportPreviewData.value = data
+        showReportPreviewModal.value = true
+
+      } catch (error) {
+        console.error('Error loading report preview:', error)
+        notification.error({
+          message: 'Failed to Load Preview',
+          description: error.message || 'Unable to load report preview. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      }
+    }
+
+    const closeReportPreview = () => {
+      showReportPreviewModal.value = false
+      reportPreviewData.value = null
+    }
+
+    const handleExportPDF = async () => {
+      try {
+        notification.info({
+          message: 'Generating PDF',
+          description: 'Please wait while we generate your PDF report...',
+          placement: 'topRight',
+          duration: 2
+        })
+
+        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+
+        const response = await fetch(`${reportServiceUrl}/generate-project-report`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            project_id: project.value.project_id
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to generate PDF')
+        }
+
+        // Get the blob from response
+        const blob = await response.blob()
+
+        // Create a download link
+        const url = window.URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+
+        // Extract filename from Content-Disposition header or use default
+        const contentDisposition = response.headers.get('Content-Disposition')
+        let filename = `project_report_${project.value.project_name.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`
+
+        if (contentDisposition) {
+          const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+          if (filenameMatch && filenameMatch[1]) {
+            filename = filenameMatch[1].replace(/['"]/g, '')
+          }
+        }
+
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        window.URL.revokeObjectURL(url)
+
+        notification.success({
+          message: 'PDF Generated Successfully',
+          description: 'Your project report has been downloaded.',
+          placement: 'topRight',
+          duration: 3
+        })
+
+        closeReportPreview()
+
+      } catch (error) {
+        console.error('Error exporting PDF:', error)
+        notification.error({
+          message: 'Failed to Export PDF',
+          description: error.message || 'Unable to generate PDF. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      }
     }
 
     const closeTaskDetailModal = () => {
       showTaskDetailModal.value = false
       selectedTask.value = null
+    }
+
+    const handleTaskEdit = (task) => {
+      // Close the detail modal
+      closeTaskDetailModal()
+
+      // Open edit task modal
+      editingTask.value = task
+      showEditTaskModal.value = true
+    }
+
+    const closeEditTaskModal = () => {
+      showEditTaskModal.value = false
+      editingTask.value = null
+    }
+
+    const handleTaskUpdated = async (updatedTask) => {
+      // Update the task in the local tasks list
+      const index = projectTasks.value.findIndex(t => t.id === updatedTask.id)
+      if (index !== -1) {
+        projectTasks.value[index] = {
+          ...projectTasks.value[index],
+          ...updatedTask
+        }
+      }
+
+      // Show success notification
+      notification.success({
+        message: 'Task Updated',
+        description: `"${updatedTask.title}" has been updated.`,
+        placement: 'topRight',
+        duration: 3
+      })
+
+      // Close modals
+      closeEditTaskModal()
+
+      // Reload tasks to ensure we have the latest data
+      await loadProjectTasks()
+    }
+
+    const handleTaskDelete = async (deletedTask) => {
+      // Close the detail modal
+      closeTaskDetailModal()
+
+      // Show success notification
+      notification.success({
+        message: 'Task Deleted',
+        description: `"${deletedTask.title}" has been deleted.`,
+        placement: 'topRight',
+        duration: 3
+      })
+
+      // Reload tasks to update the list
+      await loadProjectTasks()
     }
 
     const handleTeamUpdate = (updatedProject) => {
@@ -1035,6 +1357,7 @@ export default {
       getCompletionPercentage,
       getMyTasks,
       getOtherTasks,
+      taskColumns,
       handleEdit,
       handleDelete,
       closeDeleteModal,
@@ -1042,7 +1365,17 @@ export default {
       handleProjectUpdated,
       handleTaskClick,
       closeTaskDetailModal,
+      handleTaskEdit,
+      handleTaskDelete,
+      closeEditTaskModal,
+      handleTaskUpdated,
+      editingTask,
+      showEditTaskModal,
       handleGenerateReport,
+      closeReportPreview,
+      handleExportPDF,
+      showReportPreviewModal,
+      reportPreviewData,
       handleMarkAsCompleted
     }
   }
@@ -1175,10 +1508,20 @@ export default {
   font-weight: 500;
   border-radius: 8px;
   transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .action-btn:hover {
   transform: translateY(-1px);
+}
+
+.action-btn :deep(.anticon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .action-btn.primary-action {
@@ -1354,7 +1697,7 @@ export default {
 
 .progress-fill-inline {
   height: 100%;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  background: linear-gradient(90deg, #10B981, #059669);
   border-radius: 4px;
   transition: width 0.6s ease;
 }
@@ -1483,118 +1826,80 @@ export default {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #667eea, #764ba2);
+  background: linear-gradient(90deg, #10B981, #059669);
   border-radius: 6px;
   transition: width 0.6s ease;
 }
 
-/* Tasks Grid */
-.tasks-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 24px;
+/* Tasks Table */
+.tasks-table-container {
+  margin-top: 16px;
 }
 
-.task-card {
+.tasks-table :deep(.ant-table) {
   background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 24px;
+  border-radius: 8px;
+}
+
+.tasks-table :deep(.ant-table-thead > tr > th) {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 2px solid #e5e7eb;
+}
+
+.tasks-table :deep(.ant-table-tbody > tr) {
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
   overflow: hidden;
 }
 
-.task-card:hover {
-  border-color: #667eea;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.12);
+.tasks-table :deep(.ant-table-tbody > tr:hover) {
+  background-color: #f9fafb;
 }
 
-.task-card.overdue {
-  border-color: #fecaca;
-  background: #fef2f2;
-}
-
-.task-card.other-task {
-  opacity: 0.7;
-}
-
-.task-card.other-task:hover {
-  opacity: 1;
-}
-
-.priority-indicator {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-}
-
-.priority-indicator.priority-high { background: #ef4444; }
-.priority-indicator.priority-medium { background: #f59e0b; }
-.priority-indicator.priority-low { background: #06b6d4; }
-.priority-indicator.priority-lowest { background: #9ca3af; }
-
-.task-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20px;
-  margin-bottom: 16px;
-}
-
-.task-title {
-  font-size: 18px;
+.task-title-cell {
   font-weight: 600;
   color: #111827;
-  margin: 0;
-  flex: 1;
-  line-height: 1.5;
-  word-break: break-word;
+  cursor: pointer;
+}
+
+.task-title-cell:hover {
+  color: #667eea;
+}
+
+.task-description-cell {
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .task-status {
-  padding: 6px 12px;
+  padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
   border-radius: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  flex-shrink: 0;
-  align-self: flex-start;
-  margin-top: 2px;
 }
 
-.task-description {
-  font-size: 14px;
-  color: #6b7280;
-  line-height: 1.6;
-  margin: 0 0 16px 0;
-  min-height: 44px;
-}
-
-.task-footer {
-  display: flex;
-  justify-content: space-between;
+.task-priority-cell {
+  display: inline-flex;
   align-items: center;
-  padding-top: 16px;
-  border-top: 1px solid #f3f4f6;
-}
-
-.task-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #6b7280;
-  font-weight: 500;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .overdue-text {
   color: #ef4444;
+  font-weight: 600;
+}
+
+.completed-text {
+  color: #10b981;
   font-weight: 600;
 }
 
@@ -1608,23 +1913,23 @@ export default {
   font-weight: 600;
 }
 
-.task-priority.priority-high {
-  background: #fef2f2;
+.task-priority.priority-high,
+.task-priority-cell.priority-high {
   color: #ef4444;
 }
 
-.task-priority.priority-medium {
-  background: #fffbeb;
+.task-priority.priority-medium,
+.task-priority-cell.priority-medium {
   color: #f59e0b;
 }
 
-.task-priority.priority-low {
-  background: #ecfeff;
+.task-priority.priority-low,
+.task-priority-cell.priority-low {
   color: #06b6d4;
 }
 
-.task-priority.priority-lowest {
-  background: #f3f4f6;
+.task-priority.priority-lowest,
+.task-priority-cell.priority-lowest {
   color: #6b7280;
 }
 

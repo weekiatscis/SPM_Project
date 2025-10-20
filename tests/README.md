@@ -1,21 +1,41 @@
-# SPM Project - Microservices Test Suite
+# SPM Project - Test Suite
 
-This directory contains comprehensive tests for all microservices in the SPM Project.
+This directory contains comprehensive tests for all microservices in the SPM Project. Each test file combines both unit tests (testing business logic with mocks) and integration tests (testing actual service endpoints).
 
 ## Test Files
 
-### Individual Service Tests
-- **test_task_service.py** - Tests for Task Service (Port 8080)
-- **test_project_service.py** - Tests for Project Service (Port 8082)
-- **test_user_service.py** - Tests for User Service (Port 8081)
-- **test_auth_service.py** - Tests for Authentication Service (Port 8086)
-- **test_notification_service.py** - Tests for Notification Service (Port 8084)
+Each service has a single test file containing both unit and integration tests:
 
-### Comprehensive Validation
-- **validate_all_services.py** - Main validation script that checks all services
+- **test_auth_service.py** - Authentication Service tests (Unit + Integration)
+- **test_notification_service.py** - Notification Service tests (Unit + Integration)
+- **test_project_service.py** - Project Service tests (Unit + Integration)
+- **test_task_service.py** - Task Service tests (Unit + Integration)
+- **test_user_service.py** - User Service tests (Unit + Integration)
+
+### Additional Files
+
+- **validate_all_services.py** - Comprehensive validation script for all services
   - Used in CI/CD pipeline
   - Validates service health and functionality
   - Provides detailed output with color-coded results
+
+## Test Structure
+
+Each test file is organized into two main sections:
+
+### 1. Unit Tests
+Tests individual functions and business logic with mocked dependencies. These tests:
+- Run quickly without external dependencies
+- Test pure logic and data transformations
+- Use mocking for database and external service calls
+- Validate edge cases and error handling
+
+### 2. Integration Tests
+Tests actual service endpoints with running services. These tests:
+- Require services to be running via docker-compose
+- Test API endpoints and responses
+- Validate service health and connectivity
+- Check error responses and validation
 
 ## Running Tests
 
@@ -26,53 +46,78 @@ This directory contains comprehensive tests for all microservices in the SPM Pro
 pip install -r tests/requirements-test.txt
 ```
 
-2. Make sure all microservices are running:
+2. For integration tests, ensure all microservices are running:
 ```bash
 docker-compose up -d
 ```
 
-### Run All Services Validation
+### Run All Tests with Coverage
 
-This is the main test that validates all microservices:
+Run all tests and generate coverage report:
 
 ```bash
-python tests/validate_all_services.py
+pytest tests/ -v --cov=src/microservices --cov-report=term-missing --cov-report=html
 ```
 
-### Run Individual Service Tests
+This will:
+- Run all unit and integration tests
+- Generate a coverage report in the terminal
+- Create an HTML coverage report in `htmlcov/`
 
-Test a specific microservice:
-
+View the HTML coverage report:
 ```bash
-# Task Service
-python tests/test_task_service.py
-
-# Project Service
-python tests/test_project_service.py
-
-# User Service
-python tests/test_user_service.py
-
-# Auth Service
-python tests/test_auth_service.py
-
-# Notification Service
-python tests/test_notification_service.py
+open htmlcov/index.html
 ```
 
-### Run with pytest
+### Run Specific Test Files
 
-You can also run tests using pytest:
+Test a specific service:
 
 ```bash
-# Run all tests
-pytest tests/ -v
-
-# Run a specific test file
+# Run all tests for Task Service
 pytest tests/test_task_service.py -v
 
-# Run with coverage
-pytest tests/ --cov=src/microservices --cov-report=html
+# Run all tests for Auth Service
+pytest tests/test_auth_service.py -v
+```
+
+### Run Only Unit Tests or Integration Tests
+
+Run only unit tests (fast, no services required):
+```bash
+pytest tests/ -v -k "not Integration"
+```
+
+Run only integration tests (requires running services):
+```bash
+pytest tests/ -v -k "Integration"
+```
+
+### Run Individual Test Classes
+
+Run tests from a specific class:
+```bash
+# Run only password hashing unit tests
+pytest tests/test_auth_service.py::TestPasswordHashing -v
+
+# Run only auth service integration tests
+pytest tests/test_auth_service.py::TestAuthServiceIntegration -v
+```
+
+### Run with Different Output Modes
+
+```bash
+# Quiet mode - less verbose
+pytest tests/ -q
+
+# Show test names and results
+pytest tests/ -v
+
+# Show print statements
+pytest tests/ -v -s
+
+# Stop on first failure
+pytest tests/ -x
 ```
 
 ## Environment Variables
@@ -89,7 +134,7 @@ To test against different environments:
 
 ```bash
 export TASK_SERVICE_URL=http://your-server:8080
-python tests/validate_all_services.py
+pytest tests/ -v
 ```
 
 ## CI/CD Integration
@@ -99,55 +144,54 @@ The tests are automatically run on every push to the repository via GitHub Actio
 See `.github/workflows/validate-services.yml` for the CI/CD configuration.
 
 The workflow:
-1. Starts all microservices using docker-compose
-2. Waits for services to be ready
-3. Runs the comprehensive validation script
-4. Runs individual test files for each service
-5. Reports results and uploads artifacts
+1. Runs unit tests first (fast feedback)
+2. Starts all microservices using docker-compose
+3. Waits for services to be healthy
+4. Runs integration tests for all services
+5. Generates and reports code coverage
+6. Uploads coverage reports as artifacts
 
-## Test Structure
+## Code Coverage
 
-Each test file follows this structure:
+### Target Coverage
 
-1. **Service Health Check** - Verifies service is running and accessible
-2. **Endpoint Tests** - Tests each API endpoint
-3. **Validation Tests** - Tests input validation
-4. **Error Handling Tests** - Tests error responses
+The project aims for **~80% code coverage** across all microservices.
 
-## Adding New Tests
+### Checking Coverage
 
-To add a new test:
+After running tests with `--cov`, you'll see a coverage summary:
 
-1. Create a new test file: `test_<service_name>.py`
-2. Import the necessary modules
-3. Create a test class: `TestServiceName`
-4. Add test methods (must start with `test_`)
-5. Update `validate_all_services.py` to include the new service
-6. Update this README
-
-Example:
-
-```python
-import pytest
-import requests
-
-SERVICE_URL = "http://localhost:8000"
-
-class TestMyService:
-    def test_service_health(self):
-        response = requests.get(f"{SERVICE_URL}/health")
-        assert response.status_code == 200
-
-    def test_endpoint(self):
-        response = requests.get(f"{SERVICE_URL}/api/endpoint")
-        assert response.status_code in [200, 401]
 ```
+---------- coverage: platform darwin, python 3.11.x -----------
+Name                                    Stmts   Miss  Cover   Missing
+---------------------------------------------------------------------
+src/microservices/tasks/task_service.py   245     48    80%   45-52, 89-91
+src/microservices/users/user_service.py   198     39    80%   67-71, 134-139
+...
+---------------------------------------------------------------------
+TOTAL                                    1247    251    80%
+```
+
+### Improving Coverage
+
+To identify untested code:
+1. Run tests with coverage: `pytest tests/ --cov=src/microservices --cov-report=html`
+2. Open the HTML report: `open htmlcov/index.html`
+3. Click on individual files to see which lines are not covered
+4. Add tests for uncovered code paths
 
 ## Troubleshooting
 
-### Services not responding
+### Unit Tests Failing
 
-If tests fail because services aren't responding:
+If unit tests fail:
+1. Check that the tested functions haven't changed
+2. Review mock setups - ensure mocks match actual function signatures
+3. Check for import errors - ensure source paths are correct
+
+### Integration Tests Failing
+
+If integration tests fail because services aren't responding:
 
 1. Check if all services are running:
    ```bash
@@ -162,33 +206,70 @@ If tests fail because services aren't responding:
 3. Wait longer for services to start:
    ```bash
    # Services may take 30-60 seconds to start
-   sleep 30 && python tests/validate_all_services.py
+   sleep 30 && pytest tests/ -k "Integration" -v
    ```
 
-### Connection refused errors
+### Connection Refused Errors
 
 - Ensure docker-compose services are running
 - Check if ports are already in use
 - Verify environment variables are set correctly
+- Try restarting services: `docker-compose restart`
 
-### Test failures
+### Test Discovery Issues
 
-- Check the test output for specific error messages
-- Review service logs for errors
-- Verify database and RabbitMQ are accessible
-- Ensure all required environment variables are set
+If pytest can't find tests:
+- Ensure test files start with `test_`
+- Ensure test functions start with `test_`
+- Ensure test classes start with `Test`
+- Check that `__init__.py` exists in the tests directory
 
 ## Best Practices
 
 1. **Keep tests independent** - Each test should be able to run independently
-2. **Don't modify data** - Tests should be read-only when possible
-3. **Use appropriate timeouts** - Default timeout is 5 seconds
-4. **Check multiple status codes** - Services may return 200, 401, etc. based on auth
-5. **Clean up after tests** - Always clean up any test data created
+2. **Use descriptive test names** - Test names should clearly describe what they test
+3. **Don't modify production data** - Integration tests should be read-only when possible
+4. **Use appropriate timeouts** - Default timeout is 5 seconds for integration tests
+5. **Check multiple status codes** - Services may return different codes based on auth state
+6. **Clean up after tests** - Always clean up any test data created
+7. **Mock external dependencies** - Unit tests should not make real API calls or database queries
+8. **Test edge cases** - Include tests for error conditions, boundary values, and edge cases
+
+## Adding New Tests
+
+To add a new test to an existing file:
+
+1. Determine if it's a unit or integration test
+2. Add it to the appropriate section of the test file
+3. Follow the existing naming conventions
+4. Ensure it follows the test class structure
+
+Example unit test:
+```python
+class TestMyBusinessLogic:
+    """Test my business logic"""
+
+    def test_calculation(self):
+        """Test that calculation works correctly"""
+        result = my_function(2, 3)
+        assert result == 5
+```
+
+Example integration test:
+```python
+class TestMyServiceIntegration:
+    """Integration tests for My Service"""
+
+    def test_endpoint_health(self):
+        """Test if endpoint is accessible"""
+        response = requests.get(f"{SERVICE_URL}/health", timeout=5)
+        assert response.status_code == 200
+```
 
 ## Support
 
-For issues or questions about the tests, please:
+For issues or questions about the tests:
 1. Check the test output for error messages
-2. Review service logs
-3. Open an issue on GitHub with test output and service logs
+2. Review service logs with `docker-compose logs`
+3. Consult this README for common issues
+4. Open an issue on GitHub with test output and service logs
