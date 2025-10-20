@@ -48,10 +48,7 @@
             
             <!-- Comment Text (read-only) -->
             <div class="mt-1">
-              <p
-                class="text-sm text-gray-700 whitespace-pre-wrap"
-                v-html="formatCommentText(comment.comment_text)"
-              ></p>
+              <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ comment.comment_text }}</p>
             </div>
           </div>
         </div>
@@ -67,51 +64,19 @@
           </div>
         </div>
         <div class="flex-1">
-          <div ref="editorWrapper" class="relative">
-            <div
-              ref="commentEditor"
-              class="comment-editor w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              :class="{
-                'opacity-50 cursor-not-allowed bg-gray-100': isAddingComment,
-                'comment-editor--focused': isEditorFocused
-              }"
-              :contenteditable="!isAddingComment"
-              data-placeholder="Add a comment..."
-              @input="handleEditorInput"
-              @keydown="handleEditorKeydown"
-              @keyup="handleEditorKeyup"
-              @paste="handleEditorPaste"
-              @focus="isEditorFocused = true"
-              @blur="handleEditorBlur"
-            ></div>
-            <div
-              v-if="isMentionDropdownVisible"
-              class="mention-dropdown absolute z-10 bg-white border border-gray-200 rounded-lg shadow-lg w-60 max-h-60 overflow-y-auto"
-              :style="mentionDropdownStyle"
-            >
-              <div v-if="mentionSuggestions.length === 0" class="px-3 py-2 text-sm text-gray-500">
-                No matches
-              </div>
-              <ul v-else class="py-1">
-                <li
-                  v-for="(user, index) in mentionSuggestions"
-                  :key="user.user_id"
-                  class="px-3 py-2 text-sm cursor-pointer flex items-center space-x-2"
-                  :class="index === activeMentionIndex ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-100'"
-                  @mousedown.prevent="selectMention(user)"
-                >
-                  <span class="mention-suggestion-initials">
-                    {{ getInitials(user.name) }}
-                  </span>
-                  <span class="truncate">{{ user.name }}</span>
-                </li>
-              </ul>
-            </div>
-          </div>
+          <textarea
+            v-model="newComment"
+            :disabled="isAddingComment"
+            placeholder="Add a comment..."
+            rows="3"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+            @keydown.ctrl.enter="addComment"
+            @keydown.meta.enter="addComment"
+          ></textarea>
           <div class="flex justify-end items-center mt-2">
             <button
               @click="addComment"
-              :disabled="!hasContent || isAddingComment"
+              :disabled="!newComment.trim() || isAddingComment"
               class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {{ isAddingComment ? 'Posting...' : 'Post Comment' }}
@@ -134,7 +99,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 
 export default {
@@ -157,15 +122,6 @@ export default {
     const isAddingComment = ref(false)
     const newComment = ref('')
     const userCache = ref({})
-    const commentEditor = ref(null)
-    const editorWrapper = ref(null)
-    const isEditorFocused = ref(false)
-    const mentionableUsers = ref([])
-    const mentionSuggestions = ref([])
-    const isMentionDropdownVisible = ref(false)
-    const activeMentionIndex = ref(0)
-    const mentionPosition = ref(null)
-    const currentMentionRange = ref(null)
 
     const currentUserId = computed(() => authStore.user?.user_id)
     const currentUserName = computed(() => {
@@ -200,300 +156,6 @@ export default {
       return props.task.owner_id === currentUserId.value || 
              (props.task.collaborators && props.task.collaborators.includes(currentUserId.value))
     })
-
-    const hasContent = computed(() => newComment.value.trim().length > 0)
-
-    const mentionDropdownStyle = computed(() => {
-      if (!mentionPosition.value) {
-        return {
-          top: 'calc(100% + 0.5rem)',
-          left: '0px'
-        }
-      }
-      return {
-        top: `${mentionPosition.value.top}px`,
-        left: `${mentionPosition.value.left}px`
-      }
-    })
-
-    const resetEditor = () => {
-      if (commentEditor.value) {
-        commentEditor.value.innerHTML = ''
-      }
-      newComment.value = ''
-      hideMentionDropdown()
-    }
-
-    const getPlainTextFromEditor = () => {
-      if (!commentEditor.value) return ''
-      const textValue = commentEditor.value.innerText || ''
-      return textValue.replace(/\u00a0/g, ' ').replace(/\s+\n/g, '\n')
-    }
-
-    const updatePlainComment = () => {
-      newComment.value = getPlainTextFromEditor()
-    }
-
-    const hideMentionDropdown = () => {
-      isMentionDropdownVisible.value = false
-      mentionSuggestions.value = []
-      activeMentionIndex.value = 0
-      mentionPosition.value = null
-      currentMentionRange.value = null
-    }
-
-    const updateMentionPosition = (range) => {
-      if (!editorWrapper.value) {
-        mentionPosition.value = null
-        return
-      }
-
-      const rect = range.getBoundingClientRect()
-      const wrapperRect = editorWrapper.value.getBoundingClientRect()
-
-      if (rect && rect.width !== 0) {
-        mentionPosition.value = {
-          top: rect.bottom - wrapperRect.top + editorWrapper.value.scrollTop,
-          left: rect.left - wrapperRect.left
-        }
-      } else {
-        mentionPosition.value = null
-      }
-    }
-
-    const updateMentionSuggestions = (query) => {
-      if (!mentionableUsers.value || mentionableUsers.value.length === 0) {
-        hideMentionDropdown()
-        return
-      }
-
-      const normalizedQuery = (query || '').toLowerCase()
-      const filtered = normalizedQuery
-        ? mentionableUsers.value.filter(user => user.name && user.name.toLowerCase().includes(normalizedQuery))
-        : mentionableUsers.value
-
-      mentionSuggestions.value = filtered.slice(0, 8)
-
-      if (mentionSuggestions.value.length > 0) {
-        isMentionDropdownVisible.value = true
-        activeMentionIndex.value = 0
-      } else {
-        hideMentionDropdown()
-      }
-    }
-
-    const detectMention = () => {
-      if (!commentEditor.value) return
-
-      const selection = window.getSelection()
-      if (!selection || selection.rangeCount === 0) {
-        hideMentionDropdown()
-        return
-      }
-
-      const anchorNode = selection.anchorNode
-      if (!anchorNode || !commentEditor.value.contains(anchorNode)) {
-        hideMentionDropdown()
-        return
-      }
-
-      if (!selection.isCollapsed) {
-        hideMentionDropdown()
-        return
-      }
-
-      if (anchorNode.nodeType !== Node.TEXT_NODE) {
-        hideMentionDropdown()
-        return
-      }
-
-      const range = selection.getRangeAt(0)
-      const textContent = anchorNode.textContent || ''
-      const caretPosition = selection.anchorOffset
-      const atIndex = textContent.lastIndexOf('@', caretPosition - 1)
-
-      if (atIndex === -1) {
-        hideMentionDropdown()
-        return
-      }
-
-      // Ensure the character before @ is whitespace or start of text
-      const charBeforeAt = atIndex > 0 ? textContent[atIndex - 1] : ' '
-      if (!/\s/.test(charBeforeAt)) {
-        hideMentionDropdown()
-        return
-      }
-
-      const queryFragment = textContent.slice(atIndex + 1, caretPosition)
-
-      // Stop if query contains whitespace or we are deleting
-      if (/\s/.test(queryFragment)) {
-        hideMentionDropdown()
-        return
-      }
-
-      const mentionRange = range.cloneRange()
-      try {
-        mentionRange.setStart(anchorNode, atIndex)
-        mentionRange.setEnd(anchorNode, caretPosition)
-      } catch (error) {
-        hideMentionDropdown()
-        return
-      }
-
-      currentMentionRange.value = mentionRange
-      updateMentionPosition(mentionRange)
-      updateMentionSuggestions(queryFragment)
-    }
-
-    const createMentionSpan = (user) => {
-      const span = document.createElement('span')
-      span.className = 'mention-chip'
-      span.contentEditable = 'false'
-      span.dataset.mention = 'true'
-      span.dataset.userId = user.user_id || ''
-      span.dataset.displayName = user.name || 'Unknown User'
-      span.textContent = `@${user.name || 'Unknown User'}`
-      return span
-    }
-
-    const insertMention = (user) => {
-      if (!currentMentionRange.value) return
-
-      const selection = window.getSelection()
-      if (!selection) return
-
-      const range = currentMentionRange.value
-      range.deleteContents()
-
-      const mentionSpan = createMentionSpan(user)
-      range.insertNode(mentionSpan)
-
-      const spaceNode = document.createTextNode(' ')
-      if (mentionSpan.parentNode) {
-        mentionSpan.parentNode.insertBefore(spaceNode, mentionSpan.nextSibling)
-      }
-
-      const newRange = document.createRange()
-      newRange.setStart(spaceNode, 1)
-      newRange.collapse(true)
-
-      selection.removeAllRanges()
-      selection.addRange(newRange)
-
-      userCache.value[user.user_id] = user.name
-      updatePlainComment()
-      hideMentionDropdown()
-    }
-
-    const selectMention = (user) => {
-      if (!user) return
-      insertMention(user)
-    }
-
-    const handleEditorInput = () => {
-      updatePlainComment()
-    }
-
-    const handleEditorKeyup = () => {
-      detectMention()
-      updatePlainComment()
-    }
-
-    const handleEditorKeydown = (event) => {
-      if (isMentionDropdownVisible.value && mentionSuggestions.value.length > 0) {
-        if (event.key === 'ArrowDown') {
-          event.preventDefault()
-          activeMentionIndex.value = (activeMentionIndex.value + 1) % mentionSuggestions.value.length
-          return
-        }
-        if (event.key === 'ArrowUp') {
-          event.preventDefault()
-          activeMentionIndex.value =
-            (activeMentionIndex.value - 1 + mentionSuggestions.value.length) % mentionSuggestions.value.length
-          return
-        }
-        if (event.key === 'Enter' || event.key === 'Tab') {
-          event.preventDefault()
-          const selectedUser = mentionSuggestions.value[activeMentionIndex.value]
-          if (selectedUser) {
-            selectMention(selectedUser)
-          }
-          return
-        }
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          hideMentionDropdown()
-          return
-        }
-      }
-
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        event.preventDefault()
-        addComment()
-      }
-    }
-
-    const insertTextAtCursor = (text) => {
-      if (!text) return
-      const selection = window.getSelection()
-      if (!selection || selection.rangeCount === 0) return
-      const range = selection.getRangeAt(0)
-      range.deleteContents()
-      const textNode = document.createTextNode(text)
-      range.insertNode(textNode)
-      range.setStart(textNode, textNode.length)
-      range.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(range)
-    }
-
-    const handleEditorPaste = (event) => {
-      event.preventDefault()
-      const pastedText = event.clipboardData?.getData('text/plain') || ''
-      insertTextAtCursor(pastedText)
-      updatePlainComment()
-      detectMention()
-    }
-
-    const handleEditorBlur = () => {
-      isEditorFocused.value = false
-      setTimeout(() => {
-        const activeElement = document.activeElement
-        if (!editorWrapper.value || !activeElement) return
-        if (!editorWrapper.value.contains(activeElement)) {
-          hideMentionDropdown()
-        }
-      }, 120)
-    }
-
-    const handleDocumentClick = (event) => {
-      if (!isMentionDropdownVisible.value) return
-      if (!editorWrapper.value) return
-      const target = event.target
-      if (target instanceof Node && !editorWrapper.value.contains(target)) {
-        hideMentionDropdown()
-      }
-    }
-
-    const loadMentionableUsers = async () => {
-      try {
-        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-        const response = await fetch(`${taskServiceUrl}/users`)
-        if (response.ok) {
-          const result = await response.json()
-          const users = Array.isArray(result.users) ? result.users : []
-          mentionableUsers.value = users.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-          users.forEach(user => {
-            if (user.user_id && user.name) {
-              userCache.value[user.user_id] = user.name
-            }
-          })
-        }
-      } catch (error) {
-        console.error('Failed to load users for mentions:', error)
-      }
-    }
 
     const getInitials = (name) => {
       if (!name || name === 'Me') return 'ME'
@@ -591,11 +253,6 @@ export default {
         
         const result = await response.json()
         comments.value = result.comments || []
-        comments.value.forEach(comment => {
-          if (comment.user_id && comment.user_name) {
-            userCache.value[comment.user_id] = comment.user_name
-          }
-        })
         emit('comments-updated', comments.value.length)
         
         // Fetch user names for all unique user_ids in comments
@@ -611,21 +268,18 @@ export default {
     }
 
     const addComment = async () => {
-      updatePlainComment()
-      
-      if (!hasContent.value || !canComment.value || isAddingComment.value) return
+      if (!newComment.value.trim() || !canComment.value || isAddingComment.value) return
 
       isAddingComment.value = true
       try {
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-        const payloadText = newComment.value.replace(/\s+$/g, '')
         const response = await fetch(`${taskServiceUrl}/tasks/${props.taskId}/comments`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            comment_text: payloadText,
+            comment_text: newComment.value.trim(),
             user_id: currentUserId.value
           })
         })
@@ -644,7 +298,7 @@ export default {
           
           // Add the new comment to the beginning of the list (since backend returns latest first)
           comments.value.unshift(result.comment)
-          resetEditor()
+          newComment.value = ''
           emit('comments-updated', comments.value.length)
         } else {
           throw new Error('Server returned invalid response')
@@ -659,7 +313,7 @@ export default {
           await fetchComments()
           // If the comment count changed, the comment was probably added successfully
           if (comments.value.length > 0) {
-            resetEditor()
+            newComment.value = '' // Clear the input if comments were updated
             return // Don't show error if the refetch shows the comment was added
           }
         } catch (refetchError) {
@@ -672,39 +326,6 @@ export default {
       }
     }
 
-    const escapeHtml = (unsafe) => {
-      if (!unsafe) return ''
-      return unsafe
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
-    }
-
-    const formatCommentText = (text) => {
-      if (!text) return ''
-
-      return text
-        .split('\n')
-        .map(line => {
-          return line
-            .split(/(\s+)/)
-            .map(segment => {
-              if (!segment) return ''
-              if (/^\s+$/.test(segment)) {
-                return segment
-              }
-              if (segment.startsWith('@')) {
-                return `<span class="mention-highlight">${escapeHtml(segment)}</span>`
-              }
-              return escapeHtml(segment)
-            })
-            .join('')
-        })
-        .join('<br>')
-    }
-
     // Watch for task changes to refetch comments
     watch(() => props.taskId, (newTaskId) => {
       if (newTaskId) {
@@ -713,17 +334,9 @@ export default {
     })
 
     onMounted(() => {
-      resetEditor()
-      loadMentionableUsers()
-      document.addEventListener('click', handleDocumentClick)
-
       if (props.taskId) {
         fetchComments()
       }
-    })
-
-    onBeforeUnmount(() => {
-      document.removeEventListener('click', handleDocumentClick)
     })
 
     return {
@@ -733,90 +346,17 @@ export default {
       newComment,
       currentUserName,
       canComment,
-      hasContent,
-      commentEditor,
-      editorWrapper,
-      isMentionDropdownVisible,
-      mentionSuggestions,
-      activeMentionIndex,
-      mentionDropdownStyle,
-      isEditorFocused,
       getInitials,
       formatCommentDate,
       getUserName,
       addComment,
-      fetchComments,
-      handleEditorInput,
-      handleEditorKeydown,
-      handleEditorKeyup,
-      handleEditorPaste,
-      handleEditorBlur,
-      selectMention,
-      formatCommentText
+      fetchComments
     }
   }
 }
 </script>
 
 <style scoped>
-.comment-editor {
-  min-height: 6rem;
-  max-height: 16rem;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  outline: none;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.comment-editor[contenteditable="false"] {
-  pointer-events: none;
-}
-
-.comment-editor:empty::before {
-  content: attr(data-placeholder);
-  color: #9ca3af;
-  pointer-events: none;
-}
-
-.comment-editor--focused {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-.mention-chip {
-  background: rgba(37, 99, 235, 0.12);
-  color: #1d4ed8;
-  padding: 0 0.35rem;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  margin-right: 2px;
-  font-weight: 500;
-}
-
-.mention-dropdown {
-  top: calc(100% + 0.5rem);
-  left: 0;
-}
-
-.mention-suggestion-initials {
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 9999px;
-  background: rgba(37, 99, 235, 0.15);
-  color: #1d4ed8;
-  font-size: 0.75rem;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.mention-highlight {
-  color: #1d4ed8;
-  font-weight: 600;
-}
-
 /* Custom scrollbar for comments list */
 .task-comments .max-h-64::-webkit-scrollbar {
   width: 8px;
