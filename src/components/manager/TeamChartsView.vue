@@ -1,23 +1,38 @@
 <template>
   <div class="team-charts-view">
-    <!-- Info Banner -->
-    <a-alert
-      v-if="tasks.length === 0"
-      type="info"
-      message="No tasks to display"
-      description="There are no tasks matching your current filters. Try adjusting the filters in the Table View."
-      show-icon
-      style="margin-bottom: 24px;"
-    />
-    <a-alert
-      v-else-if="tasks.length < props.tasks.length"
-      type="info"
-      :message="`Showing ${tasks.length} of ${props.tasks.length} tasks`"
-      description="Charts are displaying filtered data. Switch to Table View to adjust filters."
-      show-icon
-      closable
-      style="margin-bottom: 24px;"
-    />
+    <!-- Chart Filters (HR Only) -->
+    <a-card v-if="isHRUser && departmentOptions.length > 0" :bordered="false" style="margin-bottom: 16px;">
+      <a-row :gutter="16" align="middle">
+        <a-col :span="4">
+          <strong>Filter Charts:</strong>
+        </a-col>
+        <a-col :span="10">
+          <a-select
+            v-model:value="selectedDepartments"
+            mode="multiple"
+            placeholder="All Departments"
+            :options="departmentOptions"
+            :max-tag-count="2"
+            allow-clear
+            show-search
+            style="width: 100%"
+            @change="updateAllCharts"
+          >
+            <template #maxTagPlaceholder="omittedValues">
+              <span>+{{ omittedValues.length }} more</span>
+            </template>
+          </a-select>
+        </a-col>
+        <a-col :span="10">
+          <a-space>
+            <a-badge :count="filteredTasksCount" :number-style="{ backgroundColor: '#1890ff' }" />
+            <span style="color: #666;">
+              {{ filteredTasksCount }} of {{ tasks.length }} tasks
+            </span>
+          </a-space>
+        </a-col>
+      </a-row>
+    </a-card>
 
     <a-card :loading="isLoading" class="charts-card">
       <a-row :gutter="[24, 24]">
@@ -74,7 +89,7 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import * as echarts from 'echarts'
 
 const props = defineProps({
@@ -89,8 +104,41 @@ const props = defineProps({
   subordinates: {
     type: Array,
     default: () => []
+  },
+  userRole: {
+    type: String,
+    default: ''
   }
 })
+
+// Local department filter
+const selectedDepartments = ref([])
+
+// Check if user is HR
+const isHRUser = computed(() => props.userRole === 'HR')
+
+// Get department options from subordinates
+const departmentOptions = computed(() => {
+  if (!isHRUser.value) return []
+  const departments = [...new Set(props.subordinates.map(sub => sub.department).filter(Boolean))]
+  return departments.sort().map(dept => ({
+    label: dept,
+    value: dept
+  }))
+})
+
+// Filter tasks by selected departments
+const filteredTasks = computed(() => {
+  if (!isHRUser.value || selectedDepartments.value.length === 0) {
+    return props.tasks
+  }
+  return props.tasks.filter(task => 
+    selectedDepartments.value.includes(task.assigneeDepartment)
+  )
+})
+
+// Count of filtered tasks
+const filteredTasksCount = computed(() => filteredTasks.value.length)
 
 // Chart refs
 const statusChartRef = ref(null)
@@ -138,7 +186,7 @@ const updateStatusChart = () => {
   if (!statusChart) return
 
   const statusCounts = {}
-  props.tasks.forEach(task => {
+  filteredTasks.value.forEach(task => {
     const status = task.status || 'Unknown'
     statusCounts[status] = (statusCounts[status] || 0) + 1
   })
@@ -181,15 +229,23 @@ const updateStatusChart = () => {
 const updatePriorityChart = () => {
   if (!priorityChart) return
 
-  const priorityCounts = { Low: 0, Medium: 0, High: 0 }
-  props.tasks.forEach(task => {
-    const priority = task.priority || 'Medium'
-    if (priorityCounts.hasOwnProperty(priority)) {
-      priorityCounts[priority]++
-    }
+  // Priority is now 1-10, group into ranges for visualization
+  const priorityRanges = {
+    'Critical (9-10)': 0,
+    'High (7-8)': 0,
+    'Medium (4-6)': 0,
+    'Low (1-3)': 0
+  }
+  
+  filteredTasks.value.forEach(task => {
+    const priority = Number(task.priority) || 5
+    if (priority >= 9) priorityRanges['Critical (9-10)']++
+    else if (priority >= 7) priorityRanges['High (7-8)']++
+    else if (priority >= 4) priorityRanges['Medium (4-6)']++
+    else priorityRanges['Low (1-3)']++
   })
 
-  const data = Object.entries(priorityCounts).map(([name, value]) => ({ name, value }))
+  const data = Object.entries(priorityRanges).map(([name, value]) => ({ name, value }))
 
   const option = {
     tooltip: {
@@ -218,7 +274,7 @@ const updatePriorityChart = () => {
         }
       }
     ],
-    color: ['#52c41a', '#faad14', '#ff4d4f']
+    color: ['#ff4d4f', '#fa8c16', '#faad14', '#52c41a']
   }
 
   priorityChart.setOption(option)
@@ -229,7 +285,7 @@ const updateTeamMemberChart = () => {
   if (!teamMemberChart) return
 
   const memberTasks = {}
-  props.tasks.forEach(task => {
+  filteredTasks.value.forEach(task => {
     const name = task.assigneeName || 'Unknown'
     if (!memberTasks[name]) {
       memberTasks[name] = { total: 0, completed: 0, inProgress: 0, overdue: 0 }
@@ -321,7 +377,7 @@ const updateTimelineChart = () => {
 
   // Group tasks by date
   const dateMap = {}
-  props.tasks.forEach(task => {
+  filteredTasks.value.forEach(task => {
     if (!task.dueDate) return
     const dueDate = new Date(task.dueDate)
     if (dueDate >= today && dueDate <= next30Days) {
@@ -399,7 +455,7 @@ const updateDepartmentChart = () => {
   if (!departmentChart) return
 
   const departmentCounts = {}
-  props.tasks.forEach(task => {
+  filteredTasks.value.forEach(task => {
     const dept = task.assigneeDepartment || 'Unknown'
     departmentCounts[dept] = (departmentCounts[dept] || 0) + 1
   })
@@ -443,9 +499,9 @@ const updateDepartmentChart = () => {
 const updateCompletionChart = () => {
   if (!completionChart) return
 
-  const total = props.tasks.length
-  const completed = props.tasks.filter(t => t.status === 'Completed').length
-  const inProgress = props.tasks.filter(t => t.status === 'On Going').length
+  const total = filteredTasks.value.length
+  const completed = filteredTasks.value.filter(t => t.status === 'Completed').length
+  const inProgress = filteredTasks.value.filter(t => t.status === 'On Going').length
   const notStarted = total - completed - inProgress
 
   const completionRate = total > 0 ? ((completed / total) * 100).toFixed(1) : 0

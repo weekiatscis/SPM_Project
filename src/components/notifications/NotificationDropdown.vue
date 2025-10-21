@@ -131,6 +131,7 @@
 
     <!-- Task Detail Modal -->
     <TaskDetailModal
+      v-if="selectedTask"
       :task="selectedTask"
       :isOpen="isTaskDetailModalOpen"
       @close="closeTaskDetailModal"

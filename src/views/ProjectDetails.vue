@@ -329,6 +329,7 @@
       :task="selectedTask"
       :isOpen="showTaskDetailModal"
       @close="closeTaskDetailModal"
+      @open-task="handleOpenTask"
       @edit="handleTaskEdit"
       @delete="handleTaskDelete"
     />
@@ -786,6 +787,7 @@ export default {
           id: t.id,
           title: t.title,
           dueDate: t.dueDate || null,
+          completedDate: t.completedDate || null,
           status: t.status,
           description: t.description || 'No description available',
           priority: t.priority || 'Medium',
@@ -1174,6 +1176,53 @@ export default {
       await loadProjectTasks()
     }
 
+    const handleOpenTask = async (task) => {
+      console.log('=== HANDLEOPENTASK CALLED IN PROJECTDETAILS ===')
+      console.log('Received task:', task)
+      try {
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+        const response = await fetch(`${taskServiceUrl}/tasks/${task.id}`)
+
+        if (response.ok) {
+          const data = await response.json()
+          const rawTask = data.task || data
+          
+          // Transform the task data to match expected format
+          const transformedTask = {
+            ...rawTask,
+            project: rawTask.project || rawTask.project_id || 'No Project',
+            assignee: rawTask.assignee || rawTask.owner_id || 'Unassigned',
+            description: rawTask.description || 'No description available',
+            priority: rawTask.priority || 5,
+            collaborators: typeof rawTask.collaborators === 'string' 
+              ? JSON.parse(rawTask.collaborators || '[]') 
+              : (rawTask.collaborators || []),
+          }
+          
+          selectedTask.value = transformedTask
+          // Keep the modal open and update with new task
+          showTaskDetailModal.value = true
+          console.log('Task details loaded and transformed:', selectedTask.value)
+        } else {
+          console.error('Failed to fetch task details')
+          notification.error({
+            message: 'Failed to load task',
+            description: 'Unable to fetch task details. Please try again.',
+            placement: 'topRight',
+            duration: 3
+          })
+        }
+      } catch (error) {
+        console.error('Error fetching task:', error)
+        notification.error({
+          message: 'Error loading task',
+          description: error.message || 'An unexpected error occurred.',
+          placement: 'topRight',
+          duration: 3
+        })
+      }
+    }
+
     const handleTeamUpdate = (updatedProject) => {
       // Update local project data
       project.value = {
@@ -1371,6 +1420,7 @@ export default {
       handleTaskUpdated,
       editingTask,
       showEditTaskModal,
+      handleOpenTask,
       handleGenerateReport,
       closeReportPreview,
       handleExportPDF,

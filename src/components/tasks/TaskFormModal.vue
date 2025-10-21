@@ -1,80 +1,50 @@
 <template>
-  <div v-if="isOpen" class="fixed inset-0 z-50 overflow-y-auto">
-    <div class="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+  <div v-if="isOpen" class="modal-overlay">
+    <div class="modal-container">
       <!-- Background overlay -->
-      <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" @click="$emit('close')"></div>
+      <div class="modal-backdrop" @click="$emit('close')"></div>
 
       <!-- Modal panel -->
-      <div
-        class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-3xl sm:w-full">
-        <!-- Header -->
-        <div class="bg-white px-6 py-4 border-b border-gray-200">
-          <div class="flex items-center justify-between">
-            <h3 class="text-lg font-medium text-gray-900">
-              {{ task?.id ? 'Edit Task' : (form.isSubtask ? 'Add New Subtask' : 'Add New Task') }}
-            </h3>
-            <button @click="$emit('close')" class="text-gray-400 hover:text-gray-600">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      <div class="modal-panel">
+        <!-- Header with Glassmorphism -->
+        <div class="modal-header">
+          <div class="header-content">
+            <div class="header-icon">
+              <svg v-if="task?.id" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
-            </button>
+              <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </div>
+            <div class="header-text">
+              <h3 class="header-title">
+                {{ task?.id ? 'Edit Task' : (form.isSubtask ? 'Add New Subtask' : 'Add New Task') }}
+              </h3>
+              <p class="header-subtitle">
+                {{ task?.id ? 'Update task details and settings' : (form.isSubtask ? 'Create a subtask under a parent task' : 'Create a new task and assign it') }}
+              </p>
+            </div>
           </div>
+          <button @click="$emit('close')" class="close-button">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
         <!-- Form -->
-        <form @submit.prevent="saveTask" class="bg-white px-6 py-4 space-y-5">
+        <form @submit.prevent="saveTask" class="modal-form">
           
-          <!-- ========== SECTION 1: TASK BASICS ========== -->
-          <!-- Task Type Toggle -->
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">
-              Task Type
-            </label>
-            <div class="flex items-center space-x-6">
-              <label class="flex items-center">
-                <input type="radio" v-model="form.isSubtask" :value="false"
-                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
-                <span class="ml-2 text-sm text-gray-700">Regular Task</span>
-              </label>
-              <label class="flex items-center">
-                <input type="radio" v-model="form.isSubtask" :value="true"
-                  class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
-                <span class="ml-2 text-sm text-gray-700">Subtask</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Parent Task Selection (only for subtasks) -->
-          <div v-if="form.isSubtask">
-            <label for="parentTask" class="block text-sm font-medium text-gray-700 mb-1">
-              Parent Task *
-            </label>
-            <select id="parentTask" v-model="form.parentTaskId" required class="input-field"
-              :class="{ 'border-red-500': errors.parentTaskId }" :disabled="isLoadingUserTasks">
-              <option value="">Select parent task...</option>
-              <option v-for="task in userTasks" :key="task.id" :value="task.id">
-                {{ task.title }} ({{ task.status }})
-              </option>
-            </select>
-            <div v-if="errors.parentTaskId" class="mt-1 text-sm text-red-600">
-              {{ errors.parentTaskId }}
-            </div>
-            <div v-if="isLoadingUserTasks" class="mt-1 text-sm text-gray-600">
-              Loading your tasks...
-            </div>
-            <div v-if="userTasks.length === 0 && !isLoadingUserTasks" class="mt-1 text-sm text-gray-600">
-              No tasks available to use as parent. Create a regular task first.
-            </div>
-          </div>
-
+          <!-- ========== SECTION 1: TASK ESSENTIALS ========== -->
           <!-- Title -->
           <div>
             <label for="title" class="block text-sm font-medium text-gray-700 mb-1">
-              Title *
+              Task Title *
             </label>
             <input id="title" v-model="form.title" type="text" required class="input-field"
               :class="{ 'border-red-500': errors.title }"
-              :placeholder="form.isSubtask ? 'Enter subtask title' : 'Enter task title'" />
+              :placeholder="form.isSubtask ? 'Enter subtask title' : 'What needs to be done?'" />
             <div v-if="errors.title" class="mt-1 text-sm text-red-600">
               {{ errors.title }}
             </div>
@@ -86,11 +56,13 @@
               Description
             </label>
             <textarea id="description" v-model="form.description" rows="3" class="input-field"
-              placeholder="Enter task description"></textarea>
+              placeholder="Add more details about this task..."></textarea>
           </div>
 
-          <!-- ========== SECTION 2: SCHEDULING (2-column layout) ========== -->
+          <!-- ========== SECTION 2: SCHEDULING & PRIORITY ========== -->
           <div class="border-t pt-5">
+            <h4 class="text-sm font-semibold text-gray-900 mb-4">Scheduling & Priority</h4>
+            
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- Due Date -->
               <div>
@@ -113,7 +85,6 @@
                   Status
                 </label>
                 <select id="status" v-model="form.status" class="input-field">
-                  <!-- Staff users cannot create unassigned tasks -->
                   <option v-if="!isStaffRole" value="Unassigned">Unassigned</option>
                   <option value="Ongoing">Ongoing</option>
                   <option value="Under Review">Under Review</option>
@@ -126,7 +97,7 @@
             <div class="mt-4">
               <div class="flex items-center justify-between mb-3">
                 <label for="priority" class="block text-sm font-medium text-gray-700">
-                  Priority
+                  Priority Level
                 </label>
                 <div class="flex items-center gap-2">
                   <span class="text-xs font-medium text-gray-500">{{ getPriorityLabel(form.priority) }}</span>
@@ -158,9 +129,10 @@
             </div>
           </div>
 
+
           <!-- ========== SECTION 3: ASSIGNMENT & COLLABORATION ========== -->
           <div class="border-t pt-5 space-y-4">
-            <h4 class="text-sm font-semibold text-gray-900">Assignment & Collaboration</h4>
+            <h4 class="text-sm font-semibold text-gray-900 mb-4">Assignment & Collaboration</h4>
             
             <!-- Assignee -->
             <div>
@@ -192,6 +164,14 @@
 
               <div v-if="isStaffRole" class="mt-1 text-xs text-gray-600">
                 Tasks are automatically assigned to you as a Staff member
+              </div>
+
+              <div v-if="canAssignToOthers && authStore.user?.role === 'Director'" class="mt-1 text-xs text-gray-600">
+                As a Director, you can assign tasks to Managers in your department
+              </div>
+
+              <div v-if="canAssignToOthers && authStore.user?.role === 'Manager'" class="mt-1 text-xs text-gray-600">
+                As a Manager, you can assign tasks to Staff in your department
               </div>
 
               <div v-if="isLoadingSubordinates" class="mt-1 text-sm text-gray-600">
@@ -248,9 +228,59 @@
             </div>
           </div>
 
-          <!-- ========== SECTION 4: RECURRING TASK (for non-subtasks) ========== -->
+          <!-- ========== SECTION 4: TASK TYPE & PARENT ========== -->
+          <div class="border-t pt-5">
+            <h4 class="text-sm font-semibold text-gray-900 mb-4">Task Type</h4>
+            
+            <!-- Task Type Toggle -->
+            <div class="mb-4">
+              <label class="block text-sm font-medium text-gray-700 mb-2">
+                Type
+              </label>
+              <div class="flex items-center space-x-6">
+                <label class="flex items-center">
+                  <input type="radio" v-model="form.isSubtask" :value="false"
+                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                  <span class="ml-2 text-sm text-gray-700">Regular Task</span>
+                </label>
+                <label class="flex items-center">
+                  <input type="radio" v-model="form.isSubtask" :value="true"
+                    class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300" />
+                  <span class="ml-2 text-sm text-gray-700">Subtask</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Parent Task Selection (only for subtasks) -->
+            <div v-if="form.isSubtask">
+              <label for="parentTask" class="block text-sm font-medium text-gray-700 mb-1">
+                Parent Task *
+              </label>
+              <select id="parentTask" v-model="form.parentTaskId" required class="input-field"
+                :class="{ 'border-red-500': errors.parentTaskId }" :disabled="isLoadingUserTasks">
+                <option value="">Select parent task...</option>
+                <option v-for="task in userTasks" :key="task.id" :value="task.id">
+                  {{ task.title }} ({{ task.status }}){{ isCollaboratorTask(task) ? ' 🤝 Collaborator' : '' }}
+                </option>
+              </select>
+              <div v-if="errors.parentTaskId" class="mt-1 text-sm text-red-600">
+                {{ errors.parentTaskId }}
+              </div>
+              <div v-if="isLoadingUserTasks" class="mt-1 text-sm text-gray-600">
+                Loading your tasks...
+              </div>
+              <div v-if="userTasks.length === 0 && !isLoadingUserTasks" class="mt-1 text-sm text-gray-600">
+                No tasks available to use as parent. You can create subtasks for tasks you own or collaborate on.
+              </div>
+              <div v-if="userTasks.length > 0 && !isLoadingUserTasks" class="mt-1 text-xs text-gray-500">
+                💡 You can add subtasks to tasks you own or collaborate on
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== SECTION 5: RECURRING TASK (for non-subtasks) ========== -->
           <div v-if="!form.isSubtask" class="border-t pt-5">
-            <h4 class="text-sm font-semibold text-gray-900 mb-3">Recurring Task</h4>
+            <h4 class="text-sm font-semibold text-gray-900 mb-4">Recurring Task</h4>
             
             <!-- Show read-only info when editing an existing task -->
             <div v-if="task?.id">
@@ -309,9 +339,9 @@
             </div>
           </div>
 
-          <!-- ========== SECTION 5: NOTIFICATIONS & REMINDERS ========== -->
+          <!-- ========== SECTION 6: NOTIFICATIONS & REMINDERS ========== -->
           <div v-if="form.dueDate" class="border-t pt-5">
-            <h4 class="text-sm font-semibold text-gray-900 mb-3">Notifications & Reminders</h4>
+            <h4 class="text-sm font-semibold text-gray-900 mb-4">Notifications & Reminders</h4>
             
             <!-- Notification Channels -->
             <div class="mb-4">
@@ -388,13 +418,19 @@
         </form>
 
         <!-- Footer -->
-        <div class="bg-gray-50 px-6 py-3 flex justify-end space-x-3">
-          <button type="button" @click="$emit('close')" class="btn-secondary">
+        <div class="modal-footer">
+          <button type="button" @click="$emit('close')" class="footer-btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
             Cancel
           </button>
-          <button @click="saveTask" :disabled="isLoading"
-            class="btn-primary disabled:opacity-50 disabled:cursor-not-allowed submittaskcreate">
-            {{ isLoading ? 'Creating...' : (task?.id ? 'Update Task' : (form.isSubtask ? 'Create Subtask' : 'Create Task')) }}
+          <button @click="saveTask" :disabled="isLoading" class="footer-btn-primary submittaskcreate">
+            <svg v-if="!isLoading" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+            <div v-else class="loading-spinner"></div>
+            {{ isLoading ? 'Saving...' : (task?.id ? 'Update Task' : (form.isSubtask ? 'Create Subtask' : 'Create Task')) }}
           </button>
         </div>
       </div>
@@ -521,6 +557,26 @@ export default {
       }).filter(Boolean)
     })
 
+    // Helper function to check if a task is a collaborator task
+    const isCollaboratorTask = (task) => {
+      if (!task || !authStore.user?.user_id) return false
+      
+      // If user is the owner, it's not a collaborator task
+      if (task.owner_id === authStore.user.user_id) return false
+      
+      // Check if user is in collaborators list
+      let collaboratorIds = task.collaborators
+      if (typeof collaboratorIds === 'string') {
+        try {
+          collaboratorIds = JSON.parse(collaboratorIds)
+        } catch (e) {
+          return false
+        }
+      }
+      
+      return Array.isArray(collaboratorIds) && collaboratorIds.includes(authStore.user.user_id)
+    }
+
     // Fetch subordinates for Manager/Director users
     const fetchSubordinates = async () => {
       if (!canAssignToOthers.value || !authStore.user?.user_id) {
@@ -594,18 +650,55 @@ export default {
       isLoadingUserTasks.value = true
       try {
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-        const response = await fetch(`${taskServiceUrl}/tasks/user/${authStore.user.user_id}`)
-
-        if (response.ok) {
-          const data = await response.json()
-          // Only include tasks that are not completed and are not subtasks themselves
-          userTasks.value = (data.tasks || []).filter(task =>
-            task.status !== 'Completed' && !task.isSubtask
-          )
-        } else {
-          console.error('Failed to fetch user tasks:', response.status)
-          userTasks.value = []
+        const userId = authStore.user.user_id
+        
+        // Fetch tasks owned by the user
+        const ownedTasksResponse = await fetch(`${taskServiceUrl}/tasks/user/${userId}`)
+        let ownedTasks = []
+        
+        if (ownedTasksResponse.ok) {
+          const data = await ownedTasksResponse.json()
+          ownedTasks = data.tasks || []
         }
+        
+        // Fetch all tasks to filter for collaborator tasks
+        const allTasksResponse = await fetch(`${taskServiceUrl}/tasks`)
+        let collaboratorTasks = []
+        
+        if (allTasksResponse.ok) {
+          const data = await allTasksResponse.json()
+          const allTasks = data.tasks || []
+          
+          // Filter tasks where user is a collaborator but not the owner
+          collaboratorTasks = allTasks.filter(task => {
+            if (!task.collaborators || task.owner_id === userId) {
+              return false
+            }
+            
+            // Handle collaborators as array or JSON string
+            let collaboratorIds = task.collaborators
+            if (typeof collaboratorIds === 'string') {
+              try {
+                collaboratorIds = JSON.parse(collaboratorIds)
+              } catch (e) {
+                return false
+              }
+            }
+            
+            return Array.isArray(collaboratorIds) && collaboratorIds.includes(userId)
+          })
+        }
+        
+        // Combine owned and collaborator tasks, remove duplicates
+        const allUserTasks = [...ownedTasks, ...collaboratorTasks]
+        const uniqueTasks = Array.from(
+          new Map(allUserTasks.map(task => [task.id || task.task_id, task])).values()
+        )
+        
+        // Only include tasks that are not completed and are not subtasks themselves
+        userTasks.value = uniqueTasks.filter(task =>
+          task.status !== 'Completed' && !task.isSubtask
+        )
       } catch (error) {
         console.error('Error fetching user tasks:', error)
         userTasks.value = []
@@ -701,6 +794,23 @@ export default {
         // This prevents the watcher from clearing the recurrence value
         isRecurringEnabled.value = !!newTask.recurrence
 
+        // Filter out the current user from collaborators when loading an existing task
+        // This prevents the manager (current user) from being preserved as a collaborator
+        // after they reassign a task to staff unless they explicitly add themselves back.
+        let loadedCollaborators = newTask.collaborators || []
+        try {
+          if (typeof loadedCollaborators === 'string') {
+            loadedCollaborators = JSON.parse(loadedCollaborators)
+          }
+        } catch (e) {
+          // If parsing fails, fall back to an empty array
+          loadedCollaborators = []
+        }
+
+        if (Array.isArray(loadedCollaborators) && authStore.user?.user_id) {
+          loadedCollaborators = loadedCollaborators.filter(c => c !== authStore.user.user_id)
+        }
+
         form.value = {
           title: newTask.title || '',
           description: newTask.description || '',
@@ -708,7 +818,7 @@ export default {
           status: newTask.status || (isStaffRole.value ? 'Ongoing' : 'Unassigned'),
           priority: newTask.priority || 5,
           assigneeId: newTask.owner_id || '',
-          collaborators: newTask.collaborators || [],
+          collaborators: loadedCollaborators,
           isSubtask: !!newTask.parent_task_id,
           parentTaskId: newTask.parent_task_id || '',
           reminderDays: [7, 3, 1],  // Will be updated by fetchReminderDays
@@ -983,7 +1093,13 @@ export default {
 
       } catch (error) {
         console.error('Failed to create task:', error)
-        alert(`Failed to create task: ${error.message}`)
+        
+        // Handle specific error cases
+        if (error.message.includes('task with this title already exists')) {
+          errors.value.title = 'A task with this title already exists. Please use a different title.'
+        } else {
+          alert(`Failed to create task: ${error.message}`)
+        }
       } finally {
         isLoading.value = false
       }
@@ -1061,6 +1177,7 @@ export default {
       getPriorityLabel,
       getPriorityBadgeColor,
       getSliderStyle,
+      isCollaboratorTask,
       saveTask
     }
   }
@@ -1068,12 +1185,281 @@ export default {
 </script>
 
 <style scoped>
+/* ========== MODAL OVERLAY & CONTAINER ========== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow-y: auto;
+}
+
+.modal-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  transition: opacity 0.3s ease;
+  animation: fadeIn 0.3s ease;
+}
+
+.modal-panel {
+  position: relative;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  max-width: 56rem;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ========== HEADER ========== */
+.modal-header {
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.05), rgba(64, 169, 255, 0.05));
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid #e5e7eb;
+  padding: 24px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.header-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1890ff, #40a9ff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+}
+
+.header-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  
+}
+
+.header-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.header-subtitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  margin-top: 4px;
+  line-height: 1.3;
+  margin-bottom: 0;
+}
+
+.close-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.close-button svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.close-button:hover {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  color: #111827;
+}
+
+/* ========== FORM ========== */
+.modal-form {
+  padding: 32px;
+  overflow-y: auto;
+  flex: 1;
+  background: #ffffff;
+}
+
+.modal-form > div {
+  margin-bottom: 24px;
+}
+
+.modal-form > div:last-child {
+  margin-bottom: 0;
+}
+
+/* Section Dividers */
+.modal-form > div.border-t {
+  padding-top: 24px;
+  border-top: 1px solid #f3f4f6 !important;
+  margin-top: 32px;
+}
+
+/* Labels */
+.modal-form label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+
+/* Input Fields */
+.input-field {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #111827;
+  background: #ffffff;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.input-field:hover {
+  border-color: #1890ff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.08);
+}
+
+.input-field:focus {
+  border-color: #1890ff;
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.1), 0 2px 8px rgba(24, 144, 255, 0.15);
+}
+
+.input-field::placeholder {
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.input-field:disabled,
+.input-field.bg-gray-50 {
+  background: #f9fafb;
+  color: #6b7280;
+  cursor: not-allowed;
+  border-color: #e5e7eb;
+}
+
+/* Textarea */
+textarea.input-field {
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.6;
+}
+
+/* Error State */
+.input-field.border-red-500 {
+  border-color: #ef4444 !important;
+  background: #fef2f2;
+}
+
+/* Error Messages */
+.text-red-600 {
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 6px;
+}
+
+/* Section Headings */
+.modal-form h4 {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 16px;
+  letter-spacing: -0.01em;
+}
+
+/* Grid Layouts */
+.grid {
+  display: grid;
+}
+
+.grid-cols-1 {
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+.grid-cols-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+  .md\\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.gap-2 {
+  gap: 8px;
+}
+
+.gap-4 {
+  gap: 16px;
+}
+
 /* Custom slider styling */
 .slider-priority {
   -webkit-appearance: none;
   appearance: none;
-  height: 8px;
-  border-radius: 4px;
+  width: 100%;
+  height: 10px;
+  border-radius: 5px;
   outline: none;
   transition: all 0.2s ease;
 }
@@ -1081,39 +1467,164 @@ export default {
 .slider-priority::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: white;
   cursor: pointer;
   border: 3px solid currentColor;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1);
   transition: all 0.2s ease;
 }
 
 .slider-priority::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .slider-priority::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: white;
   cursor: pointer;
   border: 3px solid currentColor;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.1);
   transition: all 0.2s ease;
 }
 
 .slider-priority::-moz-range-thumb:hover {
-  transform: scale(1.2);
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
-/* Color the thumb based on priority value */
 .slider-priority {
-  color: #3B82F6; /* Default blue */
+  color: #3B82F6;
+}
+
+/* ========== FOOTER ========== */
+.modal-footer {
+  background: linear-gradient(to bottom, #fafbfc, #ffffff);
+  border-top: 1px solid #e5e7eb;
+  padding: 20px 32px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.footer-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 24px;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+}
+
+.footer-btn-secondary svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.footer-btn-secondary:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.footer-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 28px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #1890ff, #40a9ff);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.3);
+}
+
+.footer-btn-primary svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: block;
+}
+
+.footer-btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #096dd9, #1890ff);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+}
+
+.footer-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 640px) {
+  .modal-container {
+    padding: 0;
+    align-items: flex-end;
+  }
+  
+  .modal-panel {
+    border-radius: 16px 16px 0 0;
+    max-height: 95vh;
+  }
+  
+  .modal-header {
+    padding: 20px 24px;
+  }
+  
+  .modal-form {
+    padding: 24px;
+  }
+  
+  .modal-footer {
+    padding: 16px 24px;
+    flex-direction: column;
+  }
+  
+  .footer-btn-secondary,
+  .footer-btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>

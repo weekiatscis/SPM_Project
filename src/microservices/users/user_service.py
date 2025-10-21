@@ -279,9 +279,11 @@ def get_user_subordinates(user_id: str):
         if user_role not in ["Manager", "Director"]:
             return jsonify({"subordinates": []}), 200
         
-        # Define role hierarchy
+        # Define role hierarchy - ONE LEVEL DOWN ONLY
+        # Director can only assign to Manager (not Staff)
+        # Manager can only assign to Staff
         role_hierarchy = {
-            "Director": ["Manager", "Staff"],
+            "Director": ["Manager"],
             "Manager": ["Staff"]
         }
         
@@ -292,9 +294,10 @@ def get_user_subordinates(user_id: str):
         
         # Get users who have the current user as their superior
         # This provides a more accurate hierarchy than just role + department matching
+        # IMPORTANT: Filter by role to ensure only ONE LEVEL DOWN (e.g., Director -> Manager only)
         direct_subordinates_response = supabase.table("user").select(
             "user_id, name, email, role, department, superior"
-        ).eq("superior", user_id).eq("is_active", True).execute()
+        ).eq("superior", user_id).in_("role", subordinate_roles).eq("is_active", True).execute()
         
         # Also get users with subordinate roles in the same department as fallback
         # (for cases where superior relationships haven't been fully established)
