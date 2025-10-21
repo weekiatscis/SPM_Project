@@ -7,8 +7,8 @@
 
       <!-- Show main app layout for all other pages -->
       <a-layout v-else style="min-height: 100vh;">
-        <!-- Sidebar -->
-        <Sidebar 
+        <!-- Custom Sidebar -->
+        <CustomSidebar 
           v-model:is-collapsed="isSidebarCollapsed"
           class="hidden md:block"
         />
@@ -22,14 +22,13 @@
           :body-style="{ padding: 0 }"
           class="md:hidden"
         >
-          <Sidebar 
+          <CustomSidebar 
             :is-collapsed="false"
-            @menu-click="closeMobileSidebar"
           />
         </a-drawer>
         
         <!-- Main Layout -->
-        <a-layout :style="{ marginLeft: isSidebarCollapsed ? '64px' : '256px', transition: 'margin-left 0.2s' }" class="hidden md:flex">
+        <a-layout :style="{ marginLeft: isSidebarCollapsed ? '64px' : '256px', transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }" class="hidden md:flex">
           <!-- Header -->
           <a-layout-header :style="{ 
             padding: '0 24px', 
@@ -120,13 +119,13 @@
 <script>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import Sidebar from './layout/Sidebar.vue'
+import CustomSidebar from './layout/CustomSidebar.vue'
 import Topbar from './layout/Topbar.vue'
 
 export default {
   name: 'App',
   components: {
-    Sidebar,
+    CustomSidebar,
     Topbar
   },
   setup() {

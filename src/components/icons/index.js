@@ -39,15 +39,17 @@ export const TaskIcon = {
 
 export const DashboardIcon = {
   name: 'DashboardIcon',
-  components: { BaseIcon },
-  props: ['size', 'color', 'fill', 'stroke', 'strokeWidth', 'spin'],
+  props: ['size', 'color', 'alt', 'spin'],
   template: `
-    <BaseIcon v-bind="$props">
-      <rect x="3" y="3" width="7" height="7"/>
-      <rect x="14" y="3" width="7" height="7"/>
-      <rect x="14" y="14" width="7" height="7"/>
-      <rect x="3" y="14" width="7" height="7"/>
-    </BaseIcon>
+    <div class="flex items-center">
+      <img 
+        src="/public/dashboard.png" 
+        :alt="alt || 'Dashboard'"
+        class="w-8 h-8 inline-block object-contain"
+        @error="console.error('Failed to load dashboard icon')"
+        @load="console.log('Dashboard icon loaded successfully')"
+      />
+    </div>
   `
 }
 

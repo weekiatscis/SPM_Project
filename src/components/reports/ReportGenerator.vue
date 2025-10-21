@@ -8,86 +8,89 @@
     </template>
 
     <div class="report-content">
-      <!-- Date Range Picker -->
-      <div class="filter-section">
-        <label class="filter-label">Date Range</label>
-        <a-range-picker
-          v-model:value="dateRange"
-          format="YYYY-MM-DD"
-          :style="{ width: '100%' }"
-          :disabled="isGenerating"
+      <div class="filters-wrapper">
+        <!-- Date Range Picker -->
+        <div class="filter-section">
+          <label class="filter-label">Date Range</label>
+          <a-range-picker
+            v-model:value="dateRange"
+            format="YYYY-MM-DD"
+            :style="{ width: '100%' }"
+            :disabled="isGenerating"
+            size="middle"
+          />
+        </div>
+
+        <!-- Status Filter -->
+        <div class="filter-section">
+          <label class="filter-label">Task Status</label>
+          <a-checkbox-group
+            v-model:value="statusFilter"
+            :style="{ width: '100%' }"
+            :disabled="isGenerating"
+          >
+            <div class="checkbox-grid">
+              <a-checkbox value="Unassigned">Unassigned</a-checkbox>
+              <a-checkbox value="Ongoing">Ongoing</a-checkbox>
+              <a-checkbox value="Completed">Completed</a-checkbox>
+              <a-checkbox value="Under Review">Under Review</a-checkbox>
+            </div>
+          </a-checkbox-group>
+        </div>
+
+        <!-- Generate Button -->
+        <a-button
+          type="primary"
+          block
+          size="middle"
+          :loading="isGenerating"
+          :disabled="!currentUser"
+          @click="generateReport"
+          class="generate-button"
+        >
+          <template #icon>
+            <DownloadOutlined v-if="!isGenerating" />
+          </template>
+          {{ isGenerating ? 'Generating...' : 'Generate PDF' }}
+        </a-button>
+
+        <!-- Info Message -->
+        <div class="info-message" v-if="!currentUser">
+          <InfoCircleOutlined />
+          <span>Please log in to generate reports</span>
+        </div>
+
+        <!-- Success/Error Messages -->
+        <a-alert
+          v-if="successMessage"
+          :message="successMessage"
+          type="success"
+          show-icon
+          closable
+          @close="successMessage = ''"
+          class="compact-alert"
+        />
+
+        <a-alert
+          v-if="errorMessage"
+          :message="errorMessage"
+          type="error"
+          show-icon
+          closable
+          @close="errorMessage = ''"
+          class="compact-alert"
         />
       </div>
-
-      <!-- Status Filter -->
-      <div class="filter-section">
-        <label class="filter-label">Task Status</label>
-        <a-checkbox-group
-          v-model:value="statusFilter"
-          :style="{ width: '100%' }"
-          :disabled="isGenerating"
-        >
-          <div class="checkbox-grid">
-            <a-checkbox value="Unassigned">Unassigned</a-checkbox>
-            <a-checkbox value="Ongoing">Ongoing</a-checkbox>
-            <a-checkbox value="Completed">Completed</a-checkbox>
-            <a-checkbox value="Under Review">Under Review</a-checkbox>
-          </div>
-        </a-checkbox-group>
-      </div>
-
-      <!-- Generate Button -->
-      <a-button
-        type="primary"
-        block
-        size="large"
-        :loading="isGenerating"
-        :disabled="!currentUser"
-        @click="generateReport"
-        class="generate-button"
-      >
-        <template #icon>
-          <DownloadOutlined v-if="!isGenerating" />
-        </template>
-        {{ isGenerating ? 'Generating Report...' : 'Generate & Download PDF' }}
-      </a-button>
-
-      <!-- Info Message -->
-      <div class="info-message" v-if="!currentUser">
-        <InfoCircleOutlined />
-        Please log in to generate reports
-      </div>
-
-      <!-- Success/Error Messages -->
-      <a-alert
-        v-if="successMessage"
-        :message="successMessage"
-        type="success"
-        show-icon
-        closable
-        @close="successMessage = ''"
-        style="margin-top: 12px"
-      />
-
-      <a-alert
-        v-if="errorMessage"
-        :message="errorMessage"
-        type="error"
-        show-icon
-        closable
-        @close="errorMessage = ''"
-        style="margin-top: 12px"
-      />
 
       <!-- Report Info -->
       <div class="report-info">
         <div class="info-item">
           <CheckCircleOutlined class="info-icon success" />
-          <span>Includes task details</span>
+          <span>Task details</span>
         </div>
         <div class="info-item">
           <PieChartOutlined class="info-icon primary" />
-          <span>Visual status breakdown</span>
+          <span>Status breakdown</span>
         </div>
         <div class="info-item">
           <CalendarOutlined class="info-icon secondary" />
@@ -220,15 +223,39 @@ export default {
 <style scoped>
 .report-card {
   height: 100%;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03), 0 1px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px 0 rgba(0, 0, 0, 0.02);
+  border-radius: 16px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+  border: 1px solid rgba(229, 231, 235, 0.8) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.ant-card-body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px !important;
+}
+
+.report-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04) !important;
+  border-color: rgba(24, 144, 255, 0.2) !important;
+}
+
+:deep(.ant-card-head) {
+  padding: 16px 20px !important;
+  border-bottom: 1px solid #f3f4f6 !important;
 }
 
 .card-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 18px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: -0.02em;
 }
 
 .header-icon {
@@ -239,7 +266,14 @@ export default {
 .report-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+  flex: 1;
+}
+
+.filters-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .filter-section {
@@ -249,60 +283,85 @@ export default {
 }
 
 .filter-label {
-  font-weight: 500;
-  color: #262626;
-  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .checkbox-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  gap: 8px;
   padding: 12px;
-  background-color: #fafafa;
-  border-radius: 6px;
-  border: 1px solid #d9d9d9;
+  background-color: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+:deep(.ant-checkbox-wrapper) {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
 }
 
 .generate-button {
-  margin-top: 8px;
-  height: 48px;
-  font-size: 16px;
-  font-weight: 500;
-  border-radius: 6px;
+  height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.25) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.generate-button:hover:not(:disabled) {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.35) !important;
+}
+
+.generate-button:active:not(:disabled) {
+  transform: translateY(0) !important;
+}
+
+.compact-alert {
+  margin-top: 0 !important;
 }
 
 .info-message {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px;
-  background-color: #f0f0f0;
-  border-radius: 6px;
-  color: #595959;
-  font-size: 14px;
+  padding: 10px 12px;
+  background-color: #fef3c7;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 13px;
+  border: 1px solid #fde68a;
 }
 
 .report-info {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background-color: #f5f5f5;
-  border-radius: 6px;
-  margin-top: 8px;
+  gap: 8px;
+  padding: 12px;
+  background-color: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
 }
 
 .info-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  color: #595959;
+  gap: 8px;
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
 }
 
 .info-icon {
-  font-size: 16px;
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .info-icon.success {

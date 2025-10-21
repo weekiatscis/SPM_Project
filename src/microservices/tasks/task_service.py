@@ -85,6 +85,13 @@ class TaskUpdate(BaseModel):
     in_app_enabled: Optional[bool] = None  # In-app notifications enabled
     updated_by: Optional[str] = None  # Track who is making the update
     recurrence: Optional[str] = None
+    completed_date: Optional[str] = None  # Date when task was marked as completed
+    # Approval workflow fields
+    pending_approval: Optional[bool] = None
+    approval_requested_by: Optional[str] = None
+    approval_requested_at: Optional[str] = None
+    approved_by: Optional[str] = None
+    approved_at: Optional[str] = None
 
 
 # Pydantic model for rescheduling a task
@@ -174,7 +181,8 @@ def map_db_row_to_api(row: Dict[str, Any]) -> Dict[str, Any]:
         "assignee": row.get("owner_id"),  # For now, assignee is the owner_id
         "collaborators": collaborators,
         "created_at": row.get("created_at"),
-        "updated_at": row.get("updated_at", row.get("created_at"))  # Use created_at if updated_at doesn't exist
+        "updated_at": row.get("updated_at", row.get("created_at")),  # Use created_at if updated_at doesn't exist
+        "completedDate": row.get("completed_date")  # Date when task was marked as completed
     }
 
 def validate_task_id(task_id: str) -> bool:
@@ -279,6 +287,13 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
         "isSubtask": row.get("isSubtask", False),
         "parent_task_id": row.get("parent_task_id"),
         "recurrence": row.get("recurrence"),  # Add recurrence field
+        "completedDate": row.get("completed_date"),  # Date when task was marked as completed
+        # Approval workflow fields
+        "pending_approval": row.get("pending_approval", False),
+        "approval_requested_by": row.get("approval_requested_by"),
+        "approval_requested_at": row.get("approval_requested_at"),
+        "approved_by": row.get("approved_by"),
+        "approved_at": row.get("approved_at"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at")),
     }
@@ -380,6 +395,24 @@ def get_user_email(user_id: str) -> Optional[str]:
     except Exception as e:
         print(f"Failed to get user email: {e}")
         return None
+
+def get_user_role(user_id: str) -> Optional[str]:
+    """Get user role from database"""
+    try:
+        response = supabase.table("user").select("role").eq("user_id", user_id).execute()
+        if response.data and len(response.data) > 0:
+            return response.data[0].get("role")
+        return None
+    except Exception as e:
+        print(f"Failed to get user role: {e}")
+        return None
+
+def is_staff_member(user_id: str) -> bool:
+    """Check if user is a staff member (not Manager or Director)"""
+    role = get_user_role(user_id)
+    # Staff members are those who are NOT 'Manager' or 'Director'
+    # Return True only if role is 'Staff' or any other non-management role
+    return role is not None and role not in ['Manager', 'Director']
 
 def get_notification_preferences(user_id: str, task_id: str) -> dict:
     """Get notification preferences for a user and task"""
@@ -741,6 +774,96 @@ def create_recurring_task_instance(original_task: dict) -> Optional[dict]:
             
             # Check and send due date notifications for the new instance
             check_and_send_due_date_notifications(created_task)
+            
+            # Copy subtasks from original task to the new recurring instance
+            try:
+                original_task_id = original_task.get("task_id")
+                if original_task_id:
+                    # Fetch all subtasks of the original task
+                    subtasks_response = supabase.table("task").select("*").eq("parent_task_id", original_task_id).eq("isSubtask", True).execute()
+                    
+                    if subtasks_response.data:
+                        print(f"📋 Found {len(subtasks_response.data)} subtask(s) to copy from task {original_task_id}")
+                        
+                        for original_subtask in subtasks_response.data:
+                            # Calculate new due date for subtask (if it has one)
+                            subtask_due_date = None
+                            if original_subtask.get("due_date"):
+                                # Calculate the offset from the original parent's due date
+                                try:
+                                    original_parent_due = datetime.fromisoformat(current_due_date.replace('Z', '+00:00'))
+                                    original_subtask_due = datetime.fromisoformat(original_subtask.get("due_date").replace('Z', '+00:00'))
+                                    
+                                    # Calculate the time difference
+                                    time_offset = original_subtask_due - original_parent_due
+                                    
+                                    # Apply the same offset to the new parent's due date
+                                    new_parent_due = datetime.fromisoformat(next_due_date.replace('Z', '+00:00'))
+                                    new_subtask_due = new_parent_due + time_offset
+                                    subtask_due_date = new_subtask_due.strftime("%Y-%m-%d")
+                                except Exception as e:
+                                    print(f"⚠️  Could not calculate subtask due date offset: {e}")
+                                    subtask_due_date = next_due_date  # Fallback to parent's due date
+                            
+                            # Create new subtask data
+                            new_subtask_data = {
+                                "title": original_subtask.get("title"),
+                                "description": original_subtask.get("description"),
+                                "due_date": subtask_due_date,
+                                "status": "Unassigned",  # Reset status
+                                "priority": original_subtask.get("priority", 5),
+                                "owner_id": original_subtask.get("owner_id"),
+                                "project_id": original_subtask.get("project_id"),
+                                "collaborators": original_subtask.get("collaborators"),
+                                "parent_task_id": task_id,  # Link to the new parent task
+                                "isSubtask": True,
+                                "created_at": datetime.now(timezone.utc).isoformat()
+                            }
+                            
+                            # Insert the new subtask
+                            subtask_response = supabase.table("task").insert(new_subtask_data).execute()
+                            
+                            if subtask_response.data:
+                                new_subtask = subtask_response.data[0]
+                                new_subtask_id = new_subtask.get("task_id")
+                                print(f"  ✅ Copied subtask: {new_subtask.get('title')} (ID: {new_subtask_id})")
+                                
+                                # Copy notification preferences for the subtask
+                                try:
+                                    original_subtask_prefs = get_notification_preferences(
+                                        original_subtask.get("owner_id"),
+                                        original_subtask.get("task_id")
+                                    )
+                                    save_notification_preferences(
+                                        original_subtask.get("owner_id"),
+                                        new_subtask_id,
+                                        original_subtask_prefs.get("email_enabled", True),
+                                        original_subtask_prefs.get("in_app_enabled", True)
+                                    )
+                                except Exception as e:
+                                    print(f"  ⚠️  Failed to copy subtask notification preferences: {e}")
+                                
+                                # Copy reminder preferences for the subtask
+                                try:
+                                    subtask_reminder_response = supabase.table("task_reminder_preferences").select("reminder_days").eq("task_id", original_subtask.get("task_id")).execute()
+                                    if subtask_reminder_response.data:
+                                        subtask_reminder_days = subtask_reminder_response.data[0].get("reminder_days", [7, 3, 1])
+                                        save_reminder_preferences(new_subtask_id, subtask_reminder_days)
+                                except Exception as e:
+                                    print(f"  ⚠️  Failed to copy subtask reminder preferences: {e}")
+                                
+                                # Send due date notifications for the subtask
+                                if subtask_due_date:
+                                    check_and_send_due_date_notifications(new_subtask)
+                            else:
+                                print(f"  ❌ Failed to copy subtask: {original_subtask.get('title')}")
+                    else:
+                        print(f"ℹ️  No subtasks found for task {original_task_id}")
+            except Exception as e:
+                print(f"⚠️  Error copying subtasks: {e}")
+                import traceback
+                traceback.print_exc()
+                # Don't fail the entire operation if subtask copying fails
             
             return created_task
         
@@ -1148,7 +1271,7 @@ def get_tasks():
         query = (
             supabase
             .table("task")
-            .select("task_id,title,due_date,status,priority,description,created_at,updated_at,owner_id,project_id,collaborators,isSubtask,parent_task_id,recurrence")
+            .select("task_id,title,due_date,status,priority,description,created_at,updated_at,owner_id,project_id,collaborators,isSubtask,parent_task_id,recurrence,completed_date")
             .order("created_at", desc=True)
         )
 
@@ -1228,6 +1351,90 @@ def check_task_access(task_id: str):
 
     except Exception as exc:
         return jsonify({"error": f"Failed to check task access: {str(exc)}"}), 500
+
+
+@app.route("/tasks/pending-approvals/<user_id>", methods=["GET"])
+def get_pending_approval_tasks(user_id: str):
+    """
+    GET /tasks/pending-approvals/<user_id> - Get tasks pending approval for a manager
+    Returns tasks where:
+    - pending_approval = true
+    - The task owner's superior is the manager (user_id)
+    """
+    print(f"=== PENDING APPROVALS DEBUG: Called with user_id={user_id} ===")
+    try:
+        if not user_id or user_id.strip() == "":
+            return jsonify({"error": "Invalid user ID"}), 400
+
+        # First, check if the user is a manager/director
+        user_role = get_user_role(user_id)
+        if not user_role or user_role not in ['Manager', 'Director']:
+            return jsonify({"error": "Only managers and directors can approve tasks"}), 403
+
+        # Get all tasks with pending_approval = true
+        pending_tasks_response = supabase.table("task").select("*").eq("pending_approval", True).execute()
+        
+        print(f"DEBUG: Found {len(pending_tasks_response.data)} tasks with pending_approval=True")
+        for task in pending_tasks_response.data:
+            print(f"DEBUG: Task {task.get('task_id')} owned by {task.get('owner_id')}")
+            
+        # Let's also try a different query approach if the above doesn't work
+        if not pending_tasks_response.data:
+            print("DEBUG: Trying alternative query approach...")
+            alt_response = supabase.table("task").select("*").execute()
+            print(f"DEBUG: Total tasks in database: {len(alt_response.data)}")
+            pending_tasks = [task for task in alt_response.data if task.get('pending_approval') is True]
+            print(f"DEBUG: Tasks with pending_approval=True (filtered): {len(pending_tasks)}")
+            if pending_tasks:
+                pending_tasks_response.data = pending_tasks
+        
+        if not pending_tasks_response.data:
+            return jsonify({"tasks": []}), 200
+
+        # Filter tasks where the manager is the superior of the task owner
+        user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
+        manager_approval_tasks = []
+        
+        for task in pending_tasks_response.data:
+            task_owner_id = task.get("owner_id")
+            if not task_owner_id:
+                continue
+                
+            try:
+                # Get the task owner's superior from user service
+                response = requests.get(f"{user_service_url}/users/{task_owner_id}", timeout=5)
+                if response.ok:
+                    user_data = response.json()
+                    user_superior = user_data.get("user", {}).get("superior")
+                    
+                    print(f"DEBUG: Task owner {task_owner_id} has superior {user_superior}, manager is {user_id}")
+                    
+                    # If this manager is the superior of the task owner, include the task
+                    if user_superior == user_id:
+                        print(f"DEBUG: MATCH! Adding task {task.get('task_id')} to approval list")
+                        # Add user name for display
+                        try:
+                            owner_response = requests.get(f"{user_service_url}/users/{task_owner_id}", timeout=5)
+                            if owner_response.ok:
+                                owner_data = owner_response.json()
+                                task["owner_name"] = owner_data.get("user", {}).get("name", "Unknown")
+                            else:
+                                task["owner_name"] = "Unknown"
+                        except:
+                            task["owner_name"] = "Unknown"
+                            
+                        manager_approval_tasks.append(map_db_row_to_api(task))
+                    else:
+                        print(f"DEBUG: No match - superior {user_superior} != manager {user_id}")
+            except Exception as e:
+                print(f"Error checking superior for user {task_owner_id}: {e}")
+                continue
+
+        return jsonify({"tasks": manager_approval_tasks}), 200
+
+    except Exception as exc:
+        print(f"ERROR: Failed to get pending approval tasks: {exc}")
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/tasks/<task_id>", methods=["GET"])
@@ -1334,17 +1541,21 @@ def get_main_tasks():
 def get_user_accessible_tasks(user_id: str):
     """
     GET /users/<user_id>/accessible-tasks - Get all tasks accessible to a user
-    (owned, collaborated, or created by the user)
+    Business Logic: Show tasks where user is owner_id OR user is in collaborators array
+    - When a manager assigns a task to staff, the staff becomes owner_id and manager is added as collaborator
+    - The task will appear in staff's "All Tasks" (they are owner)
+    - The task will appear in manager's "All Tasks" (they are collaborator)
+    - If staff reassigns the task to someone else, staff is no longer owner, task disappears from their "All Tasks"
     """
     try:
         if not user_id or user_id.strip() == "":
             return jsonify({"error": "Invalid user ID"}), 400
 
-        # Get tasks owned by the user
+        # Get tasks owned by the user (owner_id = user_id)
         owned_response = supabase.table("task").select("*").eq("owner_id", user_id).execute()
         owned_tasks = owned_response.data or []
 
-        # Get tasks where user is a collaborator
+        # Get tasks where user is a collaborator (user_id is in collaborators array)
         try:
             # Try multiple JSONB query approaches
             collaborated_tasks = []
@@ -1390,18 +1601,11 @@ def get_user_accessible_tasks(user_id: str):
         except Exception as e:
             collaborated_tasks = []
 
-        # Get tasks created by the user (from audit logs)
-        created_logs_response = supabase.table("task_log").select("task_id").eq("user_id", user_id).eq("action", "create").execute()
-        created_task_ids = [log["task_id"] for log in (created_logs_response.data or [])]
-        
-        created_tasks = []
-        if created_task_ids:
-            created_response = supabase.table("task").select("*").in_("task_id", created_task_ids).execute()
-            created_tasks = created_response.data or []
-
-        # Combine all tasks and remove duplicates
+        # Combine owned and collaborated tasks and remove duplicates
+        # IMPORTANT: Only include owned tasks and collaborated tasks
+        # Do NOT include tasks just because the user created them
         all_tasks = {}
-        for task in owned_tasks + collaborated_tasks + created_tasks:
+        for task in owned_tasks + collaborated_tasks:
             task_id = task.get("task_id")
             if task_id not in all_tasks:
                 all_tasks[task_id] = task
@@ -1455,35 +1659,37 @@ def create_task():
         except ValidationError as e:
             return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
+        # Check if a task with the same title already exists for this user
+        title = task_data.title.strip()
+        owner_id = task_data.owner_id
+        
+        if owner_id:
+            existing_task_response = supabase.table("task").select("task_id, title").eq("owner_id", owner_id).eq("title", title).execute()
+            
+            if existing_task_response.data and len(existing_task_response.data) > 0:
+                return jsonify({
+                    "error": "A task with this title already exists",
+                    "message": f"You already have a task titled '{title}'. Please use a different title."
+                }), 409
+
         # Prepare data for database (exclude reminder_days, email_enabled, in_app_enabled, created_by, project from task table)
         # Note: 'project' is just the project name for display, not stored in DB. Only 'project_id' is stored.
         db_data = task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled", "created_by", "project"})
         db_data["created_at"] = datetime.utcnow().isoformat()
 
-        # Handle automatic collaborator assignment when manager creates task for staff
-        creator_id = task_data.created_by
-        task_owner_id = db_data.get("owner_id")
-        
-        if creator_id and task_owner_id and creator_id != task_owner_id:
-            # Manager is creating task for someone else - add manager as collaborator
-            existing_collaborators = db_data.get("collaborators", [])
-            
-            # Parse existing collaborators if it's a JSON string
-            if isinstance(existing_collaborators, str):
-                try:
-                    existing_collaborators = json.loads(existing_collaborators)
-                except:
-                    existing_collaborators = []
-            elif existing_collaborators is None:
-                existing_collaborators = []
-            
-            # Add creator as collaborator if not already in the list
-            if creator_id not in existing_collaborators:
-                existing_collaborators.append(creator_id)
-                db_data["collaborators"] = json.dumps(existing_collaborators)
+        # BUSINESS LOGIC: When a task is created and assigned to a STAFF member (not Manager/Director),
+        # automatically set status to "Ongoing" instead of "Unassigned"
+        # This only applies to Manager -> Staff assignments, not Director -> Manager assignments
+        if db_data.get("owner_id") and db_data.get("status") == "Unassigned":
+            if is_staff_member(db_data["owner_id"]):
+                db_data["status"] = "Ongoing"
+                print(f"✅ Task creation: Automatically setting status to 'Ongoing' since task is assigned to staff member {db_data['owner_id']}")
             else:
-                pass
+                print(f"ℹ️  Task creation: Keeping status as 'Unassigned' since assignee {db_data['owner_id']} is not a staff member (likely Manager/Director)")
 
+        # Manager should NOT be automatically added as collaborator when assigning tasks to staff
+        # Collaborators should only be those explicitly selected by the manager
+        
         # If this is a subtask, validate that the parent task exists
         if db_data.get("isSubtask") and db_data.get("parent_task_id"):
             parent_task = get_task_by_id(db_data["parent_task_id"])
@@ -1714,13 +1920,73 @@ def update_task(task_id: str):
             except ValidationError as e:
                 return jsonify({"error": "Invalid request data", "details": e.errors()}), 400
 
-            # Prepare update data (only include non-None values, exclude reminder_days, email_enabled, in_app_enabled, updated_by)
-            update_data = {k: v for k, v in task_data.dict(exclude={"reminder_days", "email_enabled", "in_app_enabled", "updated_by"}).items() if v is not None}
+            # Prepare update data (only include non-None values, exclude fields that are handled automatically)
+            # Note: completed_date and approval fields are excluded because they're handled automatically
+            exclude_fields = {
+                "reminder_days", "email_enabled", "in_app_enabled", "updated_by", "completed_date",
+                "pending_approval", "approval_requested_by", "approval_requested_at", 
+                "approved_by", "approved_at"
+            }
+            update_data = {k: v for k, v in task_data.dict(exclude=exclude_fields).items() if v is not None}
             actor_id = task_data.updated_by or existing_task.get("owner_id", "system")
+            
+            # BUSINESS LOGIC: Handle owner_id change (task reassignment)
+            # When a manager/user reassigns a task to someone else:
+            # 1. The new assignee becomes the owner_id
+            # 2. The previous owner should be added as a collaborator (so they can still see/track the task)
+            # 3. The person who did the reassignment should remain as collaborator if they were one
+            # 4. The task status should automatically change to "Ongoing" ONLY if assigned to staff (not Manager/Director)
+            if "owner_id" in update_data:
+                new_owner_id = update_data["owner_id"]
+                old_owner_id = existing_task.get("owner_id")
+                
+                # Only process if owner actually changed
+                if new_owner_id and old_owner_id and new_owner_id != old_owner_id:
+                    # Automatically set status to "Ongoing" when task is reassigned to a STAFF member
+                    # This ensures Manager -> Staff assignments start with "Ongoing" status
+                    # But Director -> Manager assignments remain "Unassigned"
+                    current_status = existing_task.get("status", "Unassigned")
+                    if current_status != "Completed":  # Don't change status if task is already completed
+                        if is_staff_member(new_owner_id):
+                            update_data["status"] = "Ongoing"
+                            print(f"✅ Task reassignment: Automatically setting status to 'Ongoing' for staff member (was '{current_status}')")
+                        else:
+                            print(f"ℹ️  Task reassignment: Keeping status as '{current_status}' since assignee is not a staff member (likely Manager/Director)")
+                    
+                    # Get existing collaborators
+                    existing_collaborators = existing_task.get("collaborators", [])
+                    if isinstance(existing_collaborators, str):
+                        try:
+                            existing_collaborators = json.loads(existing_collaborators)
+                        except:
+                            existing_collaborators = []
+                    elif existing_collaborators is None:
+                        existing_collaborators = []
+                    
+                    # Make a copy to modify
+                    new_collaborators = list(existing_collaborators)
+                    
+                    # Add the old owner as a collaborator if they aren't already
+                    # Do NOT add the actor (the person performing the reassignment) as a collaborator.
+                    # This prevents managers from being automatically added as collaborators when
+                    # they reassign their own tasks to staff.
+                    if old_owner_id not in new_collaborators and old_owner_id != actor_id:
+                        new_collaborators.append(old_owner_id)
+                        print(f"✅ Task reassignment: Adding previous owner {old_owner_id} as collaborator")
+                    
+                    # Remove the new owner from collaborators (if they were a collaborator)
+                    # since they are now the owner
+                    if new_owner_id in new_collaborators:
+                        new_collaborators.remove(new_owner_id)
+                        print(f"✅ Task reassignment: Removing new owner {new_owner_id} from collaborators list")
+                    
+                    # Update the collaborators in the update_data
+                    update_data["collaborators"] = json.dumps(new_collaborators)
+                    print(f"📋 Updated collaborators list: {new_collaborators}")
             
             # IMPORTANT: Preserve collaborators unless explicitly being managed by someone with permission
             # If collaborators field is being updated, check if it should be preserved
-            if "collaborators" in update_data:
+            elif "collaborators" in update_data:
                 submitted_collaborators = update_data["collaborators"]
                 existing_collaborators = existing_task.get("collaborators", [])
                 
@@ -1763,6 +2029,52 @@ def update_task(task_id: str):
             return jsonify({"error": "Task not found for logging"}), 404
         
         complete_existing_task = fresh_existing_data.data[0]
+        
+        # BUSINESS LOGIC: Handle completed_date and approval workflow based on status changes
+        if "status" in update_data:
+            old_status = complete_existing_task.get("status")
+            new_status = update_data["status"]
+            
+            # If task is being marked as completed
+            if new_status == "Completed" and old_status != "Completed":
+                from datetime import date
+                
+                # Get the user who is making this update
+                updated_by = task_data.updated_by or complete_existing_task.get("owner_id", "system")
+                
+                # Check if the user is a staff member
+                if is_staff_member(updated_by):
+                    # Staff members need approval - change status to "Pending Approval" instead of "Completed"
+                    update_data["status"] = "Pending Approval"
+                    update_data["pending_approval"] = True
+                    update_data["approval_requested_by"] = updated_by
+                    update_data["approval_requested_at"] = datetime.now(timezone.utc).isoformat()
+                    
+                    print(f"⏳ Staff member {updated_by} requesting approval for task {task_id}")
+                    print(f"   Status changed from '{old_status}' to 'Pending Approval'")
+                else:
+                    # Manager/Director can mark as completed directly
+                    update_data["completed_date"] = date.today().isoformat()  # YYYY-MM-DD format
+                    update_data["pending_approval"] = False  # Ensure this is false for manager completions
+                    print(f"✅ Manager/Director {updated_by} marked task {task_id} as completed, setting completed_date to {update_data['completed_date']}")
+            
+            # If task status is changed FROM completed to something else, clear completed_date and approval flags
+            elif old_status == "Completed" and new_status != "Completed":
+                update_data["completed_date"] = None
+                update_data["pending_approval"] = False
+                update_data["approval_requested_by"] = None
+                update_data["approval_requested_at"] = None
+                update_data["approved_by"] = None
+                update_data["approved_at"] = None
+                print(f"🔄 Task {task_id} status changed from Completed to {new_status}, clearing completed_date and approval flags")
+            
+            # If task status is changed FROM "Pending Approval" to something else (rejection case)
+            elif old_status == "Pending Approval" and new_status != "Pending Approval":
+                update_data["completed_date"] = None
+                update_data["pending_approval"] = False
+                update_data["approval_requested_by"] = None
+                update_data["approval_requested_at"] = None
+                print(f"🔄 Task {task_id} status changed from Pending Approval to {new_status}, clearing approval flags")
 
         # Update in database
         response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
@@ -2000,6 +2312,171 @@ def delete_task(task_id: str):
 
     except Exception as exc:
         return jsonify({"error": f"Failed to delete task: {str(exc)}"}), 500
+
+
+@app.route("/tasks/<task_id>/approve", methods=["POST"])
+def approve_task_completion(task_id: str):
+    """
+    POST /tasks/<task_id>/approve - Manager approves a task completion
+    """
+    try:
+        data = request.get_json()
+        manager_id = data.get("approved_by")
+        
+        if not manager_id:
+            return jsonify({"error": "approved_by is required"}), 400
+        
+        # Get the task
+        task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
+        if not task_response.data:
+            return jsonify({"error": "Task not found"}), 404
+        
+        task = task_response.data[0]
+        
+        # Verify the task is pending approval
+        if not task.get("pending_approval"):
+            return jsonify({"error": "Task is not pending approval"}), 400
+        
+        # Verify the manager has authority (is the superior of the task owner)
+        owner_id = task.get("owner_id")
+        if not owner_id:
+            return jsonify({"error": "Task has no owner"}), 400
+            
+        try:
+            user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
+            import requests
+            response = requests.get(f"{user_service_url}/users/{owner_id}", timeout=5)
+            if response.ok:
+                user_data = response.json()
+                superior_id = user_data.get("user", {}).get("superior")
+                
+                if superior_id != manager_id:
+                    return jsonify({"error": "Unauthorized: You are not the superior of this task owner"}), 403
+            else:
+                return jsonify({"error": "Could not verify manager authority"}), 500
+        except Exception as e:
+            return jsonify({"error": f"Error verifying manager authority: {str(e)}"}), 500
+        
+        # Approve the task
+        from datetime import date
+        update_data = {
+            "status": "Completed",
+            "completed_date": date.today().isoformat(),
+            "pending_approval": False,
+            "approved_by": manager_id,
+            "approved_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
+        
+        if not response.data:
+            return jsonify({"error": "Failed to approve task"}), 500
+        
+        updated_task = map_db_row_to_api(response.data[0])
+        
+        # Log the approval
+        log_task_change(
+            task_id=task_id,
+            action="approve_completion",
+            field="status",
+            user_id=manager_id,
+            old_value=task.get("status"),
+            new_value="Completed"
+        )
+        
+        # Handle recurring tasks if applicable
+        if task.get("recurrence"):
+            new_instance = create_recurring_task_instance(response.data[0])
+            if new_instance:
+                print(f"✅ Created recurring task instance: {new_instance.get('task_id')}")
+        
+        return jsonify({
+            "message": "Task completion approved",
+            "task": updated_task
+        }), 200
+        
+    except Exception as exc:
+        print(f"ERROR: Failed to approve task: {exc}")
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/tasks/<task_id>/reject", methods=["POST"])
+def reject_task_completion(task_id: str):
+    """
+    POST /tasks/<task_id>/reject - Manager rejects a task completion
+    """
+    try:
+        data = request.get_json()
+        manager_id = data.get("rejected_by")
+        rejection_reason = data.get("reason", "No reason provided")
+        
+        if not manager_id:
+            return jsonify({"error": "rejected_by is required"}), 400
+        
+        # Get the task
+        task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
+        if not task_response.data:
+            return jsonify({"error": "Task not found"}), 404
+        
+        task = task_response.data[0]
+        
+        # Verify the task is pending approval
+        if not task.get("pending_approval"):
+            return jsonify({"error": "Task is not pending approval"}), 400
+        
+        # Verify the manager has authority
+        owner_id = task.get("owner_id")
+        if not owner_id:
+            return jsonify({"error": "Task has no owner"}), 400
+            
+        try:
+            user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
+            import requests
+            response = requests.get(f"{user_service_url}/users/{owner_id}", timeout=5)
+            if response.ok:
+                user_data = response.json()
+                superior_id = user_data.get("user", {}).get("superior")
+                
+                if superior_id != manager_id:
+                    return jsonify({"error": "Unauthorized: You are not the superior of this task owner"}), 403
+            else:
+                return jsonify({"error": "Could not verify manager authority"}), 500
+        except Exception as e:
+            return jsonify({"error": f"Error verifying manager authority: {str(e)}"}), 500
+        
+        # Reject the task - return to original status
+        update_data = {
+            "pending_approval": False,
+            "approval_requested_by": None,
+            "approval_requested_at": None
+        }
+        
+        response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
+        
+        if not response.data:
+            return jsonify({"error": "Failed to reject task"}), 500
+        
+        updated_task = map_db_row_to_api(response.data[0])
+        
+        # Log the rejection
+        log_task_change(
+            task_id=task_id,
+            action="reject_completion",
+            field="pending_approval",
+            user_id=manager_id,
+            old_value=True,
+            new_value=False
+        )
+        
+        return jsonify({
+            "message": "Task completion rejected",
+            "task": updated_task,
+            "reason": rejection_reason
+        }), 200
+        
+    except Exception as exc:
+        print(f"ERROR: Failed to reject task: {exc}")
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/health", methods=["GET"])

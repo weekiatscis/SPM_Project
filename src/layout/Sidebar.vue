@@ -7,15 +7,10 @@
     theme="light"
     :width="256"
     :collapsed-width="64"
+    class="modern-sidebar"
   >
     <!-- Logo/Brand -->
-    <div class="logo-container" :style="{ 
-      padding: '16px', 
-      borderBottom: '1px solid #f0f0f0',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: collapsed ? 'center' : 'center'
-    }">
+    <div class="logo-container">
       <!-- Collapsed Logo -->
       <img 
         v-if="collapsed"
@@ -46,7 +41,7 @@
       v-model:selectedKeys="selectedKeys"
       v-model:openKeys="openKeys"
       mode="inline"
-      :style="{ height: 'calc(100vh - 170px)', borderRight: 0 , paddingTop: '24px'  }"
+      class="sidebar-menu"
       @click="handleMenuClick"
     >
       <!-- Home -->
@@ -57,15 +52,12 @@
         Home
       </a-menu-item>
 
-      <!-- Manager Dashboard (Only visible to Manager and Director) -->
-      <a-menu-item 
-        v-if="isManagerOrDirector" 
-        key="manager-dashboard"
-      >
+      <!-- Dashboard (Visible to all authenticated users) -->
+      <a-menu-item key="dashboard">
         <template #icon>
           <DashboardIcon />
         </template>
-        Manager Dashboard
+        Dashboard
       </a-menu-item>
 
       <!-- Projects with submenu -->
@@ -105,59 +97,30 @@
     </a-menu>
 
     <!-- Collapse Button -->
-    <div :style="{ 
-      position: 'absolute', 
-      bottom: '72px', 
-      left: 0, 
-      right: 0, 
-      padding: '4px 16px',
-      backgroundColor: '#fff',
-      display: 'flex',
-      justifyContent: collapsed ? 'center' : 'flex-end'
-    }">
+    <div class="collapse-button-container">
       <a-button
         type="text"
         :icon="collapsed ? h(MenuUnfoldOutlined) : h(MenuFoldOutlined)"
         @click="toggleCollapse"
-        :style="{ 
-          height: '32px',
-          width: collapsed ? '100%' : 'auto',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: '16px' // Adjust this value to change collapse button icon size
-        }"
+        class="collapse-button"
       >
       </a-button>
     </div>
 
     <!-- User section at bottom -->
-    <div :style="{ 
-      position: 'absolute', 
-      bottom: 0, 
-      left: 0, 
-      right: 0, 
-      padding: '16px', 
-      borderTop: '1px solid #f0f0f0',
-      backgroundColor: '#fff'
-    }">
-      <a-dropdown :trigger="['hover']" placement="topLeft">
-        <div :style="{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          cursor: 'pointer',
-          justifyContent: collapsed ? 'center' : 'flex-start'
-        }">
-          <a-avatar :size="collapsed ? 28 : 32" style="background-color: #f56a00;">
+    <div class="user-section">
+      <a-dropdown :trigger="['click']" placement="topLeft">
+        <div class="user-info">
+          <a-avatar :size="36" class="user-avatar">
             <template #icon>
               <UserIcon />
             </template>
           </a-avatar>
-          <div v-if="!collapsed" style="margin-left: 12px; flex: 1; min-width: 0;">
-            <div style="font-weight: 500; font-size: 14px; color: #262626; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+          <div v-if="!collapsed" class="user-details">
+            <div class="user-name">
               {{ user?.name || 'Loading...' }}
             </div>
-            <div style="font-size: 12px; color: #8c8c8c; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+            <div class="user-role">
               {{ user?.role || 'Role' }}
             </div>
           </div>
@@ -178,15 +141,296 @@
 </template>
 
 <style scoped>
-
-
-/* If you want to specifically target your custom icons */
-:deep(.ant-menu-inline-collapsed .ant-menu-item-icon),
-:deep(.ant-menu-inline-collapsed .ant-menu-submenu-title .ant-menu-item-icon) {
-  width: 32px !important; /* Adjust width */
-  height: 32px !important; /* Adjust height */
+/* Modern Sidebar */
+.modern-sidebar {
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.06) !important;
+  border-right: 1px solid #e5e7eb !important;
 }
 
+:deep(.ant-layout-sider-children) {
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(to bottom, #ffffff, #fafbfc) !important;
+}
+
+/* Logo Container */
+.logo-container {
+  padding: 24px 20px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  min-height: 72px;
+}
+
+/* Sidebar Menu */
+.sidebar-menu {
+  height: calc(100vh - 170px);
+  border-right: 0 !important;
+  padding: 20px 12px !important;
+  background: transparent !important;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+.sidebar-menu::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sidebar-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+.sidebar-menu::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Menu Items */
+:deep(.ant-menu-item) {
+  margin-bottom: 4px !important;
+  margin-top: 0 !important;
+  border-radius: 10px !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  padding: 0 16px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+}
+
+:deep(.ant-menu-item:hover) {
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.08), rgba(64, 169, 255, 0.08)) !important;
+  color: #1890ff !important;
+  transform: translateX(2px);
+}
+
+:deep(.ant-menu-item-selected) {
+  background: linear-gradient(135deg, #1890ff, #40a9ff) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.25) !important;
+}
+
+:deep(.ant-menu-item-selected:hover) {
+  background: linear-gradient(135deg, #1890ff, #40a9ff) !important;
+  transform: translateX(0);
+}
+
+:deep(.ant-menu-item-selected .anticon) {
+  color: #ffffff !important;
+}
+
+/* Submenu */
+:deep(.ant-menu-submenu) {
+  margin-bottom: 4px !important;
+}
+
+:deep(.ant-menu-submenu-title) {
+  border-radius: 10px !important;
+  height: 44px !important;
+  line-height: 44px !important;
+  padding: 0 16px !important;
+  margin: 0 !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  font-weight: 500 !important;
+  font-size: 14px !important;
+}
+
+:deep(.ant-menu-submenu-title:hover) {
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.08), rgba(64, 169, 255, 0.08)) !important;
+  color: #1890ff !important;
+}
+
+:deep(.ant-menu-submenu-open > .ant-menu-submenu-title) {
+  color: #1890ff !important;
+  font-weight: 600 !important;
+}
+
+/* Submenu Items */
+:deep(.ant-menu-sub .ant-menu-item) {
+  height: 40px !important;
+  line-height: 40px !important;
+  font-size: 13px !important;
+  padding-left: 48px !important;
+}
+
+/* Icons - Expanded State */
+:deep(.ant-menu-item-icon),
+:deep(.ant-menu-submenu-title .ant-menu-item-icon) {
+  font-size: 20px !important;
+  margin-right: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+:deep(.ant-menu-item-icon img),
+:deep(.ant-menu-submenu-title .ant-menu-item-icon img) {
+  width: 20px !important;
+  height: 20px !important;
+  object-fit: contain !important;
+}
+
+/* Icons - Collapsed State */
+:deep(.ant-menu-inline-collapsed .ant-menu-item),
+:deep(.ant-menu-inline-collapsed .ant-menu-submenu-title) {
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+:deep(.ant-menu-inline-collapsed .ant-menu-item-icon),
+:deep(.ant-menu-inline-collapsed .ant-menu-submenu-title .ant-menu-item-icon) {
+  font-size: 24px !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+}
+
+:deep(.ant-menu-inline-collapsed .ant-menu-item-icon img),
+:deep(.ant-menu-inline-collapsed .ant-menu-submenu-title .ant-menu-item-icon img) {
+  width: 24px !important;
+  height: 24px !important;
+  object-fit: contain !important;
+}
+
+/* Collapse Button Container */
+.collapse-button-container {
+  position: absolute;
+  bottom: 72px;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: center;
+}
+
+.collapse-button {
+  height: 36px !important;
+  width: 100% !important;
+  border-radius: 8px !important;
+  font-size: 16px !important;
+  transition: all 0.3s ease !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+.collapse-button:hover {
+  background: #f3f4f6 !important;
+  border-color: #1890ff !important;
+  color: #1890ff !important;
+}
+
+/* User Section */
+.user-section {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16px;
+  border-top: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+}
+
+.user-info:hover {
+  background: #f3f4f6;
+}
+
+.user-avatar {
+  background: linear-gradient(135deg, #1890ff, #40a9ff) !important;
+  flex-shrink: 0;
+}
+
+.user-details {
+  margin-left: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+.user-role {
+  font-size: 12px;
+  color: #6b7280;
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+/* Collapsed State */
+:deep(.ant-layout-sider-collapsed) .user-info {
+  justify-content: center;
+  padding: 4px;
+}
+
+:deep(.ant-layout-sider-collapsed) .collapse-button-container {
+  padding: 8px;
+}
+
+/* Dark Mode Support */
+:global(.dark) .modern-sidebar {
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3) !important;
+  border-right-color: #374151 !important;
+}
+
+:global(.dark) :deep(.ant-layout-sider-children) {
+  background: linear-gradient(to bottom, #1f2937, #111827) !important;
+}
+
+:global(.dark) .logo-container,
+:global(.dark) .collapse-button-container,
+:global(.dark) .user-section {
+  background: #1f2937;
+  border-color: #374151;
+}
+
+:global(.dark) :deep(.ant-menu-item:hover) {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.15), rgba(59, 130, 246, 0.15)) !important;
+  color: #60a5fa !important;
+}
+
+:global(.dark) :deep(.ant-menu-item-selected) {
+  background: linear-gradient(135deg, #2563eb, #3b82f6) !important;
+}
+
+:global(.dark) .user-name {
+  color: #f9fafb;
+}
+
+:global(.dark) .user-role {
+  color: #d1d5db;
+}
 </style>
 
 <script>
@@ -226,12 +470,6 @@ export default {
     // Get user data directly from auth store
     const user = computed(() => authStore.user)
 
-    // Check if user is Manager or Director
-    const isManagerOrDirector = computed(() => {
-      const role = user.value?.role
-      return role === 'Manager' || role === 'Director'
-    })
-
     // Ant Design menu state
     const selectedKeys = ref(['home'])
     const openKeys = ref([])
@@ -251,8 +489,8 @@ export default {
     const handleMenuClick = ({ key }) => {
       if (key === 'home') {
         handleNavigation('/home')
-      } else if (key === 'manager-dashboard') {
-        handleNavigation('/manager-dashboard')
+      } else if (key === 'dashboard') {
+        handleNavigation('/dashboard')
       } else if (key.startsWith('project-')) {
         const projectId = key.replace('project-', '')
         handleNavigation(`/projects/${projectId}`)
@@ -305,8 +543,8 @@ export default {
       if (path === '/home' || path === '/') {
         selectedKeys.value = ['home']
         openKeys.value = []
-      } else if (path === '/manager-dashboard') {
-        selectedKeys.value = ['manager-dashboard']
+      } else if (path === '/dashboard') {
+        selectedKeys.value = ['dashboard']
         openKeys.value = []
       } else if (path === '/projects') {
         selectedKeys.value = []
@@ -357,7 +595,6 @@ export default {
 
     return {
       user,
-      isManagerOrDirector,
       selectedKeys,
       openKeys,
       collapsed,

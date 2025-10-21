@@ -1,6 +1,6 @@
 <template>
 
-  <div style="max-width: 1600px; margin: 0 auto; padding: 20px;">
+  <div class="home-container">
     <!-- Welcome Header -->
     <div class="welcome-section">
       <a-typography-title :level="1" :style="titleStyle">
@@ -8,20 +8,19 @@
       </a-typography-title>
     </div>
 
-    <!-- Timeline Section with Background GIF -->
-    <div class="timeline-container-wrapper">
-      <!-- GIF Behind Timeline -->
-      <div class="background-illustration">
-        <img 
-          src="/illustration.gif" 
-          alt="Background illustration"
-          class="hidden-illustration"
-        />
-      </div>
-      
-      <!-- Timeline Content -->
-      <a-row style="margin-bottom: 24px; position: relative; z-index: 2;">
-        <a-col :span="24">
+    <!-- Top Section: Timeline + Report Generator -->
+    <a-row :gutter="24" class="top-section-row">
+      <!-- Timeline Section with Background GIF -->
+      <a-col :xs="24" :lg="24" :xl="15">
+        <div class="timeline-container-wrapper">
+          <!-- GIF Behind Timeline -->
+          <div class="background-illustration">
+            <img 
+              src="/illustration.gif" 
+              alt="Background illustration"
+              class="hidden-illustration"
+            />
+          </div>
           <a-card :bordered="false">
             <!-- Timeline Header -->
             <div class="timeline-header">
@@ -76,21 +75,20 @@
               </a-button>
             </div>
           </div>
-        </a-card>
+          </a-card>
+        </div>
+      </a-col>
+      
+      <!-- Report Generator Section -->
+      <a-col :xs="24" :lg="24" :xl="9">
+        <ReportGenerator />
       </a-col>
     </a-row>
-    </div> <!-- Close timeline-container-wrapper -->
 
-    <!-- Main Content Row -->
-    <a-row :gutter="24" style="margin-bottom: 24px;">
-      <!-- Tasks Section -->
-      <a-col :span="12">
+    <!-- Main Content Row - Full Width Tasks -->
+    <a-row class="main-content-row">
+      <a-col :span="24">
         <TaskList ref="taskListRef" />
-      </a-col>
-
-      <!-- Report Generator Section -->
-      <a-col :span="12">
-        <ReportGenerator />
       </a-col>
     </a-row>
   </div>
@@ -242,26 +240,68 @@ export default {
 </script>
 
 <style scoped>
+/* Home Container */
+.home-container {
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 32px 40px;
+}
+
+@media (max-width: 1400px) {
+  .home-container {
+    padding: 28px 32px;
+  }
+}
+
+@media (max-width: 768px) {
+  .home-container {
+    padding: 20px 16px;
+  }
+}
+
 /* Welcome section styles */
 .welcome-section {
-  margin-bottom: 12px;
-  padding: 24px 32px 24px 24px;
+  margin-bottom: 32px;
+  padding: 0;
+}
+
+/* Top Section Row */
+.top-section-row {
+  margin-bottom: 40px;
 }
 
 /* Timeline container with background GIF */
 .timeline-container-wrapper {
   position: relative;
-  margin-bottom: 24px;
+  height: 100%;
+}
+
+/* Main Content Row */
+.main-content-row {
+  margin-bottom: 40px;
+}
+
+/* Responsive: Stack on smaller screens */
+@media (max-width: 1199px) {
+  .top-section-row {
+    margin-bottom: 24px;
+  }
+  
+  .top-section-row .ant-col:first-child {
+    margin-bottom: 24px;
+  }
 }
 
 /* Background illustration positioned behind timeline */
 .background-illustration {
+  display: block;
   position: absolute;
   right: 5%;
-  top: -30px; /* Half of the GIF is outside the container */
+  top: -30px;
   transform: translateY(-50%);
   z-index: 1;
-  opacity: 1; /* Slightly transparent for subtle effect */
+  opacity: 1;
+  pointer-events: none; /* Do not block interactions */
 }
 
 .hidden-illustration {
@@ -312,12 +352,21 @@ export default {
   background-clip: text;
 }
 
-/* Timeline card*/
+/* Timeline card with modern design */
 .timeline-container-wrapper :deep(.ant-card) {
   background-color: rgba(255, 255, 255, 1) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
-  border: 1px solid rgba(229, 231, 235, 1) !important;
+  border: 1px solid rgba(229, 231, 235, 0.8) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  overflow: hidden !important;
+}
+
+.timeline-container-wrapper :deep(.ant-card):hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04) !important;
+  border-color: rgba(24, 144, 255, 0.2) !important;
 }
 
 
@@ -328,68 +377,98 @@ export default {
 
 /* Timeline Header Styles */
 .timeline-header {
-  padding: 0 0 16px 0;
-  margin-bottom: 8px;
+  padding: 0 0 20px 0;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.timeline-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 60px;
+  height: 3px;
+  background: linear-gradient(90deg, #1890ff, #40a9ff);
+  border-radius: 2px;
 }
 
 .timeline-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-color, #000000);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-color, #111827);
   text-align: left;
+  letter-spacing: -0.02em;
 }
 
 .timeline-navigation-bottom {
   display: flex;
   justify-content: center;
   width: 100%;
-  padding: 16px 0 0 0;
-  border-top: 1px solid var(--border-color, #f0f0f0);
-  margin-top: 16px;
+  padding: 20px 0 4px 0;
+  border-top: 1px solid var(--border-color, #f3f4f6);
+  margin-top: 20px;
+  background: linear-gradient(to bottom, transparent, rgba(249, 250, 251, 0.5));
 }
 
 .compact-navigation {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
 .nav-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  transition: all 0.3s ease;
-  color: var(--text-color, #000000);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  color: var(--text-color, #6b7280);
   flex-shrink: 0;
+  background: var(--nav-bg, #f9fafb);
+  border: 1px solid var(--border-color, #e5e7eb) !important;
 }
 
 .nav-button:hover:not(:disabled) {
-  background-color: var(--nav-button-hover, rgba(24, 144, 255, 0.1));
-  color: var(--primary-color, #1890ff);
-  transform: scale(1.1);
+  background: linear-gradient(135deg, #1890ff, #40a9ff) !important;
+  color: #ffffff !important;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+  border-color: transparent !important;
+}
+
+.nav-button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .nav-button:disabled {
-  opacity: 0.4;
+  opacity: 0.3;
   cursor: not-allowed;
+  background: var(--nav-bg, #f9fafb) !important;
 }
 
 .week-range-section {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 200px;
+  min-width: 220px;
+  padding: 8px 20px;
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.08), rgba(64, 169, 255, 0.08));
+  border-radius: 12px;
+  border: 1px solid rgba(24, 144, 255, 0.15);
 }
 
 .week-range-text {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-color, #000000);
-  letter-spacing: 0.5px;
+  font-size: 15px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #1890ff, #40a9ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.3px;
   text-align: center;
   white-space: nowrap;
 }
@@ -397,11 +476,20 @@ export default {
 /* Dark mode timeline */
 :global(.dark) .timeline-header,
 :global(.dark) .timeline-navigation-bottom {
-  --border-color: #434343;
-  --text-color: #ffffff;
-  --text-color-secondary: #bfbfbf;
-  --nav-button-hover: rgba(255, 255, 255, 0.1);
+  --border-color: #374151;
+  --text-color: #f9fafb;
+  --text-color-secondary: #d1d5db;
+  --nav-bg: #1f2937;
   --primary-color: #1890ff;
+}
+
+:global(.dark) .timeline-container-wrapper :deep(.ant-card) {
+  background-color: rgba(31, 41, 55, 1) !important;
+  border-color: rgba(55, 65, 81, 0.8) !important;
+}
+
+:global(.dark) .timeline-container-wrapper :deep(.ant-card):hover {
+  border-color: rgba(24, 144, 255, 0.3) !important;
 }
 
 /* Light mode timeline */
@@ -409,10 +497,10 @@ export default {
 :global(.light) .timeline-navigation-bottom,
 .timeline-header,
 .timeline-navigation-bottom {
-  --border-color: #f0f0f0;
-  --text-color: #000000;
-  --text-color-secondary: #666666;
-  --nav-button-hover: rgba(24, 144, 255, 0.1);
+  --border-color: #e5e7eb;
+  --text-color: #111827;
+  --text-color-secondary: #6b7280;
+  --nav-bg: #f9fafb;
   --primary-color: #1890ff;
 }
 

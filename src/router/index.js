@@ -6,7 +6,7 @@ import ProjectDetails from '../views/ProjectDetails.vue'
 import Login from '../views/Login.vue'
 import Signup from '../views/Signup.vue'
 import ProfileSettings from '../views/ProfileSettings.vue'
-import ManagerDashboard from '../views/ManagerDashboard.vue'
+import Dashboard from '../views/Dashboard.vue'
 
 const routes = [
   { path: '/', redirect: '/home' },
@@ -17,12 +17,11 @@ const routes = [
   { path: '/projects/:id', name: 'ProjectDetails', component: ProjectDetails, meta: { requiresAuth: true } },
   { path: '/profile', name: 'ProfileSettings', component: ProfileSettings, meta: { requiresAuth: true } },
   { 
-    path: '/manager-dashboard', 
-    name: 'ManagerDashboard', 
-    component: ManagerDashboard, 
+    path: '/dashboard', 
+    name: 'Dashboard', 
+    component: Dashboard, 
     meta: { 
-      requiresAuth: true,
-      requiredRoles: ['Manager', 'Director']
+      requiresAuth: true
     } 
   }
 ]

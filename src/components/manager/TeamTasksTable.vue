@@ -66,6 +66,11 @@
           </a-space>
         </template>
 
+        <!-- Department Column (HR Only) -->
+        <template v-else-if="column.key === 'department'">
+          <div style="font-weight: 500;">{{ record.assigneeDepartment || 'N/A' }}</div>
+        </template>
+
         <!-- Due Date Column -->
         <template v-else-if="column.key === 'dueDate'">
           <div v-if="record.dueDate">
@@ -114,6 +119,10 @@ const props = defineProps({
   subordinates: {
     type: Array,
     default: () => []
+  },
+  userRole: {
+    type: String,
+    default: null
   }
 })
 
@@ -149,67 +158,104 @@ const assigneeFilters = computed(() => {
   return filters.sort((a, b) => a.text.localeCompare(b.text))
 })
 
+// Create department filter options (for HR)
+const departmentFilters = computed(() => {
+  const departments = [...new Set(props.subordinates.map(sub => sub.department).filter(Boolean))]
+  return departments.sort().map(dept => ({
+    text: dept,
+    value: dept
+  }))
+})
+
+// Check if user is HR
+const isHRUser = computed(() => props.userRole === 'HR')
+
 // Table columns configuration
-const columns = computed(() => [
-  {
-    title: 'Task Title',
-    dataIndex: 'title',
-    key: 'title',
-    width: 300,
-    ellipsis: true,
-    fixed: 'left',
-    sorter: (a, b) => (a.title || '').localeCompare(b.title || '')
-  },
-  {
-    title: 'Assignee',
-    dataIndex: 'assigneeName',
-    key: 'assignee',
-    width: 200,
-    filters: assigneeFilters.value,
-    onFilter: (value, record) => record.assigneeId === value
-  },
-  {
-    title: 'Due Date',
-    dataIndex: 'dueDate',
-    key: 'dueDate',
-    width: 150,
-    sorter: (a, b) => {
-      if (!a.dueDate) return 1
-      if (!b.dueDate) return -1
-      return new Date(a.dueDate) - new Date(b.dueDate)
+const columns = computed(() => {
+  const baseColumns = [
+    {
+      title: 'Task Title',
+      dataIndex: 'title',
+      key: 'title',
+      width: 300,
+      ellipsis: true,
+      fixed: 'left',
+      sorter: (a, b) => (a.title || '').localeCompare(b.title || '')
     },
-    defaultSortOrder: 'ascend'
-  },
-  {
-    title: 'Status',
-    dataIndex: 'status',
-    key: 'status',
-    width: 140,
-    filters: [
-      { text: 'Unassigned', value: 'Unassigned' },
-      { text: 'On Going', value: 'On Going' },
-      { text: 'Under Review', value: 'Under Review' },
-      { text: 'Completed', value: 'Completed' }
-    ],
-    onFilter: (value, record) => record.status === value
-  },
-  {
-    title: 'Priority',
-    dataIndex: 'priority',
-    key: 'priority',
-    width: 120,
-    filters: [
-      { text: 'High', value: 'High' },
-      { text: 'Medium', value: 'Medium' },
-      { text: 'Low', value: 'Low' }
-    ],
-    onFilter: (value, record) => (record.priority || 'Medium') === value,
-    sorter: (a, b) => {
-      const priorityOrder = { 'High': 3, 'Medium': 2, 'Low': 1 }
-      return priorityOrder[a.priority || 'Medium'] - priorityOrder[b.priority || 'Medium']
+    {
+      title: 'Assignee',
+      dataIndex: 'assigneeName',
+      key: 'assignee',
+      width: 200,
+      filters: assigneeFilters.value,
+      onFilter: (value, record) => record.assigneeId === value
     }
+  ]
+
+  // Add Department column for HR users only
+  if (isHRUser.value) {
+    baseColumns.push({
+      title: 'Department',
+      dataIndex: 'assigneeDepartment',
+      key: 'department',
+      width: 180,
+      filters: departmentFilters.value,
+      onFilter: (value, record) => record.assigneeDepartment === value,
+      sorter: (a, b) => (a.assigneeDepartment || '').localeCompare(b.assigneeDepartment || '')
+    })
   }
-])
+
+  // Add remaining columns
+  baseColumns.push(
+    {
+      title: 'Due Date',
+      dataIndex: 'dueDate',
+      key: 'dueDate',
+      width: 150,
+      sorter: (a, b) => {
+        if (!a.dueDate) return 1
+        if (!b.dueDate) return -1
+        return new Date(a.dueDate) - new Date(b.dueDate)
+      },
+      defaultSortOrder: 'ascend'
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      width: 140,
+      filters: [
+        { text: 'Unassigned', value: 'Unassigned' },
+        { text: 'On Going', value: 'On Going' },
+        { text: 'Under Review', value: 'Under Review' },
+        { text: 'Completed', value: 'Completed' }
+      ],
+      onFilter: (value, record) => record.status === value
+    },
+    {
+      title: 'Priority',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 120,
+      filters: [
+        { text: '1', value: 1 },
+        { text: '2', value: 2 },
+        { text: '3', value: 3 },
+        { text: '4', value: 4 },
+        { text: '5', value: 5 },
+        { text: '6', value: 6 },
+        { text: '7', value: 7 },
+        { text: '8', value: 8 },
+        { text: '9', value: 9 },
+        { text: '10', value: 10 }
+      ],
+      onFilter: (value, record) => Number(record.priority) === Number(value),
+      sorter: (a, b) => Number(a.priority || 5) - Number(b.priority || 5)
+    }
+  )
+
+  return baseColumns
+})
 
 // Methods
 const handleTableChange = (pagination, filters, sorter) => {
