@@ -345,6 +345,11 @@ export default {
       // Staff can always generate their own reports
       if (isStaff.value) return true
       
+      // For team reports, target selection is mandatory
+      if (reportType.value === 'team' && (!selectedTargets.value || (Array.isArray(selectedTargets.value) && selectedTargets.value.length === 0))) {
+        return false
+      }
+      
       // For other roles, check if required selections are made
       if (showTargetSelection.value && !selectedTargets.value) return false
       if (isHR.value && reportType.value === 'organization' && (!scopeType.value || !scopeValues.value?.length)) return false
@@ -365,7 +370,7 @@ export default {
 
     const getTargetPlaceholder = () => {
       if (reportType.value === 'individual') return 'Select a user'
-      if (reportType.value === 'team') return 'Select teams'
+      if (reportType.value === 'team') return 'Select at least ONE team'
       if (reportType.value === 'department') return 'Select departments'
       return 'Select targets'
     }

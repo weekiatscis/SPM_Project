@@ -124,6 +124,14 @@
             </template>
           </template>
         </a-table>
+        
+        <!-- Team Member Bar Chart -->
+        <div class="bar-chart-section">
+          <h3 class="chart-title">Task Status by Team Member</h3>
+          <div class="bar-chart-container">
+            <canvas ref="teamBarChartCanvas" width="500" height="300"></canvas>
+          </div>
+        </div>
       </div>
 
       <!-- Team/Department Comparison -->
@@ -140,37 +148,18 @@
 
       <!-- Charts Section -->
       <div v-if="reportData.charts?.length > 1" class="report-section">
-        <h2 class="section-title">Additional Charts & Analytics</h2>
+        <h2 class="section-title">Analytics</h2>
         <div class="charts-grid">
           <div v-for="(chart, index) in reportData.charts.slice(1)" :key="index" class="chart-container">
             <div class="chart-title">{{ chart.title }}</div>
-            <div class="chart-placeholder">
-              <PieChartOutlined v-if="chart.type === 'pie'" class="chart-icon" />
-              <span v-else class="chart-icon">📊</span>
-              <div class="chart-data-preview">
-                <div v-if="chart.type === 'pie'" class="pie-data">
-                  <div v-for="(value, key) in chart.data" :key="key" class="data-item">
-                    <span class="data-label">{{ key }}:</span>
-                    <span class="data-value">{{ value }}</span>
-                  </div>
-                </div>
-                <div v-else-if="chart.type === 'bar'" class="bar-data">
-                  <div v-if="chart.data.members">
-                    <div v-for="(member, idx) in chart.data.members" :key="idx" class="member-data">
-                      <strong>{{ member }}:</strong>
-                      C:{{ chart.data.completed[idx] || 0 }}, 
-                      P:{{ chart.data.pending[idx] || 0 }}, 
-                      O:{{ chart.data.overdue[idx] || 0 }}
-                    </div>
-                  </div>
-                  <div v-else>
-                    <div v-for="(value, key) in chart.data" :key="key" class="data-item">
-                      <span class="data-label">{{ key }}:</span>
-                      <span class="data-value">{{ Array.isArray(value) ? value.join(', ') : value }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <div class="actual-chart-container">
+              <canvas 
+                :ref="el => { if (el) chartRefs[`chart_${index}`] = el }"
+                width="400" 
+                height="250"
+                class="preview-chart-canvas"
+                :data-chart-index="index"
+              ></canvas>
             </div>
           </div>
         </div>
@@ -242,30 +231,45 @@ const emit = defineEmits(['close', 'export'])
 const modalVisible = ref(false)
 const isExporting = ref(false)
 const pieChartCanvas = ref(null)
+const teamBarChartCanvas = ref(null)
+const chartRefs = ref({})
 
 // Watch for prop changes
 watch(() => props.isOpen, (newVal) => {
   modalVisible.value = newVal
 }, { immediate: true })
 
-// Watch for reportData changes to draw pie chart
+// Watch for reportData changes to draw charts
 watch(() => props.reportData, (newVal) => {
   if (newVal) {
     nextTick(() => {
-      drawPieChart()
+      setTimeout(() => {
+        drawPieChart()
+        drawTeamBarChart()
+        drawAnalyticsCharts()
+      }, 100) // Small delay to ensure DOM is ready
     })
   }
 }, { immediate: true })
 
 const drawPieChart = () => {
-  if (!pieChartCanvas.value || !props.reportData?.charts?.length) return
+  console.log('Drawing main pie chart...')
+  if (!pieChartCanvas.value || !props.reportData?.charts?.length) {
+    console.log('No canvas or no charts data')
+    return
+  }
 
   const canvas = pieChartCanvas.value
   const ctx = canvas.getContext('2d')
   
   // Find the first pie chart
   const pieChart = props.reportData.charts.find(chart => chart.type === 'pie')
-  if (!pieChart || !pieChart.data) return
+  if (!pieChart || !pieChart.data) {
+    console.log('No pie chart found in data')
+    return
+  }
+
+  console.log('Pie chart data:', pieChart.data)
 
   // Clear canvas
   ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -276,7 +280,7 @@ const drawPieChart = () => {
   const colors = ['#22c55e', '#3b82f6', '#ef4444', '#a855f7', '#f59e0b', '#06b6d4']
 
   Object.entries(pieChart.data).forEach(([key, value]) => {
-    if (value > 0) {
+    if (typeof value === 'number' && value > 0) {
       data.push(value)
       labels.push(key)
     }
@@ -285,7 +289,10 @@ const drawPieChart = () => {
   if (data.length === 0) {
     data.push(1)
     labels.push('No Data')
+    colors[0] = '#e5e7eb'
   }
+
+  console.log('Processed pie chart data:', { data, labels })
 
   // Calculate total
   const total = data.reduce((a, b) => a + b, 0)
@@ -336,6 +343,425 @@ const drawPieChart = () => {
 
     legendY += 28
   })
+}
+
+const drawTeamBarChart = () => {
+  if (!teamBarChartCanvas.value || !props.reportData?.detailed_data?.team_members?.length) return
+
+  const canvas = teamBarChartCanvas.value
+  const ctx = canvas.getContext('2d')
+  const teamMembers = props.reportData.detailed_data.team_members
+
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // Calculate dimensions
+  const barWidth = 40
+  const barSpacing = 60
+  const leftMargin = 60
+  const bottomMargin = 60
+  const topMargin = 40
+
+  const maxTotalTasks = Math.max(...teamMembers.map(member => member.total_tasks))
+  const chartHeight = 200
+
+  // Draw bars for each member
+  teamMembers.forEach((member, i) => {
+    const xPos = leftMargin + i * barSpacing
+    
+    // Calculate heights
+    const totalHeight = (member.total_tasks / maxTotalTasks) * chartHeight
+    const completedHeight = (member.completed / maxTotalTasks) * chartHeight
+    
+    // Draw total tasks bar (background)
+    ctx.fillStyle = '#e5e7eb'
+    ctx.fillRect(xPos, canvas.height - bottomMargin - totalHeight, barWidth, totalHeight)
+    
+    // Draw completed tasks bar (foreground)
+    ctx.fillStyle = '#22c55e'
+    ctx.fillRect(xPos, canvas.height - bottomMargin - completedHeight, barWidth, completedHeight)
+    
+    // Draw member name
+    ctx.fillStyle = '#1f2937'
+    ctx.font = '10px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText(
+      member.name.length > 8 ? member.name.substring(0, 8) + '...' : member.name,
+      xPos + barWidth/2,
+      canvas.height - bottomMargin + 15
+    )
+    
+    // Draw values above bar
+    ctx.font = 'bold 9px Arial'
+    ctx.fillText(
+      `${member.completed}/${member.total_tasks}`,
+      xPos + barWidth/2,
+      canvas.height - bottomMargin - totalHeight - 5
+    )
+  })
+  
+  // Add title
+  ctx.fillStyle = '#1f2937'
+  ctx.font = 'bold 14px Arial'
+  ctx.textAlign = 'center'
+  ctx.fillText('Task Status by Team Member', canvas.width/2, 25)
+  
+  // Add legend
+  const legendY = 50
+  
+  // Completed legend
+  ctx.fillStyle = '#22c55e'
+  ctx.fillRect(leftMargin, legendY, 15, 10)
+  ctx.fillStyle = '#1f2937'
+  ctx.font = '10px Arial'
+  ctx.textAlign = 'left'
+  ctx.fillText('Completed', leftMargin + 20, legendY + 8)
+  
+  // Total legend
+  ctx.fillStyle = '#e5e7eb'
+  ctx.fillRect(leftMargin + 100, legendY, 15, 10)
+  ctx.fillStyle = '#1f2937'
+  ctx.fillText('Total', leftMargin + 120, legendY + 8)
+}
+
+const drawAnalyticsCharts = () => {
+  console.log('Drawing analytics charts...', props.reportData?.charts?.length)
+  if (!props.reportData?.charts?.length) return
+
+  // Use nextTick to ensure DOM is fully rendered
+  nextTick(() => {
+    // Draw each analytics chart (skip the first one which is the main pie chart)
+    props.reportData.charts.slice(1).forEach((chart, index) => {
+      setTimeout(() => {
+        console.log(`Processing chart ${index}:`, chart.title, chart.type)
+        
+        const canvasRef = `chart_${index}`
+        let canvas = chartRefs.value[canvasRef]
+        
+        // Fallback to DOM query if ref not available
+        if (!canvas) {
+          canvas = document.querySelector(`canvas[data-chart-index="${index}"]`)
+          console.log('Canvas from DOM query:', !!canvas)
+        }
+        
+        if (!canvas) {
+          console.warn(`Canvas not found for chart ${index}`)
+          return
+        }
+
+        const ctx = canvas.getContext('2d')
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+        console.log(`Drawing ${chart.type} chart:`, chart.title)
+        
+        if (chart.type === 'pie') {
+          drawSmallPieChart(ctx, chart.data, chart.title, canvas.width, canvas.height)
+        } else if (chart.type === 'bar') {
+          drawSmallBarChart(ctx, chart.data, chart.title, canvas.width, canvas.height)
+        }
+      }, index * 50) // Stagger the drawing
+    })
+  })
+}
+
+const drawSmallPieChart = (ctx, data, title, width, height) => {
+  console.log('Drawing enhanced pie chart:', title, data)
+  if (!data || typeof data !== 'object') return
+
+  const centerX = width / 2
+  const centerY = (height / 2) + 15
+  const radius = Math.min(width, height - 100) / 3
+
+  const values = Object.values(data).filter(v => typeof v === 'number' && v > 0)
+  const labels = Object.keys(data).filter(key => data[key] > 0)
+  
+  if (values.length === 0) {
+    // Draw "No Data" message
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '12px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText('No data available', centerX, centerY)
+    return
+  }
+
+  const total = values.reduce((a, b) => a + b, 0)
+  
+  // Enhanced color palette
+  const colorPalette = [
+    '#3b82f6', '#22c55e', '#f59e0b', '#a855f7', 
+    '#ef4444', '#06b6d4', '#8b5cf6', '#f97316'
+  ]
+
+  // Draw background circle for better contrast
+  ctx.fillStyle = '#f8fafc'
+  ctx.fillRect(0, 0, width, height)
+  
+  // Draw title with enhanced styling
+  const gradient = ctx.createLinearGradient(0, 0, width, 0)
+  gradient.addColorStop(0, '#1e40af')
+  gradient.addColorStop(1, '#3b82f6')
+  
+  ctx.fillStyle = gradient
+  ctx.font = 'bold 14px Arial'
+  ctx.textAlign = 'center'
+  ctx.fillText(title, centerX, 20)
+  
+  // Draw total value subtitle
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '10px Arial'
+  ctx.fillText(`Total: ${total}`, centerX, 35)
+
+  let startAngle = -Math.PI / 2
+
+  values.forEach((value, index) => {
+    const sliceAngle = (value / total) * 2 * Math.PI
+    const color = colorPalette[index % colorPalette.length]
+
+    // Draw shadow
+    ctx.beginPath()
+    ctx.moveTo(centerX + 3, centerY + 3)
+    ctx.arc(centerX + 3, centerY + 3, radius, startAngle, startAngle + sliceAngle)
+    ctx.closePath()
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'
+    ctx.fill()
+
+    // Draw main slice
+    ctx.beginPath()
+    ctx.moveTo(centerX, centerY)
+    ctx.arc(centerX, centerY, radius, startAngle, startAngle + sliceAngle)
+    ctx.closePath()
+    ctx.fillStyle = color
+    ctx.fill()
+    
+    // Add gradient effect
+    const sliceGradient = ctx.createRadialGradient(
+      centerX, centerY, 0, 
+      centerX, centerY, radius
+    )
+    sliceGradient.addColorStop(0, color)
+    sliceGradient.addColorStop(0.7, color)
+    sliceGradient.addColorStop(1, color + '80') // Semi-transparent
+    
+    ctx.fillStyle = sliceGradient
+    ctx.fill()
+    
+    // Add border
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 3
+    ctx.stroke()
+
+    // Draw percentage labels on slices (if slice is large enough)
+    const percentage = ((value / total) * 100).toFixed(0)
+    if (sliceAngle > 0.3) { // Only show if slice is > ~17 degrees
+      const midAngle = startAngle + (sliceAngle / 2)
+      const labelRadius = radius * 0.7
+      const labelX = centerX + Math.cos(midAngle) * labelRadius
+      const labelY = centerY + Math.sin(midAngle) * labelRadius
+      
+      ctx.fillStyle = '#ffffff'
+      ctx.font = 'bold 10px Arial'
+      ctx.textAlign = 'center'
+      ctx.fillText(`${percentage}%`, labelX, labelY + 3)
+    }
+
+    startAngle += sliceAngle
+  })
+
+  // Draw enhanced legend with better layout
+  const legendStartY = height - (labels.length * 16 + 10)
+  const legendCols = Math.ceil(labels.length / 4) // Max 4 items per column
+  const colWidth = width / legendCols
+
+  labels.forEach((label, index) => {
+    const col = Math.floor(index / 4)
+    const row = index % 4
+    const legendX = col * colWidth + 20
+    const legendY = legendStartY + (row * 16)
+    const color = colorPalette[index % colorPalette.length]
+    
+    // Draw colored square with border
+    ctx.fillStyle = color
+    ctx.fillRect(legendX, legendY - 8, 12, 12)
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1
+    ctx.strokeRect(legendX, legendY - 8, 12, 12)
+    
+    // Draw text with value and percentage
+    ctx.fillStyle = '#1f2937'
+    ctx.font = 'bold 10px Arial'
+    ctx.textAlign = 'left'
+    
+    // Truncate long labels
+    let labelText = label
+    if (label.length > 10) {
+      labelText = label.substring(0, 8) + '...'
+    }
+    
+    const percentage = ((values[index] / total) * 100).toFixed(0)
+    ctx.fillText(`${labelText}: ${values[index]} (${percentage}%)`, legendX + 16, legendY + 2)
+  })
+}
+
+const drawSmallBarChart = (ctx, data, title, width, height) => {
+  console.log('Drawing enhanced bar chart:', title, data)
+  
+  if (!data || typeof data !== 'object') {
+    console.log('No data or invalid data type')
+    return
+  }
+
+  // Handle both object and array data formats
+  let keys, values
+  
+  if (Array.isArray(data)) {
+    values = data.filter(v => typeof v === 'number' && v > 0)
+    keys = values.map((_, i) => `Item ${i + 1}`)
+  } else {
+    keys = Object.keys(data).filter(key => {
+      const value = data[key]
+      return typeof value === 'number' && value > 0
+    })
+    values = keys.map(key => data[key])
+  }
+  
+  console.log('Processed keys:', keys, 'values:', values)
+  
+  if (values.length === 0) {
+    // Draw "No Data" message
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '12px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText('No data available', width / 2, height / 2)
+    return
+  }
+
+  const maxValue = Math.max(...values)
+  const minBarHeight = 20
+  const barSpacing = 28
+  const leftMargin = 100
+  const topMargin = 45
+  const rightMargin = 50
+  const bottomMargin = 20
+
+  // Calculate dynamic dimensions
+  const availableHeight = height - topMargin - bottomMargin
+  const barHeight = Math.min(minBarHeight, (availableHeight / values.length) - 6)
+  
+  // Draw background
+  ctx.fillStyle = '#f8fafc'
+  ctx.fillRect(0, 0, width, height)
+  
+  // Draw title with enhanced styling
+  const gradient = ctx.createLinearGradient(0, 0, width, 0)
+  gradient.addColorStop(0, '#1e40af')
+  gradient.addColorStop(1, '#3b82f6')
+  
+  ctx.fillStyle = gradient
+  ctx.font = 'bold 14px Arial'
+  ctx.textAlign = 'center'
+  ctx.fillText(title, width / 2, 25)
+  
+  // Draw subtitle with max value
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '10px Arial'
+  ctx.fillText(`Max: ${maxValue}`, width / 2, 40)
+
+  // Enhanced color palette with gradients
+  const colorPairs = [
+    ['#3b82f6', '#1d4ed8'], // Blue
+    ['#22c55e', '#16a34a'], // Green  
+    ['#f59e0b', '#d97706'], // Amber
+    ['#a855f7', '#9333ea'], // Purple
+    ['#ef4444', '#dc2626'], // Red
+    ['#06b6d4', '#0891b2'], // Cyan
+    ['#8b5cf6', '#7c3aed'], // Violet
+    ['#f97316', '#ea580c']  // Orange
+  ]
+
+  keys.forEach((key, index) => {
+    const value = values[index]
+    const maxBarWidth = width - leftMargin - rightMargin
+    const barWidth = Math.max((value / maxValue) * maxBarWidth, 8) // Minimum 8px width
+    const y = topMargin + (index * barSpacing)
+    const [color1, color2] = colorPairs[index % colorPairs.length]
+
+    // Create gradient for bar
+    const barGradient = ctx.createLinearGradient(leftMargin, y, leftMargin + barWidth, y)
+    barGradient.addColorStop(0, color1)
+    barGradient.addColorStop(1, color2)
+    
+    // Draw bar shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'
+    ctx.fillRect(leftMargin + 2, y + 2, barWidth, barHeight)
+    
+    // Draw main bar
+    ctx.fillStyle = barGradient
+    ctx.fillRect(leftMargin, y, barWidth, barHeight)
+    
+    // Add glossy effect
+    const glossGradient = ctx.createLinearGradient(leftMargin, y, leftMargin, y + barHeight/2)
+    glossGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)')
+    glossGradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
+    ctx.fillStyle = glossGradient
+    ctx.fillRect(leftMargin, y, barWidth, barHeight/2)
+    
+    // Add border
+    ctx.strokeStyle = color2
+    ctx.lineWidth = 1
+    ctx.strokeRect(leftMargin, y, barWidth, barHeight)
+
+    // Draw label with better formatting
+    ctx.fillStyle = '#374151'
+    ctx.font = 'bold 11px Arial'
+    ctx.textAlign = 'right'
+    
+    // Truncate long labels more intelligently
+    let labelText = key
+    if (key.length > 14) {
+      const words = key.split(' ')
+      if (words.length > 1 && words[0].length <= 14) {
+        labelText = words[0] + '...'
+      } else {
+        labelText = key.substring(0, 11) + '...'
+      }
+    }
+    ctx.fillText(labelText, leftMargin - 8, y + barHeight/2 + 4)
+
+    // Draw value with background
+    const valueText = value.toString()
+    const valueMetrics = ctx.measureText(valueText)
+    const valuePadding = 4
+    
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+    ctx.fillRect(
+      leftMargin + barWidth + 8, 
+      y + 2, 
+      valueMetrics.width + valuePadding * 2, 
+      barHeight - 4
+    )
+    
+    ctx.fillStyle = '#1f2937'
+    ctx.font = 'bold 11px Arial'
+    ctx.textAlign = 'left'
+    ctx.fillText(valueText, leftMargin + barWidth + 8 + valuePadding, y + barHeight/2 + 4)
+    
+    // Add percentage if applicable
+    const percentage = ((value / maxValue) * 100).toFixed(0)
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '9px Arial'
+    ctx.fillText(`(${percentage}%)`, leftMargin + barWidth + valueMetrics.width + 20, y + barHeight/2 + 4)
+  })
+  
+  // Add grid lines for better readability
+  ctx.strokeStyle = 'rgba(203, 213, 225, 0.5)'
+  ctx.lineWidth = 1
+  for (let i = 1; i <= 4; i++) {
+    const gridX = leftMargin + ((width - leftMargin - rightMargin) * i / 4)
+    ctx.beginPath()
+    ctx.moveTo(gridX, topMargin)
+    ctx.lineTo(gridX, height - bottomMargin)
+    ctx.stroke()
+  }
 }
 
 // Table columns
@@ -809,6 +1235,44 @@ const handleExportPDF = () => {
   padding: 16px 24px;
   border-top: 1px solid #f0f0f0;
   background: #fafafa;
+}
+
+.bar-chart-section {
+  margin-top: 20px;
+  padding: 16px;
+  background: #f9f9f9;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.bar-chart-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.chart-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e40af;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.actual-chart-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+}
+
+.preview-chart-canvas {
+  max-width: 100%;
+  height: auto;
 }
 
 @media (max-width: 768px) {
