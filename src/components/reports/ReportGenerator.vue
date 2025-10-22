@@ -99,6 +99,97 @@
         </div>
       </div>
 
+      <!-- User Role Info -->
+      <div v-if="currentUser" class="role-info">
+        <a-tag :color="getRoleColor(currentUser.role)" class="role-tag">
+          {{ currentUser.role || 'Staff' }}
+        </a-tag>
+        <span class="department-info">
+          {{ currentUser.department || 'No Department' }}
+        </span>
+      </div>
+
+      <!-- Report Type Selection (for non-Staff users) -->
+      <div v-if="canSelectReportType" class="filter-section">
+        <label class="filter-label">Report Type</label>
+        <a-select
+          v-model:value="reportType"
+          :style="{ width: '100%' }"
+          :disabled="isGenerating"
+          @change="onReportTypeChange"
+        >
+          <a-select-option value="individual">Individual Report</a-select-option>
+          <a-select-option v-if="canGenerateTeamReports" value="team">Team Report</a-select-option>
+          <a-select-option v-if="canGenerateDepartmentReports" value="department">Department Report</a-select-option>
+          <a-select-option v-if="isHR" value="organization">Organization Report</a-select-option>
+        </a-select>
+      </div>
+
+      <!-- Target Selection (for Managers/Directors/HR generating individual reports) -->
+      <div v-if="showTargetSelection" class="filter-section">
+        <label class="filter-label">
+          {{ reportType === 'individual' ? 'Target User' : 'Target Selection' }}
+        </label>
+        <a-select
+          v-model:value="selectedTargets"
+          :style="{ width: '100%' }"
+          :mode="reportType === 'individual' ? 'default' : 'multiple'"
+          :placeholder="getTargetPlaceholder()"
+          :disabled="isGenerating || isLoadingOptions"
+          :loading="isLoadingOptions"
+        >
+          <a-select-option
+            v-for="option in availableTargets"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </a-select-option>
+        </a-select>
+      </div>
+
+      <!-- HR Organization Filters -->
+      <div v-if="isHR && reportType === 'organization'" class="hr-organization-filters">
+        <div class="filter-section">
+          <label class="filter-label">Scope Type</label>
+          <a-select
+            v-model:value="scopeType"
+            :style="{ width: '100%' }"
+            :disabled="isGenerating"
+            @change="onScopeTypeChange"
+          >
+            <a-select-option value="departments">Departments</a-select-option>
+            <a-select-option value="teams">Teams</a-select-option>
+            <a-select-option value="individuals">Individuals</a-select-option>
+          </a-select>
+        </div>
+        
+        <div v-if="scopeType" class="filter-section">
+          <label class="filter-label">Select {{ scopeType }}</label>
+          <a-select
+            v-model:value="scopeValues"
+            :style="{ width: '100%' }"
+            mode="multiple"
+            :placeholder="'Select ' + scopeType"
+            :disabled="isGenerating || isLoadingOptions"
+            :loading="isLoadingOptions"
+          >
+            <a-select-option
+              v-for="option in scopeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
+        </div>
+
+        <div class="filter-hint">
+          <InfoCircleOutlined />
+          <span>HR can generate organization-wide reports across departments, teams, or individuals</span>
+        </div>
+      </div>
+
       <!-- Date Range Picker -->
       <div class="filter-section">
         <label class="filter-label">Date Range</label>
