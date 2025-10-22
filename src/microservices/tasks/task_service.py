@@ -86,12 +86,6 @@ class TaskUpdate(BaseModel):
     updated_by: Optional[str] = None  # Track who is making the update
     recurrence: Optional[str] = None
     completed_date: Optional[str] = None  # Date when task was marked as completed
-    # Approval workflow fields
-    pending_approval: Optional[bool] = None
-    approval_requested_by: Optional[str] = None
-    approval_requested_at: Optional[str] = None
-    approved_by: Optional[str] = None
-    approved_at: Optional[str] = None
 
 
 # Pydantic model for rescheduling a task
@@ -288,12 +282,6 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
         "parent_task_id": row.get("parent_task_id"),
         "recurrence": row.get("recurrence"),  # Add recurrence field
         "completedDate": row.get("completed_date"),  # Date when task was marked as completed
-        # Approval workflow fields
-        "pending_approval": row.get("pending_approval", False),
-        "approval_requested_by": row.get("approval_requested_by"),
-        "approval_requested_at": row.get("approval_requested_at"),
-        "approved_by": row.get("approved_by"),
-        "approved_at": row.get("approved_at"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at")),
     }
@@ -1923,9 +1911,7 @@ def update_task(task_id: str):
             # Prepare update data (only include non-None values, exclude fields that are handled automatically)
             # Note: completed_date and approval fields are excluded because they're handled automatically
             exclude_fields = {
-                "reminder_days", "email_enabled", "in_app_enabled", "updated_by", "completed_date",
-                "pending_approval", "approval_requested_by", "approval_requested_at", 
-                "approved_by", "approved_at"
+                "reminder_days", "email_enabled", "in_app_enabled", "updated_by", "completed_date"
             }
             update_data = {k: v for k, v in task_data.dict(exclude=exclude_fields).items() if v is not None}
             actor_id = task_data.updated_by or existing_task.get("owner_id", "system")
@@ -2039,42 +2025,14 @@ def update_task(task_id: str):
             if new_status == "Completed" and old_status != "Completed":
                 from datetime import date
                 
-                # Get the user who is making this update
-                updated_by = task_data.updated_by or complete_existing_task.get("owner_id", "system")
-                
-                # Check if the user is a staff member
-                if is_staff_member(updated_by):
-                    # Staff members need approval - change status to "Pending Approval" instead of "Completed"
-                    update_data["status"] = "Pending Approval"
-                    update_data["pending_approval"] = True
-                    update_data["approval_requested_by"] = updated_by
-                    update_data["approval_requested_at"] = datetime.now(timezone.utc).isoformat()
-                    
-                    print(f"⏳ Staff member {updated_by} requesting approval for task {task_id}")
-                    print(f"   Status changed from '{old_status}' to 'Pending Approval'")
-                else:
-                    # Manager/Director can mark as completed directly
-                    update_data["completed_date"] = date.today().isoformat()  # YYYY-MM-DD format
-                    update_data["pending_approval"] = False  # Ensure this is false for manager completions
-                    print(f"✅ Manager/Director {updated_by} marked task {task_id} as completed, setting completed_date to {update_data['completed_date']}")
+                # Set completed_date when task is marked as completed
+                update_data["completed_date"] = date.today().isoformat()  # YYYY-MM-DD format
+                print(f"✅ Task {task_id} marked as completed, setting completed_date to {update_data['completed_date']}")
             
-            # If task status is changed FROM completed to something else, clear completed_date and approval flags
+            # If task status is changed FROM completed to something else, clear completed_date
             elif old_status == "Completed" and new_status != "Completed":
                 update_data["completed_date"] = None
-                update_data["pending_approval"] = False
-                update_data["approval_requested_by"] = None
-                update_data["approval_requested_at"] = None
-                update_data["approved_by"] = None
-                update_data["approved_at"] = None
-                print(f"🔄 Task {task_id} status changed from Completed to {new_status}, clearing completed_date and approval flags")
-            
-            # If task status is changed FROM "Pending Approval" to something else (rejection case)
-            elif old_status == "Pending Approval" and new_status != "Pending Approval":
-                update_data["completed_date"] = None
-                update_data["pending_approval"] = False
-                update_data["approval_requested_by"] = None
-                update_data["approval_requested_at"] = None
-                print(f"🔄 Task {task_id} status changed from Pending Approval to {new_status}, clearing approval flags")
+                print(f"🔄 Task {task_id} status changed from Completed to {new_status}, clearing completed_date")
 
         # Update in database
         response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
