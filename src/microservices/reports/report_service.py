@@ -212,12 +212,13 @@ def fetch_user_info(user_id: str) -> Dict[str, str]:
         return {'name': 'Unknown', 'department': 'N/A'}
 
 
-def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
+def fetch_project_report_data(project_id: str, requesting_user_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Fetch and prepare project report data for preview or PDF generation.
 
     Args:
         project_id: The project ID to generate report for
+        requesting_user_id: The user ID of the person generating the report
 
     Returns:
         Dictionary containing all report data
@@ -386,6 +387,39 @@ def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
         # Calculate overdue count
         overdue_count = len(task_groups.get('Overdue', []))
 
+        # Separate tasks into "My Tasks" and "Other Tasks" if requesting_user_id is provided
+        my_tasks = []
+        other_tasks = []
+        requesting_user_name = None
+
+        if requesting_user_id:
+            # Get requesting user info
+            requesting_user_info = fetch_user_info(requesting_user_id)
+            requesting_user_name = requesting_user_info['name']
+
+            # Parse collaborators if they're JSON string
+            for task in tasks:
+                task_owner_id = task.get('owner_id')
+                task_collaborators = task.get('collaborators', [])
+
+                # Handle collaborators as JSON string
+                if isinstance(task_collaborators, str):
+                    try:
+                        task_collaborators = json.loads(task_collaborators)
+                    except:
+                        task_collaborators = []
+
+                # Check if user owns or collaborates on this task
+                is_user_task = (
+                    task_owner_id == requesting_user_id or
+                    requesting_user_id in task_collaborators
+                )
+
+                if is_user_task:
+                    my_tasks.append(task)
+                else:
+                    other_tasks.append(task)
+
         # Return structured report data
         return {
             'project': {
@@ -414,6 +448,10 @@ def fetch_project_report_data(project_id: str) -> Dict[str, Any]:
                 'Completed': task_groups['Completed'],
                 'Unassigned': task_groups['Unassigned']
             },
+            'my_tasks': my_tasks,
+            'other_tasks': other_tasks,
+            'requesting_user_name': requesting_user_name,
+            'requesting_user_id': requesting_user_id,
             'generated_at': datetime.now().strftime('%B %d, %Y at %I:%M %p')
         }
 
@@ -1114,10 +1152,17 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         elements.append(team_heading)
         elements.append(Spacer(1, 8))
 
+        requesting_user_name = report_data.get('requesting_user_name')
         team_data = [['Team Member', 'Department', 'Total Tasks', 'Completed', 'Completion Rate']]
+
         for member in report_data['team_performance']:
+            member_name = member['member']
+            # Add (me) if this is the requesting user
+            if requesting_user_name and member_name == requesting_user_name:
+                member_name = f"{member_name} (me)"
+
             team_data.append([
-                member['member'],
+                member_name,
                 member.get('department', 'N/A'),
                 str(member['total']),
                 str(member['completed']),
@@ -1147,15 +1192,111 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
 
-        # Alternating row colors
+        # Alternating row colors and highlight current user
         for row_idx in range(1, len(team_data)):
-            bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
-            team_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
-            ]))
+            member_in_row = report_data['team_performance'][row_idx - 1]['member']
+
+            # Highlight the requesting user's row in blue
+            if requesting_user_name and member_in_row == requesting_user_name:
+                team_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, row_idx), (-1, row_idx), HexColor('#dbeafe')),
+                    ('TEXTCOLOR', (0, row_idx), (-1, row_idx), HexColor('#1e40af')),
+                    ('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'),
+                ]))
+            else:
+                bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+                team_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+                ]))
 
         elements.append(team_table)
         elements.append(Spacer(1, 20))
+
+    # My Tasks and Other Tasks sections - new page
+    if report_data.get('requesting_user_id') and (report_data.get('my_tasks') or report_data.get('other_tasks')):
+        elements.append(PageBreak())
+
+        # Helper function to create task table
+        def create_task_table(task_list, title):
+            if not task_list:
+                return None
+
+            section_heading = Paragraph(title, heading_style)
+            task_data = [['Task Title', 'Assignee', 'Status', 'Priority', 'Due Date']]
+
+            for task in task_list:
+                priority = task.get('priority', 'N/A')
+                if priority != 'N/A':
+                    try:
+                        priority = f"{int(priority)}/10"
+                    except:
+                        priority = 'N/A'
+
+                due_date = task.get('due_date') or task.get('dueDate') or 'N/A'
+                if due_date != 'N/A':
+                    try:
+                        if 'T' in due_date:
+                            due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00')).strftime('%b %d, %Y')
+                        else:
+                            due_date = datetime.fromisoformat(due_date).strftime('%b %d, %Y')
+                    except:
+                        due_date = 'N/A'
+
+                task_data.append([
+                    task.get('title', 'Untitled')[:40],  # Truncate long titles
+                    (task.get('assignee_name') or task.get('owner_name') or 'Unassigned')[:20],
+                    task.get('status', 'Unknown'),
+                    priority,
+                    due_date
+                ])
+
+            task_table = Table(task_data, colWidths=[2.2*inch, 1.3*inch, 1*inch, 0.8*inch, 1.1*inch])
+            task_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+                ('TOPPADDING', (0, 0), (-1, 0), 8),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('TEXTCOLOR', (0, 1), (-1, -1), HexColor('#1e293b')),
+                ('TOPPADDING', (0, 1), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+                ('LINEBELOW', (0, 0), (-1, 0), 1.5, HexColor('#2563eb')),
+                ('INNERGRID', (0, 1), (-1, -1), 0.5, HexColor('#e2e8f0')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+
+            # Alternating row colors
+            for row_idx in range(1, len(task_data)):
+                bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+                task_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+                ]))
+
+            return [section_heading, Spacer(1, 8), task_table, Spacer(1, 20)]
+
+        # Add My Tasks section
+        my_tasks = report_data.get('my_tasks', [])
+        if my_tasks:
+            my_tasks_elements = create_task_table(my_tasks, f"My Tasks ({len(my_tasks)})")
+            if my_tasks_elements:
+                for elem in my_tasks_elements:
+                    elements.append(elem)
+
+        # Add Other Tasks section
+        other_tasks = report_data.get('other_tasks', [])
+        if other_tasks:
+            other_tasks_elements = create_task_table(other_tasks, f"Other Tasks ({len(other_tasks)})")
+            if other_tasks_elements:
+                for elem in other_tasks_elements:
+                    elements.append(elem)
 
     # Task breakdown - new page
     elements.append(PageBreak())
@@ -2300,7 +2441,8 @@ def preview_project_report():
 
     Request body:
     {
-        "project_id": "project-uuid"
+        "project_id": "project-uuid",
+        "user_id": "user-uuid" (optional)
     }
 
     Returns:
@@ -2309,12 +2451,13 @@ def preview_project_report():
     try:
         data = request.get_json()
         project_id = data.get('project_id')
+        user_id = data.get('user_id')
 
         if not project_id:
             return jsonify({"error": "project_id is required"}), 400
 
-        logger.info(f"Generating preview for project {project_id}")
-        report_data = fetch_project_report_data(project_id)
+        logger.info(f"Generating preview for project {project_id} (user: {user_id})")
+        report_data = fetch_project_report_data(project_id, user_id)
 
         return jsonify(report_data), 200
 
@@ -2334,7 +2477,8 @@ def generate_project_report_endpoint():
 
     Request body:
     {
-        "project_id": "project-uuid"
+        "project_id": "project-uuid",
+        "user_id": "user-uuid" (optional)
     }
 
     Returns:
@@ -2343,14 +2487,15 @@ def generate_project_report_endpoint():
     try:
         data = request.get_json()
         project_id = data.get('project_id')
+        user_id = data.get('user_id')
 
         if not project_id:
             return jsonify({"error": "project_id is required"}), 400
 
-        logger.info(f"Generating PDF report for project {project_id}")
+        logger.info(f"Generating PDF report for project {project_id} (user: {user_id})")
 
         # Fetch project report data
-        report_data = fetch_project_report_data(project_id)
+        report_data = fetch_project_report_data(project_id, user_id)
 
         # Generate PDF
         pdf_buffer = generate_project_pdf_report(report_data)

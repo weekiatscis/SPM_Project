@@ -1016,7 +1016,8 @@ export default {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            project_id: project.value.project_id
+            project_id: project.value.project_id,
+            user_id: authStore.user?.user_id
           })
         })
 
@@ -1062,7 +1063,8 @@ export default {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            project_id: project.value.project_id
+            project_id: project.value.project_id,
+            user_id: authStore.user?.user_id
           })
         })
 

@@ -105,6 +105,31 @@
           :pagination="false"
           size="small"
           class="team-table"
+          :row-class-name="(record) => record.member === reportData.requesting_user_name ? 'highlight-current-user' : ''"
+        />
+      </div>
+
+      <!-- My Tasks Section -->
+      <div class="report-section" v-if="reportData.my_tasks && reportData.my_tasks.length > 0">
+        <h2 class="section-title">My Tasks ({{ reportData.my_tasks.length }})</h2>
+        <a-table
+          :dataSource="reportData.my_tasks"
+          :columns="taskColumns"
+          :pagination="false"
+          size="small"
+          class="task-table"
+        />
+      </div>
+
+      <!-- Other Tasks Section -->
+      <div class="report-section" v-if="reportData.other_tasks && reportData.other_tasks.length > 0">
+        <h2 class="section-title">Other Tasks ({{ reportData.other_tasks.length }})</h2>
+        <a-table
+          :dataSource="reportData.other_tasks"
+          :columns="taskColumns"
+          :pagination="false"
+          size="small"
+          class="task-table"
         />
       </div>
 
@@ -300,7 +325,14 @@ const teamColumns = [
   {
     title: 'Team Member',
     dataIndex: 'member',
-    key: 'member'
+    key: 'member',
+    customRender: ({ record }) => {
+      const requesting_user_name = props.reportData?.requesting_user_name
+      if (requesting_user_name && record.member === requesting_user_name) {
+        return `${record.member} (me)`
+      }
+      return record.member
+    }
   },
   {
     title: 'Department',
@@ -590,6 +622,16 @@ const handleExportPDF = () => {
 .team-table,
 .task-table {
   margin-top: 8px;
+}
+
+/* Highlight current user row in team performance table */
+.team-table :deep(.highlight-current-user) {
+  background-color: #dbeafe !important;
+}
+
+.team-table :deep(.highlight-current-user td) {
+  color: #1e40af !important;
+  font-weight: 600 !important;
 }
 
 .task-groups :deep(.ant-collapse-item) {
