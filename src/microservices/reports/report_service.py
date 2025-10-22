@@ -45,8 +45,9 @@ try:
     # Try multiple possible .env locations
     env_paths = [
         os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'),  # Original path
-        os.path.join(os.path.dirname(__file__), '.env'),  # Same directory
-        '.env',  # Current working directory
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '.env'),  # Absolute path version
+        os.path.join(os.getcwd(), '.env'),  # Current working directory
+        '.env',  # Current working directory (relative)
         '/app/.env'  # Docker working directory
     ]
     
@@ -59,7 +60,9 @@ try:
             break
     
     if not env_loaded:
-        print("⚠️  No .env file found, using system environment variables")
+        print("⚠️  No .env file found in any location, using system environment variables")
+        # List the paths that were tried for debugging
+        print(f"Searched paths: {env_paths}")
         load_dotenv()  # Load from system environment
         
 except Exception as e:
@@ -67,9 +70,9 @@ except Exception as e:
     print("Using system environment variables instead")
 
 # Environment variables
-TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://task-service:8080")
-PROJECT_SERVICE_URL = os.getenv("PROJECT_SERVICE_URL", "http://project-service:8082")
-USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user-service:8081")
+TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://localhost:8080")
+PROJECT_SERVICE_URL = os.getenv("PROJECT_SERVICE_URL", "http://localhost:8082")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
 # Add after TASK_SERVICE_URL line
 SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -133,6 +136,9 @@ def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
                 'due_date': task.get('due_date', task.get('dueDate')),  # Handle both formats
                 'description': task.get('description', ''),
                 'owner_id': task.get('owner_id', task.get('ownerId')),
+                'priority': task.get('priority', 5),  # Default priority if not set
+                'project_id': task.get('project_id'),
+                'collaborators': task.get('collaborators', []),
             }
             
             # Status filter - check if task status is in the list of selected statuses
@@ -1373,6 +1379,8 @@ def validate_report_access(requesting_user: Dict[str, Any], report_data: Dict[st
     report_type = report_data.get('report_type', 'individual')
     
     logger.info(f"Validating access - User: {requesting_user.get('name')} ({user_role}), Report: {report_type}")
+    logger.info(f"User details: {requesting_user}")
+    logger.info(f"Report data: {report_data}")
     
     # HR has access to ALL report types and can generate reports for anyone
     if user_role == UserRole.HR.value:
@@ -1457,6 +1465,18 @@ def validate_report_access(requesting_user: Dict[str, Any], report_data: Dict[st
         else:
             logger.warning(f"Staff cannot generate {report_type} reports")
             return False
+
+    # Handle case where user might not have a role set or has an unknown role
+    elif not user_role:
+        logger.warning("User has no role defined - checking if it's a basic individual report")
+        # Allow individual reports if the user is requesting their own data
+        if report_type == ReportType.INDIVIDUAL.value:
+            target_user_id = report_data.get('user_id')
+            if target_user_id == requesting_user.get('user_id'):
+                logger.info("User with no role generating own individual report - access granted")
+                return True
+        logger.warning("User with no role cannot generate reports except their own individual report")
+        return False
     
     logger.warning(f"Unknown role or unauthorized access: {user_role}")
     return False
@@ -1473,6 +1493,614 @@ def fetch_tasks_for_multiple_users(user_ids: List[str], start_date: Optional[str
         except Exception as e:
             logger.warning(f"Failed to fetch tasks for user {user_id}: {e}")
     return all_tasks
+
+def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: str, 
+                               data: Dict[str, Any], start_date: Optional[str] = None,
+                               end_date: Optional[str] = None, 
+                               status_filter: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Generate preview data for reports with enhanced chart information."""
+    
+    user_role = requesting_user.get('role')
+    requesting_user_id = requesting_user.get('user_id')
+    
+    preview_data = {
+        'report_type': report_type,
+        'user_role': user_role,
+        'generated_by': requesting_user.get('name', 'Unknown'),
+        'generated_at': datetime.now().isoformat(),
+        'filters': {
+            'start_date': start_date,
+            'end_date': end_date,
+            'status_filter': status_filter
+        },
+        'charts': [],
+        'summary': {},
+        'detailed_data': {}
+    }
+    
+    if report_type == ReportType.INDIVIDUAL.value:
+        # Individual report
+        target_user_id = data.get('user_id', requesting_user_id)
+        target_user = get_user_details(target_user_id) if target_user_id != requesting_user_id else requesting_user
+        
+        tasks = fetch_tasks_for_user(target_user_id, start_date, end_date, status_filter)
+        
+        # Calculate individual metrics
+        task_status_count = Counter([task.get('status', 'Unknown') for task in tasks])
+        priority_count = Counter([task.get('priority', 'Unknown') for task in tasks])
+        
+        preview_data['summary'] = {
+            'target_user': target_user.get('name', 'Unknown') if target_user else 'Unknown',
+            'total_tasks': len(tasks),
+            'completed_tasks': task_status_count.get('Completed', 0),
+            'in_progress_tasks': task_status_count.get('In Progress', 0),
+            'pending_tasks': task_status_count.get('Pending', 0),
+            'overdue_tasks': len([t for t in tasks if is_task_overdue(t)])
+        }
+        
+        # Charts for individual report
+        preview_data['charts'] = [
+            {
+                'type': 'pie',
+                'title': 'Task Status Distribution',
+                'data': dict(task_status_count)
+            },
+            {
+                'type': 'bar',
+                'title': 'Task Priority Distribution',
+                'data': dict(priority_count)
+            }
+        ]
+        
+        preview_data['detailed_data']['tasks'] = tasks[:10]  # First 10 tasks for preview
+        
+    elif report_type == ReportType.TEAM.value:
+        # Team report with member analysis
+        tasks_by_scope = {}
+        team_members_data = []
+        
+        if user_role == UserRole.MANAGER.value:
+            # Manager team report
+            team_members = get_team_members(requesting_user.get('department'), requesting_user_id) or []
+            member_ids = {requesting_user_id}
+            member_ids.update({member['user_id'] for member in team_members if member.get('user_id')})
+            
+            # Get individual task data for each member
+            for member_id in member_ids:
+                member = get_user_details(member_id)
+                if member:
+                    member_tasks = fetch_tasks_for_user(member_id, start_date, end_date, status_filter)
+                    task_status_count = Counter([task.get('status', 'Unknown') for task in member_tasks])
+                    
+                    team_members_data.append({
+                        'user_id': member_id,
+                        'name': member.get('name', 'Unknown'),
+                        'total_tasks': len(member_tasks),
+                        'completed': task_status_count.get('Completed', 0),
+                        'in_progress': task_status_count.get('In Progress', 0),
+                        'pending': task_status_count.get('Pending', 0),
+                        'overdue': len([t for t in member_tasks if is_task_overdue(t)])
+                    })
+            
+            team_label = f"{requesting_user.get('name', 'Unknown')}'s Team"
+            team_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
+            tasks_by_scope[team_label] = team_tasks
+            
+        elif user_role in (UserRole.DIRECTOR.value, UserRole.HR.value):
+            # Director/HR team report
+            selected_teams = data.get('teams', [])
+            if isinstance(selected_teams, str):
+                selected_teams = [selected_teams]
+                
+            if not selected_teams:
+                raise ValueError("Team selection is required")
+                
+            all_users = supabase.table('user').select('*').execute().data or []
+            
+            for team_name in selected_teams:
+                team_members = []
+                team_lead_id = None
+                
+                for user in all_users:
+                    superior_id = user.get('superior')
+                    if not superior_id:
+                        continue
+                        
+                    superior_user = get_user_details(superior_id)
+                    if not superior_user or superior_user.get('name') != team_name:
+                        continue
+                        
+                    if user_role == UserRole.DIRECTOR.value and user.get('department') != requesting_user.get('department'):
+                        continue
+                        
+                    team_members.append(user)
+                    team_lead_id = superior_id
+                
+                if team_lead_id:
+                    lead_user = get_user_details(team_lead_id)
+                    if lead_user:
+                        team_members.append(lead_user)
+                
+                unique_members = {member['user_id']: member for member in team_members if member.get('user_id')}
+                user_ids = list(unique_members.keys())
+                
+                if user_ids:
+                    team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                    tasks_by_scope[team_name] = team_tasks
+                    
+                    # Get individual member data for this team
+                    team_member_data = []
+                    for member_id in user_ids:
+                        member = get_user_details(member_id)
+                        if member:
+                            member_tasks = fetch_tasks_for_user(member_id, start_date, end_date, status_filter)
+                            task_status_count = Counter([task.get('status', 'Unknown') for task in member_tasks])
+                            
+                            team_member_data.append({
+                                'user_id': member_id,
+                                'name': member.get('name', 'Unknown'),
+                                'total_tasks': len(member_tasks),
+                                'completed': task_status_count.get('Completed', 0),
+                                'in_progress': task_status_count.get('In Progress', 0),
+                                'pending': task_status_count.get('Pending', 0),
+                                'overdue': len([t for t in member_tasks if is_task_overdue(t)])
+                            })
+                    
+                    team_members_data.extend(team_member_data)
+        
+        # Generate team summary and charts
+        total_completed = sum([member['completed'] for member in team_members_data])
+        
+        # Pie chart data for team contribution
+        contribution_data = {member['name']: member['completed'] for member in team_members_data if member['completed'] > 0}
+        
+        # Bar chart data for task status comparison
+        member_comparison_data = {
+            'members': [member['name'] for member in team_members_data],
+            'completed': [member['completed'] for member in team_members_data],
+            'in_progress': [member['in_progress'] for member in team_members_data],
+            'pending': [member['pending'] for member in team_members_data],
+            'overdue': [member['overdue'] for member in team_members_data]
+        }
+        
+        preview_data['summary'] = {
+            'team_name': list(tasks_by_scope.keys())[0] if tasks_by_scope else 'Team',
+            'total_members': len(team_members_data),
+            'total_tasks': sum([len(tasks) for tasks in tasks_by_scope.values()]),
+            'total_completed': total_completed
+        }
+        
+        preview_data['charts'] = [
+            {
+                'type': 'pie',
+                'title': 'Team Contribution (Completed Tasks)',
+                'data': contribution_data
+            },
+            {
+                'type': 'bar',
+                'title': 'Task Status by Team Member',
+                'data': member_comparison_data
+            }
+        ]
+        
+        preview_data['detailed_data'] = {
+            'team_members': team_members_data,
+            'tasks_by_scope': {scope: tasks[:5] for scope, tasks in tasks_by_scope.items()}  # First 5 tasks per scope
+        }
+        
+    elif report_type == ReportType.DEPARTMENT.value:
+        # Department report with team comparisons
+        if user_role == UserRole.DIRECTOR.value:
+            department = requesting_user.get('department')
+            teams = data.get('teams', [])
+            
+            team_comparison_data = []
+            tasks_by_team = {}
+            
+            if teams:
+                # Specific teams requested
+                all_users = supabase.table('user').select('*').execute().data or []
+                
+                for team in teams:
+                    team_members = []
+                    team_lead_user = None
+                    
+                    for user in all_users:
+                        superior_id = user.get('superior')
+                        if not superior_id:
+                            continue
+                            
+                        superior_user = get_user_details(superior_id)
+                        if superior_user and superior_user.get('name') == team and user.get('department') == department:
+                            team_members.append(user)
+                            team_lead_user = superior_user
+                    
+                    unique_members = {member['user_id']: member for member in team_members if member.get('user_id')}
+                    
+                    if team_lead_user and team_lead_user.get('user_id'):
+                        unique_members[team_lead_user['user_id']] = team_lead_user
+                    
+                    user_ids = list(unique_members.keys())
+                    
+                    if user_ids:
+                        team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                        tasks_by_team[team] = team_tasks
+                        
+                        metrics = calculate_team_metrics(team_tasks)
+                        team_comparison_data.append({
+                            'team_name': team,
+                            'total_tasks': metrics['total_tasks'],
+                            'completed_tasks': metrics['completed_tasks'],
+                            'completion_rate': metrics['completion_rate'],
+                            'overdue_tasks': metrics['overdue_tasks']
+                        })
+            else:
+                # All teams in department
+                all_dept_members = get_team_members(department)
+                teams_dict = {}
+                
+                for member in all_dept_members:
+                    superior = member.get('superior', 'No Team')
+                    if superior not in teams_dict:
+                        teams_dict[superior] = []
+                    teams_dict[superior].append(member)
+                
+                for team_lead, members in teams_dict.items():
+                    unique_ids = {member['user_id'] for member in members if member.get('user_id')}
+                    
+                    if team_lead != 'No Team':
+                        team_lead_user = get_user_details(team_lead)
+                        if team_lead_user and team_lead_user.get('department') == department:
+                            unique_ids.add(team_lead_user['user_id'])
+                    
+                    user_ids = list(unique_ids)
+                    
+                    if user_ids:
+                        team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                        team_lead_name = 'Unassigned'
+                        
+                        if team_lead != 'No Team':
+                            team_lead_user = get_user_details(team_lead)
+                            team_lead_name = team_lead_user.get('name', team_lead) if team_lead_user else team_lead
+                        
+                        tasks_by_team[team_lead_name] = team_tasks
+                        
+                        metrics = calculate_team_metrics(team_tasks)
+                        team_comparison_data.append({
+                            'team_name': team_lead_name,
+                            'total_tasks': metrics['total_tasks'],
+                            'completed_tasks': metrics['completed_tasks'],
+                            'completion_rate': metrics['completion_rate'],
+                            'overdue_tasks': metrics['overdue_tasks']
+                        })
+            
+            # Generate department charts
+            completion_rates = {team['team_name']: team['completion_rate'] for team in team_comparison_data}
+            task_counts = {
+                'teams': [team['team_name'] for team in team_comparison_data],
+                'total': [team['total_tasks'] for team in team_comparison_data],
+                'completed': [team['completed_tasks'] for team in team_comparison_data],
+                'overdue': [team['overdue_tasks'] for team in team_comparison_data]
+            }
+            
+            preview_data['summary'] = {
+                'department': department,
+                'total_teams': len(team_comparison_data),
+                'total_tasks': sum([team['total_tasks'] for team in team_comparison_data]),
+                'avg_completion_rate': sum([team['completion_rate'] for team in team_comparison_data]) / len(team_comparison_data) if team_comparison_data else 0
+            }
+            
+            preview_data['charts'] = [
+                {
+                    'type': 'pie',
+                    'title': 'Team Completion Rates',
+                    'data': completion_rates
+                },
+                {
+                    'type': 'bar',
+                    'title': 'Team Task Comparison',
+                    'data': task_counts
+                }
+            ]
+            
+            preview_data['detailed_data'] = {
+                'team_comparison': team_comparison_data,
+                'tasks_by_team': {team: tasks[:3] for team, tasks in tasks_by_team.items()}
+            }
+            
+        elif user_role == UserRole.HR.value:
+            # HR department report
+            selected_departments = data.get('departments') or []
+            if isinstance(selected_departments, str):
+                selected_departments = [selected_departments]
+                
+            dept_comparison_data = []
+            data_by_scope = {}
+            
+            for dept in selected_departments:
+                dept_members = get_team_members(dept)
+                member_ids = {member['user_id'] for member in dept_members if member.get('user_id')}
+                
+                if member_ids:
+                    dept_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
+                    data_by_scope[dept] = dept_tasks
+                    
+                    metrics = calculate_team_metrics(dept_tasks)
+                    dept_comparison_data.append({
+                        'department': dept,
+                        'total_tasks': metrics['total_tasks'],
+                        'completed_tasks': metrics['completed_tasks'],
+                        'completion_rate': metrics['completion_rate'],
+                        'overdue_tasks': metrics['overdue_tasks']
+                    })
+            
+            # Generate HR department charts
+            completion_rates = {dept['department']: dept['completion_rate'] for dept in dept_comparison_data}
+            task_counts = {
+                'departments': [dept['department'] for dept in dept_comparison_data],
+                'total': [dept['total_tasks'] for dept in dept_comparison_data],
+                'completed': [dept['completed_tasks'] for dept in dept_comparison_data],
+                'overdue': [dept['overdue_tasks'] for dept in dept_comparison_data]
+            }
+            
+            preview_data['summary'] = {
+                'scope': 'Multi-Department',
+                'total_departments': len(dept_comparison_data),
+                'total_tasks': sum([dept['total_tasks'] for dept in dept_comparison_data]),
+                'avg_completion_rate': sum([dept['completion_rate'] for dept in dept_comparison_data]) / len(dept_comparison_data) if dept_comparison_data else 0
+            }
+            
+            preview_data['charts'] = [
+                {
+                    'type': 'pie',
+                    'title': 'Department Completion Rates',
+                    'data': completion_rates
+                },
+                {
+                    'type': 'bar',
+                    'title': 'Department Task Comparison',
+                    'data': task_counts
+                }
+            ]
+            
+            preview_data['detailed_data'] = {
+                'department_comparison': dept_comparison_data
+            }
+    
+    elif report_type == ReportType.ORGANIZATION.value and user_role == UserRole.HR.value:
+        # HR organization-wide report
+        scope_type = data.get('scope_type', 'departments')
+        scope_values = data.get('scope_values', [])
+        
+        org_comparison_data = []
+        data_by_scope = {}
+        
+        if scope_type == 'departments':
+            departments = scope_values if scope_values else get_all_departments()
+            
+            for dept in departments:
+                dept_members = get_team_members(dept)
+                user_ids = [member['user_id'] for member in dept_members]
+                dept_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                data_by_scope[dept] = dept_tasks
+                
+                metrics = calculate_team_metrics(dept_tasks)
+                org_comparison_data.append({
+                    'scope_name': dept,
+                    'total_tasks': metrics['total_tasks'],
+                    'completed_tasks': metrics['completed_tasks'],
+                    'completion_rate': metrics['completion_rate'],
+                    'overdue_tasks': metrics['overdue_tasks']
+                })
+        
+        # Generate organization charts
+        completion_rates = {item['scope_name']: item['completion_rate'] for item in org_comparison_data}
+        task_counts = {
+            'scopes': [item['scope_name'] for item in org_comparison_data],
+            'total': [item['total_tasks'] for item in org_comparison_data],
+            'completed': [item['completed_tasks'] for item in org_comparison_data],
+            'overdue': [item['overdue_tasks'] for item in org_comparison_data]
+        }
+        
+        preview_data['summary'] = {
+            'scope_type': scope_type,
+            'total_scopes': len(org_comparison_data),
+            'total_tasks': sum([item['total_tasks'] for item in org_comparison_data]),
+            'avg_completion_rate': sum([item['completion_rate'] for item in org_comparison_data]) / len(org_comparison_data) if org_comparison_data else 0
+        }
+        
+        preview_data['charts'] = [
+            {
+                'type': 'pie',
+                'title': f'{scope_type.title()} Completion Rates',
+                'data': completion_rates
+            },
+            {
+                'type': 'bar',
+                'title': f'{scope_type.title()} Task Comparison',
+                'data': task_counts
+            }
+        ]
+        
+        preview_data['detailed_data'] = {
+            'scope_comparison': org_comparison_data
+        }
+    
+    return preview_data
+
+def is_task_overdue(task: Dict[str, Any]) -> bool:
+    """Check if a task is overdue."""
+    try:
+        due_date_str = task.get('due_date')
+        if not due_date_str:
+            return False
+            
+        # Parse due date
+        due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+        current_date = datetime.now(timezone.utc)
+        
+        # Task is overdue if due date has passed and status is not completed
+        status = task.get('status', '').lower()
+        return due_date < current_date and status != 'completed'
+    except Exception:
+        return False
+
+def get_options_for_report_type(requesting_user: Dict[str, Any], report_type: str):
+    """Get specific options based on report type."""
+    try:
+        role = requesting_user.get('role')
+        department = requesting_user.get('department')
+        user_id = requesting_user.get('user_id')
+        
+        options = []
+        
+        if report_type == 'individual':
+            # Get users that this role can generate reports for
+            if role == UserRole.MANAGER.value:
+                # Manager can report on their team members + themselves
+                team_members = get_team_members(department, user_id) or []
+                # Add self
+                options.append({
+                    'value': user_id,
+                    'label': f"{requesting_user.get('name', 'Unknown')} (You)"
+                })
+                # Add team members
+                for member in team_members:
+                    if member.get('user_id') != user_id:  # Don't duplicate self
+                        options.append({
+                            'value': member.get('user_id'),
+                            'label': member.get('name', 'Unknown User')
+                        })
+                        
+            elif role == UserRole.DIRECTOR.value:
+                # Director can report on anyone in their department
+                dept_users_response = supabase.table('user').select('user_id, name, email').eq('department', department).eq('is_active', True).execute()
+                dept_users = dept_users_response.data or []
+                
+                for user in dept_users:
+                    label = user.get('name', 'Unknown User')
+                    if user.get('user_id') == user_id:
+                        label += " (You)"
+                    options.append({
+                        'value': user.get('user_id'),
+                        'label': label
+                    })
+                    
+            elif role == UserRole.HR.value:
+                # HR can report on anyone
+                all_users_response = supabase.table('user').select('user_id, name, email, department').eq('is_active', True).execute()
+                all_users = all_users_response.data or []
+                
+                for user in all_users:
+                    label = f"{user.get('name', 'Unknown User')}"
+                    if user.get('department'):
+                        label += f" ({user.get('department')})"
+                    if user.get('user_id') == user_id:
+                        label += " (You)"
+                    options.append({
+                        'value': user.get('user_id'),
+                        'label': label
+                    })
+                    
+        elif report_type == 'team':
+            # Get teams that this role can generate reports for
+            if role == UserRole.DIRECTOR.value:
+                # Director can report on teams in their department
+                dept_members = get_team_members(department) or []
+                superiors = list(set([member.get('superior') for member in dept_members if member.get('superior')]))
+                
+                for superior_id in superiors:
+                    superior_user = get_user_details(superior_id)
+                    if superior_user:
+                        options.append({
+                            'value': superior_id,
+                            'label': f"{superior_user.get('name', 'Unknown')}'s Team"
+                        })
+                        
+            elif role == UserRole.HR.value:
+                # HR can report on any team
+                all_users_response = supabase.table('user').select('*').execute()
+                all_users = all_users_response.data or []
+                superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
+                
+                for superior_id in superiors:
+                    superior_user = get_user_details(superior_id)
+                    if superior_user:
+                        options.append({
+                            'value': superior_id,
+                            'label': f"{superior_user.get('name', 'Unknown')}'s Team ({superior_user.get('department', 'Unknown Dept')})"
+                        })
+                        
+        elif report_type == 'department':
+            # Only HR can generate department reports
+            if role == UserRole.HR.value:
+                departments = get_all_departments()
+                for dept in departments:
+                    options.append({
+                        'value': dept,
+                        'label': dept
+                    })
+        
+        return jsonify({'options': options}), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting options for report type {report_type}: {e}")
+        return jsonify({"error": "Failed to get report options"}), 500
+
+
+def get_options_for_scope_type(requesting_user: Dict[str, Any], scope_type: str):
+    """Get options for HR organization report scope types."""
+    try:
+        role = requesting_user.get('role')
+        
+        # Only HR can access organization reports
+        if role != UserRole.HR.value:
+            return jsonify({"error": "Unauthorized"}), 403
+            
+        options = []
+        
+        if scope_type == 'departments':
+            departments = get_all_departments()
+            for dept in departments:
+                options.append({
+                    'value': dept,
+                    'label': dept
+                })
+                
+        elif scope_type == 'teams':
+            # Get all teams (managers with subordinates)
+            all_users_response = supabase.table('user').select('*').execute()
+            all_users = all_users_response.data or []
+            superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
+            
+            for superior_id in superiors:
+                superior_user = get_user_details(superior_id)
+                if superior_user:
+                    options.append({
+                        'value': superior_id,
+                        'label': f"{superior_user.get('name', 'Unknown')}'s Team ({superior_user.get('department', 'Unknown Dept')})"
+                    })
+                    
+        elif scope_type == 'individuals':
+            # Get all users
+            all_users_response = supabase.table('user').select('user_id, name, email, department').eq('is_active', True).execute()
+            all_users = all_users_response.data or []
+            
+            for user in all_users:
+                label = f"{user.get('name', 'Unknown User')}"
+                if user.get('department'):
+                    label += f" ({user.get('department')})"
+                options.append({
+                    'value': user.get('user_id'),
+                    'label': label
+                })
+        
+        return jsonify({'options': options}), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting options for scope type {scope_type}: {e}")
+        return jsonify({"error": "Failed to get scope options"}), 500
+
 
 def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Calculate team-level metrics for director reports."""
@@ -1880,9 +2508,12 @@ def get_available_users():
 
 @app.route("/report-options", methods=["GET"])
 def get_report_options():
-    """Get available report options based on user role."""
+    """Get available report options based on user role and report type."""
     try:
         user_id = request.args.get('user_id')
+        report_type = request.args.get('report_type')
+        scope_type = request.args.get('scope_type')
+        
         if not user_id:
             return jsonify({"error": "user_id is required"}), 400
             
@@ -1893,6 +2524,18 @@ def get_report_options():
         role = user.get('role')
         department = user.get('department')
         
+        # Handle specific report type requests
+        logger.info(f"Debug: report_type={report_type}, scope_type={scope_type}")
+        if report_type:
+            logger.info(f"Calling get_options_for_report_type with user={user.get('name')} and report_type={report_type}")
+            return get_options_for_report_type(user, report_type)
+            
+        # Handle scope type requests for HR organization reports
+        if scope_type:
+            logger.info(f"Calling get_options_for_scope_type with user={user.get('name')} and scope_type={scope_type}")
+            return get_options_for_scope_type(user, scope_type)
+        
+        # Default: return available report types and general options
         options = {
             'user_role': role,
             'available_report_types': [],
@@ -1929,7 +2572,8 @@ def get_report_options():
             options['departments'] = get_all_departments()
             
             # Get all teams across organization
-            all_users = supabase.table('user').select('*').execute().data
+            all_users_response = supabase.table('user').select('*').execute()
+            all_users = all_users_response.data or []
             superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
             team_names = []
             
@@ -1945,6 +2589,7 @@ def get_report_options():
     except Exception as e:
         logger.error(f"Error fetching report options: {e}")
         return jsonify({"error": "Failed to fetch report options"}), 500
+    """Get specific options based on report type."""
 
 @app.route("/generate-report", methods=["POST"])
 def generate_report():
@@ -1961,8 +2606,8 @@ def generate_report():
         logger.info(f"Requesting user ID: {requesting_user_id}")
         
         if not requesting_user_id:
-            logger.error("No requesting_user_id provided")
-            return jsonify({"error": "requesting_user_id is required"}), 400
+            logger.error("No requesting_user_id or user_id provided")
+            return jsonify({"error": "user_id is required"}), 400
             
         requesting_user = get_user_details(requesting_user_id)
         logger.info(f"Requesting user details: {requesting_user}")
@@ -1971,11 +2616,18 @@ def generate_report():
             logger.error(f"User not found for ID: {requesting_user_id}")
             return jsonify({"error": "User not found"}), 404
         
-        report_type = data.get('report_type', 'individual')
+        report_type = data.get('report_type', 'individual')  # Default to individual for basic reports
         logger.info(f"Report type: {report_type}")
         
         # Validate access
-        if not validate_report_access(requesting_user, data):
+        validation_data = {
+            'report_type': report_type,
+            'user_id': requesting_user_id,  # For individual reports, this is the target user
+            'department': requesting_user.get('department'),
+            'teams': data.get('teams', [])
+        }
+        
+        if not validate_report_access(requesting_user, validation_data):
             logger.error("Access validation failed")
             return jsonify({"error": "Unauthorized to generate this report type"}), 403
         
@@ -2293,6 +2945,62 @@ def generate_report():
         return jsonify({"error": "Failed to generate report", "details": str(e)}), 500
 
 
+@app.route("/preview-report", methods=["POST"])
+def preview_report():
+    """
+    Generate regular report data for preview (returns JSON).
+    
+    Request body - same format as generate-report endpoint
+    
+    Returns:
+        JSON with report data and chart information
+    """
+    try:
+        logger.info("=== PREVIEW REPORT START ===")
+        data = request.get_json()
+        logger.info(f"Preview request data: {data}")
+        
+        # Get requesting user details
+        requesting_user_id = data.get('requesting_user_id') or data.get('user_id')
+        
+        if not requesting_user_id:
+            return jsonify({"error": "user_id is required"}), 400
+            
+        requesting_user = get_user_details(requesting_user_id)
+        
+        if not requesting_user:
+            return jsonify({"error": "User not found"}), 404
+        
+        report_type = data.get('report_type', 'individual')
+        
+        # Validate access
+        validation_data = {
+            'report_type': report_type,
+            'user_id': requesting_user_id,
+            'department': requesting_user.get('department'),
+            'teams': data.get('teams', [])
+        }
+        
+        if not validate_report_access(requesting_user, validation_data):
+            return jsonify({"error": "Unauthorized to generate this report type"}), 403
+        
+        # Common parameters
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        status_filter = data.get('status_filter', ['All'])
+        user_role = requesting_user.get('role')
+        
+        # Generate preview data based on report type
+        preview_data = generate_report_preview_data(
+            requesting_user, report_type, data, start_date, end_date, status_filter
+        )
+        
+        return jsonify(preview_data), 200
+        
+    except Exception as e:
+        logger.error(f"Error generating report preview: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate preview", "details": str(e)}), 500
+
 @app.route("/preview-project-report", methods=["POST"])
 def preview_project_report():
     """
@@ -2378,34 +3086,53 @@ def generate_project_report_endpoint():
 
 @app.route("/debug-users", methods=["GET"])
 def debug_users():
-    """Debug user relationships."""
+    """Debug endpoint to check user data and report permissions."""
     try:
         user_id = request.args.get('user_id')
         if not user_id:
-            return jsonify({"error": "user_id required"}), 400
+            # Return sample users if no user_id provided
+            response = supabase.table('user').select('user_id, name, role, department').limit(5).execute()
+            return jsonify({
+                "message": "Provide user_id parameter to test specific user",
+                "sample_users": response.data or [],
+                "environment": {
+                    'SUPABASE_URL': bool(SUPABASE_URL),
+                    'TASK_SERVICE_URL': TASK_SERVICE_URL,
+                    'USER_SERVICE_URL': USER_SERVICE_URL
+                }
+            }), 200
             
         user = get_user_details(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
             
-        result = {
-            "user": user,
-            "department_members": [],
-            "subordinates": []
+        # Test validation for individual report
+        test_data = {
+            'report_type': 'individual',
+            'user_id': user_id,
+            'department': user.get('department'),
+            'teams': []
         }
         
-        # Get all users in same department
-        dept_members = get_team_members(user.get('department'))
-        result["department_members"] = dept_members
+        has_access = validate_report_access(user, test_data)
         
-        # Get direct subordinates
-        subordinates = get_team_members(user.get('department'), user_id)
-        result["subordinates"] = subordinates
+        result = {
+            "user": user,
+            "can_generate_individual_report": has_access,
+            "test_validation_data": test_data,
+            "role_enum_values": [role.value for role in UserRole],
+            "user_role_match": user.get('role') in [role.value for role in UserRole]
+        }
+        
+        # Get department members if applicable
+        if user.get('department'):
+            dept_members = get_team_members(user.get('department'))
+            result["department_members_count"] = len(dept_members) if dept_members else 0
         
         return jsonify(result), 200
         
     except Exception as e:
-        logger.error(f"Error in debug: {e}")
+        logger.error(f"Debug endpoint error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/debug-tasks", methods=["GET"])

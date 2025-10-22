@@ -8,18 +8,107 @@
     </template>
 
     <div class="report-content">
-      <div class="filters-wrapper">
-        <!-- Date Range Picker -->
+      <!-- User Role Info -->
+      <div v-if="currentUser" class="role-info">
+        <a-tag :color="getRoleColor(currentUser.role)" class="role-tag">
+          {{ currentUser.role || 'Staff' }}
+        </a-tag>
+        <span class="department-info">
+          {{ currentUser.department || 'No Department' }}
+        </span>
+      </div>
+
+      <!-- Report Type Selection (for non-Staff users) -->
+      <div v-if="canSelectReportType" class="filter-section">
+        <label class="filter-label">Report Type</label>
+        <a-select
+          v-model:value="reportType"
+          :style="{ width: '100%' }"
+          :disabled="isGenerating"
+          @change="onReportTypeChange"
+        >
+          <a-select-option value="individual">Individual Report</a-select-option>
+          <a-select-option v-if="canGenerateTeamReports" value="team">Team Report</a-select-option>
+          <a-select-option v-if="canGenerateDepartmentReports" value="department">Department Report</a-select-option>
+          <a-select-option v-if="isHR" value="organization">Organization Report</a-select-option>
+        </a-select>
+      </div>
+
+      <!-- Target Selection (for Managers/Directors/HR generating individual reports) -->
+      <div v-if="showTargetSelection" class="filter-section">
+        <label class="filter-label">
+          {{ reportType === 'individual' ? 'Target User' : 'Target Selection' }}
+        </label>
+        <a-select
+          v-model:value="selectedTargets"
+          :style="{ width: '100%' }"
+          :mode="reportType === 'individual' ? 'default' : 'multiple'"
+          :placeholder="getTargetPlaceholder()"
+          :disabled="isGenerating || isLoadingOptions"
+          :loading="isLoadingOptions"
+        >
+          <a-select-option
+            v-for="option in availableTargets"
+            :key="option.value"
+            :value="option.value"
+          >
+            {{ option.label }}
+          </a-select-option>
+        </a-select>
+      </div>
+
+      <!-- HR Organization Filters -->
+      <div v-if="isHR && reportType === 'organization'" class="hr-organization-filters">
         <div class="filter-section">
-          <label class="filter-label">Date Range</label>
-          <a-range-picker
-            v-model:value="dateRange"
-            format="YYYY-MM-DD"
+          <label class="filter-label">Scope Type</label>
+          <a-select
+            v-model:value="scopeType"
             :style="{ width: '100%' }"
             :disabled="isGenerating"
-            size="middle"
-          />
+            @change="onScopeTypeChange"
+          >
+            <a-select-option value="departments">Departments</a-select-option>
+            <a-select-option value="teams">Teams</a-select-option>
+            <a-select-option value="individuals">Individuals</a-select-option>
+          </a-select>
         </div>
+        
+        <div v-if="scopeType" class="filter-section">
+          <label class="filter-label">Select {{ scopeType }}</label>
+          <a-select
+            v-model:value="scopeValues"
+            :style="{ width: '100%' }"
+            mode="multiple"
+            :placeholder="'Select ' + scopeType"
+            :disabled="isGenerating || isLoadingOptions"
+            :loading="isLoadingOptions"
+          >
+            <a-select-option
+              v-for="option in scopeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </a-select-option>
+          </a-select>
+        </div>
+
+        <div class="filter-hint">
+          <InfoCircleOutlined />
+          <span>HR can generate organization-wide reports across departments, teams, or individuals</span>
+        </div>
+      </div>
+
+      <!-- Date Range Picker -->
+      <div class="filter-section">
+        <label class="filter-label">Date Range</label>
+        <a-range-picker
+          v-model:value="dateRange"
+          format="YYYY-MM-DD"
+          :style="{ width: '100%' }"
+          :disabled="isGenerating"
+        />
+      </div>
 
         <!-- Status Filter -->
         <div class="filter-section">
@@ -38,21 +127,29 @@
           </a-checkbox-group>
         </div>
 
-        <!-- Generate Button -->
-        <a-button
-          type="primary"
-          block
-          size="middle"
-          :loading="isGenerating"
-          :disabled="!currentUser"
-          @click="generateReport"
-          class="generate-button"
-        >
-          <template #icon>
-            <DownloadOutlined v-if="!isGenerating" />
-          </template>
-          {{ isGenerating ? 'Generating...' : 'Generate PDF' }}
-        </a-button>
+      <!-- Generate Button -->
+      <a-button
+        type="primary"
+        block
+        size="large"
+        :loading="isGeneratingPreview"
+        :disabled="!canGenerate"
+        @click="generatePreview"
+        class="generate-button"
+      >
+        <template #icon>
+          <FileTextOutlined v-if="!isGeneratingPreview" />
+        </template>
+        {{ isGeneratingPreview ? 'Generating Preview...' : 'Generate Preview' }}
+      </a-button>
+
+      <!-- Preview Modal -->
+      <ReportPreviewModal 
+        :isOpen="showPreviewModal"
+        :reportData="previewData"
+        @close="handleClosePreview"
+        @export="generateReport"
+      />
 
         <!-- Info Message -->
         <div class="info-message" v-if="!currentUser">
@@ -82,19 +179,38 @@
         />
       </div>
 
-      <!-- Report Info -->
-      <div class="report-info">
-        <div class="info-item">
-          <CheckCircleOutlined class="info-icon success" />
-          <span>Task details</span>
-        </div>
-        <div class="info-item">
-          <PieChartOutlined class="info-icon primary" />
-          <span>Status breakdown</span>
-        </div>
-        <div class="info-item">
-          <CalendarOutlined class="info-icon secondary" />
-          <span>Duration tracking</span>
+      <!-- Role-specific Report Info -->
+      <div class="role-specific-info">
+        <h4 class="info-title">Available Features for {{ currentUser?.role || 'Staff' }}</h4>
+        <div class="report-info">
+          <div class="info-item">
+            <CheckCircleOutlined class="info-icon success" />
+            <span>Individual task reports</span>
+          </div>
+          <div v-if="canGenerateTeamReports" class="info-item">
+            <TeamOutlined class="info-icon primary" />
+            <span>Team performance reports</span>
+          </div>
+          <div v-if="canGenerateDepartmentReports" class="info-item">
+            <BankOutlined class="info-icon secondary" />
+            <span>Department analysis</span>
+          </div>
+          <div v-if="isHR" class="info-item">
+            <GlobalOutlined class="info-icon warning" />
+            <span>Organization-wide insights</span>
+          </div>
+          <div class="info-item">
+            <PieChartOutlined class="info-icon primary" />
+            <span>Visual analytics & charts</span>
+          </div>
+          <div class="info-item">
+            <CalendarOutlined class="info-icon secondary" />
+            <span>Duration & deadline tracking</span>
+          </div>
+          <div class="info-item">
+            <FilterOutlined class="info-icon info" />
+            <span>Advanced filtering options</span>
+          </div>
         </div>
       </div>
     </div>
@@ -102,7 +218,7 @@
 </template>
 
 <script>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 import { message } from 'ant-design-vue'
 import {
@@ -111,8 +227,13 @@ import {
   InfoCircleOutlined,
   CheckCircleOutlined,
   PieChartOutlined,
-  CalendarOutlined
+  CalendarOutlined,
+  TeamOutlined,
+  BankOutlined,
+  GlobalOutlined,
+  FilterOutlined
 } from '@ant-design/icons-vue'
+import ReportPreviewModal from './ReportPreviewModal.vue'
 
 export default {
   name: 'ReportGenerator',
@@ -122,17 +243,304 @@ export default {
     InfoCircleOutlined,
     CheckCircleOutlined,
     PieChartOutlined,
-    CalendarOutlined
+    CalendarOutlined,
+    TeamOutlined,
+    BankOutlined,
+    GlobalOutlined,
+    FilterOutlined,
+    ReportPreviewModal
   },
   setup() {
     const authStore = useAuthStore()
     const currentUser = computed(() => authStore.user)
 
+    // Basic filters
     const dateRange = ref(null)
     const statusFilter = ref([])
     const isGenerating = ref(false)
+    const isGeneratingPreview = ref(false)
     const successMessage = ref('')
     const errorMessage = ref('')
+
+    // Preview data and modal
+    const previewData = ref(null)
+    const showPreviewModal = ref(false)
+
+    // Advanced role-based filters
+    const reportType = ref('individual')
+    const selectedTargets = ref(null)
+    const scopeType = ref('')
+    const scopeValues = ref([])
+    const availableTargets = ref([])
+    const scopeOptions = ref([])
+    const isLoadingOptions = ref(false)
+
+    // Team member table columns
+    const teamMemberColumns = [
+      {
+        title: 'Name',
+        dataIndex: 'name',
+        key: 'name',
+      },
+      {
+        title: 'Total Tasks',
+        dataIndex: 'total_tasks',
+        key: 'total_tasks',
+        align: 'center'
+      },
+      {
+        title: 'Completed',
+        dataIndex: 'completed',
+        key: 'completed',
+        align: 'center'
+      },
+      {
+        title: 'In Progress',
+        dataIndex: 'in_progress',
+        key: 'in_progress',
+        align: 'center'
+      },
+      {
+        title: 'Overdue',
+        dataIndex: 'overdue',
+        key: 'overdue',
+        align: 'center'
+      },
+      {
+        title: 'Completion Rate',
+        dataIndex: 'completion_rate',
+        key: 'completion_rate',
+        align: 'center'
+      }
+    ]
+
+    // User role computed properties
+    const userRole = computed(() => currentUser.value?.role || 'Staff')
+    const isStaff = computed(() => userRole.value === 'Staff')
+    const isManager = computed(() => userRole.value === 'Manager')
+    const isDirector = computed(() => userRole.value === 'Director')
+    const isHR = computed(() => userRole.value === 'HR')
+
+    // Role-based permissions
+    const canSelectReportType = computed(() => !isStaff.value)
+    const canGenerateTeamReports = computed(() => isManager.value || isDirector.value || isHR.value)
+    const canGenerateDepartmentReports = computed(() => isDirector.value || isHR.value)
+
+    // UI state
+    const showTargetSelection = computed(() => {
+      if (reportType.value === 'individual' && (isManager.value || isDirector.value || isHR.value)) {
+        return true
+      }
+      if (reportType.value === 'team' && (isDirector.value || isHR.value)) {
+        return true
+      }
+      if (reportType.value === 'department' && isHR.value) {
+        return true
+      }
+      return false
+    })
+
+    const canGenerate = computed(() => {
+      if (!currentUser.value) return false
+      
+      // Staff can always generate their own reports
+      if (isStaff.value) return true
+      
+      // For other roles, check if required selections are made
+      if (showTargetSelection.value && !selectedTargets.value) return false
+      if (isHR.value && reportType.value === 'organization' && (!scopeType.value || !scopeValues.value?.length)) return false
+      
+      return true
+    })
+
+    // Role color mapping
+    const getRoleColor = (role) => {
+      const colors = {
+        'Staff': 'blue',
+        'Manager': 'green',
+        'Director': 'orange',
+        'HR': 'red'
+      }
+      return colors[role] || 'default'
+    }
+
+    const getTargetPlaceholder = () => {
+      if (reportType.value === 'individual') return 'Select a user'
+      if (reportType.value === 'team') return 'Select teams'
+      if (reportType.value === 'department') return 'Select departments'
+      return 'Select targets'
+    }
+
+    // Load available options based on user role and report type
+    const loadAvailableTargets = async () => {
+      if (!showTargetSelection.value) return
+
+      isLoadingOptions.value = true
+      try {
+        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+        const response = await fetch(`${reportServiceUrl}/report-options?user_id=${currentUser.value.user_id}&report_type=${reportType.value}`)
+        
+        if (response.ok) {
+          const data = await response.json()
+          availableTargets.value = data.options || []
+        } else {
+          console.error('Failed to load report options')
+          availableTargets.value = []
+        }
+      } catch (error) {
+        console.error('Error loading report options:', error)
+        availableTargets.value = []
+      } finally {
+        isLoadingOptions.value = false
+      }
+    }
+
+    const loadScopeOptions = async () => {
+      if (!isHR.value || !scopeType.value) return
+
+      isLoadingOptions.value = true
+      try {
+        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+        const response = await fetch(`${reportServiceUrl}/report-options?user_id=${currentUser.value.user_id}&scope_type=${scopeType.value}`)
+        
+        if (response.ok) {
+          const data = await response.json()
+          scopeOptions.value = data.options || []
+        } else {
+          console.error('Failed to load scope options')
+          scopeOptions.value = []
+        }
+      } catch (error) {
+        console.error('Error loading scope options:', error)
+        scopeOptions.value = []
+      } finally {
+        isLoadingOptions.value = false
+      }
+    }
+
+    // Event handlers
+    const onReportTypeChange = () => {
+      selectedTargets.value = null
+      loadAvailableTargets()
+    }
+
+    const onScopeTypeChange = () => {
+      scopeValues.value = []
+      loadScopeOptions()
+    }
+
+    const generatePreview = async () => {
+      if (!currentUser.value) {
+        message.error('Please log in to generate reports')
+        return
+      }
+
+      isGeneratingPreview.value = true
+      errorMessage.value = ''
+      successMessage.value = ''
+
+      try {
+        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
+
+        // Prepare request body for preview
+        const requestBody = {
+          requesting_user_id: currentUser.value.user_id,
+          user_name: currentUser.value.name || 'Unknown User',
+          report_type: reportType.value,
+          status_filter: statusFilter.value.length > 0 ? statusFilter.value : ['All']
+        }
+
+        // Add target selection for non-staff users
+        if (reportType.value === 'individual' && selectedTargets.value) {
+          requestBody.user_id = selectedTargets.value
+        } else if (reportType.value === 'team' && selectedTargets.value) {
+          requestBody.teams = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
+        } else if (reportType.value === 'department' && selectedTargets.value) {
+          requestBody.departments = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
+        } else if (reportType.value === 'organization' && isHR.value) {
+          requestBody.scope_type = scopeType.value
+          requestBody.scope_values = scopeValues.value
+        }
+
+        // Add date range if selected
+        if (dateRange.value && dateRange.value.length === 2) {
+          requestBody.start_date = dateRange.value[0].format('YYYY-MM-DD')
+          requestBody.end_date = dateRange.value[1].format('YYYY-MM-DD')
+        }
+
+        // Make request to preview endpoint
+        const response = await fetch(`${reportServiceUrl}/preview-report`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody)
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || 'Failed to generate preview')
+        }
+
+        const data = await response.json()
+        previewData.value = data
+        showPreviewModal.value = true
+        message.success('Preview generated successfully!')
+
+      } catch (error) {
+        console.error('Error generating preview:', error)
+        errorMessage.value = error.message || 'Failed to generate preview. Please try again.'
+        message.error('Failed to generate preview')
+      } finally {
+        isGeneratingPreview.value = false
+      }
+    }
+
+    const clearPreview = () => {
+      previewData.value = null
+      showPreviewModal.value = false
+      successMessage.value = ''
+      errorMessage.value = ''
+    }
+
+    const handleClosePreview = () => {
+      showPreviewModal.value = false
+    }
+
+    const getReportTitle = () => {
+      if (!previewData.value) return 'Report'
+      
+      const typeLabels = {
+        'individual': 'Individual Report',
+        'team': 'Team Report', 
+        'department': 'Department Report',
+        'organization': 'Organization Report'
+      }
+      
+      return typeLabels[previewData.value.report_type] || 'Report'
+    }
+
+    const getTargetLabel = () => {
+      if (!previewData.value) return ''
+      
+      const type = previewData.value.report_type
+      if (type === 'individual') return 'Target User'
+      if (type === 'team') return 'Team'
+      if (type === 'department') return 'Department'
+      if (type === 'organization') return 'Scope'
+      return 'Target'
+    }
+
+    const getTargetInfo = () => {
+      if (!previewData.value) return ''
+      
+      const summary = previewData.value.summary
+      if (summary.target_user) return summary.target_user
+      if (summary.team_name) return summary.team_name
+      if (summary.department) return summary.department
+      if (summary.scope_type) return `${summary.scope_type} analysis`
+      return ''
+    }
 
     const generateReport = async () => {
       if (!currentUser.value) {
@@ -147,11 +555,24 @@ export default {
       try {
         const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
 
-        // Prepare request body
+        // Prepare request body based on user role and report type
         const requestBody = {
-          user_id: currentUser.value.user_id,
+          requesting_user_id: currentUser.value.user_id,
           user_name: currentUser.value.name || 'Unknown User',
+          report_type: reportType.value,
           status_filter: statusFilter.value.length > 0 ? statusFilter.value : ['All']
+        }
+
+        // Add target selection for non-staff users
+        if (reportType.value === 'individual' && selectedTargets.value) {
+          requestBody.user_id = selectedTargets.value
+        } else if (reportType.value === 'team' && selectedTargets.value) {
+          requestBody.teams = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
+        } else if (reportType.value === 'department' && selectedTargets.value) {
+          requestBody.departments = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
+        } else if (reportType.value === 'organization' && isHR.value) {
+          requestBody.scope_type = scopeType.value
+          requestBody.scope_values = scopeValues.value
         }
 
         // Add date range if selected
@@ -185,7 +606,8 @@ export default {
         // Generate filename
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0]
         const userName = currentUser.value.name?.replace(/\s+/g, '_') || 'user'
-        a.download = `task_report_${userName}_${timestamp}.pdf`
+        const reportTypeText = reportType.value.replace('_', '-')
+        a.download = `${reportTypeText}_report_${userName}_${timestamp}.pdf`
 
         // Trigger download
         document.body.appendChild(a)
@@ -207,13 +629,74 @@ export default {
       }
     }
 
+    // Watchers
+    watch(() => reportType.value, () => {
+      onReportTypeChange()
+      clearPreview() // Clear preview when report type changes
+    })
+    
+    watch(() => scopeType.value, () => {
+      onScopeTypeChange()
+      clearPreview() // Clear preview when scope type changes
+    })
+
+    watch(() => selectedTargets.value, () => {
+      clearPreview() // Clear preview when targets change
+    })
+
+    watch(() => dateRange.value, () => {
+      clearPreview() // Clear preview when date range changes
+    })
+
+    watch(() => statusFilter.value, () => {
+      clearPreview() // Clear preview when status filter changes
+    })
+
+    // Load initial data
+    onMounted(() => {
+      if (showTargetSelection.value) {
+        loadAvailableTargets()
+      }
+    })
+
     return {
       currentUser,
       dateRange,
       statusFilter,
       isGenerating,
+      isGeneratingPreview,
       successMessage,
       errorMessage,
+      previewData,
+      showPreviewModal,
+      reportType,
+      selectedTargets,
+      scopeType,
+      scopeValues,
+      availableTargets,
+      scopeOptions,
+      isLoadingOptions,
+      teamMemberColumns,
+      userRole,
+      isStaff,
+      isManager,
+      isDirector,
+      isHR,
+      canSelectReportType,
+      canGenerateTeamReports,
+      canGenerateDepartmentReports,
+      showTargetSelection,
+      canGenerate,
+      getRoleColor,
+      getTargetPlaceholder,
+      onReportTypeChange,
+      onScopeTypeChange,
+      generatePreview,
+      clearPreview,
+      handleClosePreview,
+      getReportTitle,
+      getTargetLabel,
+      getTargetInfo,
       generateReport
     }
   }
@@ -376,6 +859,155 @@ export default {
   color: #722ed1;
 }
 
+/* Role-based styling additions */
+.role-info-container {
+  margin-bottom: 24px;
+}
+
+.role-tag {
+  margin-right: 8px;
+}
+
+.permissions-list {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+.permissions-list li {
+  margin-bottom: 4px;
+  color: #666;
+}
+
+.permissions-list li:last-child {
+  margin-bottom: 0;
+}
+
+.form-section {
+  margin-bottom: 20px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.form-row .ant-form-item {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.scope-filters {
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+}
+
+.filter-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.filter-row:last-child {
+  margin-bottom: 0;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: #262626;
+}
+
+.message-container {
+  margin-top: 16px;
+}
+
+.success-message {
+  color: #52c41a;
+  text-align: center;
+  font-weight: 500;
+}
+
+.error-message {
+  color: #ff4d4f;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Role-specific styling */
+.staff-role {
+  border-left: 4px solid #1890ff;
+}
+
+.manager-role {
+  border-left: 4px solid #52c41a;
+}
+
+.director-role {
+  border-left: 4px solid #fa8c16;
+}
+
+.hr-role {
+  border-left: 4px solid #f5222d;
+}
+
+/* Loading state styling */
+.ant-select-loading {
+  opacity: 0.7;
+}
+
+.loading-placeholder {
+  color: #bfbfbf;
+  font-style: italic;
+}
+
+/* Advanced filters styling */
+.advanced-filters {
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  padding: 16px;
+  background: #fafafa;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+/* Enhanced visual hierarchy */
+.report-type-section {
+  background: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.target-selection-section {
+  background: #f9f9f9;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.basic-filters-section {
+  background: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
 /* Dark mode support */
 :global(.dark) .filter-label {
   color: #ffffff;
@@ -413,5 +1045,68 @@ export default {
   .report-info {
     padding: 12px;
   }
+  
+  .form-row {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .filter-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .summary-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-actions {
+    flex-direction: column;
+  }
+
+  .preview-action-btn {
+    width: 100%;
+  }
+}
+
+/* Animation for role changes */
+.role-transition {
+  transition: all 0.3s ease;
+}
+
+/* Custom button states */
+.generate-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.generate-button.generating {
+  position: relative;
+  overflow: hidden;
+}
+
+.generate-button.generating::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: loading-shine 1.5s infinite;
+}
+
+@keyframes loading-shine {
+  0% { left: -100%; }
+  100% { left: 100%; }
 }
 </style>

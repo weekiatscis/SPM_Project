@@ -464,6 +464,71 @@ def delete_project(project_id):
         return jsonify({"error": str(exc)}), 500
 
 
+# Project Members API Route
+
+@app.route("/projects/<project_id>/members", methods=["GET"])
+def get_project_members(project_id):
+    """
+    GET /projects/<project_id>/members - Get all members of a specific project (creator + collaborators)
+    """
+    try:
+        # Validate project exists and get project data
+        project_response = supabase.table("project").select("project_id, created_by, collaborators").eq("project_id", project_id).execute()
+        if not project_response.data:
+            return jsonify({"error": "Project not found"}), 404
+        
+        project = project_response.data[0]
+        members = []
+        
+        # Get creator information
+        created_by = project.get("created_by")
+        if created_by and is_valid_uuid(created_by):
+            try:
+                user_response = supabase.table("user").select("user_id, name, email").eq("user_id", created_by).execute()
+                if user_response.data:
+                    user = user_response.data[0]
+                    members.append({
+                        "user_id": user["user_id"],
+                        "name": user.get("name", "Unknown User"),
+                        "email": user.get("email", ""),
+                        "role": "creator"
+                    })
+            except Exception as e:
+                print(f"Failed to get creator info: {e}")
+        
+        # Get collaborators information
+        collaborators = project.get("collaborators", [])
+        if isinstance(collaborators, str):
+            try:
+                collaborators = json.loads(collaborators)
+            except:
+                collaborators = []
+        
+        if isinstance(collaborators, list):
+            for collaborator_id in collaborators:
+                if collaborator_id and is_valid_uuid(collaborator_id) and collaborator_id != created_by:
+                    try:
+                        user_response = supabase.table("user").select("user_id, name, email").eq("user_id", collaborator_id).execute()
+                        if user_response.data:
+                            user = user_response.data[0]
+                            members.append({
+                                "user_id": user["user_id"],
+                                "name": user.get("name", "Unknown User"),
+                                "email": user.get("email", ""),
+                                "role": "collaborator"
+                            })
+                    except Exception as e:
+                        print(f"Failed to get collaborator info for {collaborator_id}: {e}")
+        
+        return jsonify({
+            "success": True,
+            "members": members
+        }), 200
+        
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # Project Comments API Routes (Read and Create only)
 
 @app.route("/projects/<project_id>/comments", methods=["GET"])
