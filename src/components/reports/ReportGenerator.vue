@@ -10,299 +10,207 @@
     <div class="report-content">
       <!-- User Role Info -->
       <div v-if="currentUser" class="role-info">
-        <a-tag :color="getRoleColor(currentUser.role)" class="role-tag">
-          {{ currentUser.role || 'Staff' }}
-        </a-tag>
-        <span class="department-info">
-          {{ currentUser.department || 'No Department' }}
-        </span>
+      <a-tag :color="getRoleColor(currentUser.role)" class="role-tag">
+        {{ currentUser.role || 'Staff' }}
+      </a-tag>
+      <span class="department-info">
+        {{ currentUser.department || 'No Department' }}
+      </span>
       </div>
 
       <!-- Report Type Selection (for non-Staff users) -->
       <div v-if="canSelectReportType" class="filter-section">
-        <label class="filter-label">Report Type</label>
-        <a-select
-          v-model:value="reportType"
-          :style="{ width: '100%' }"
-          :disabled="isGenerating"
-          @change="onReportTypeChange"
-        >
-          <a-select-option value="individual">Individual Report</a-select-option>
-          <a-select-option v-if="canGenerateTeamReports" value="team">Team Report</a-select-option>
-          <a-select-option v-if="canGenerateDepartmentReports" value="department">Department Report</a-select-option>
-          <a-select-option v-if="isHR" value="organization">Organization Report</a-select-option>
-        </a-select>
+      <label class="filter-label">Report Type</label>
+      <a-select
+        v-model:value="reportType"
+        :style="{ width: '100%' }"
+        :disabled="isGenerating"
+        @change="onReportTypeChange"
+      >
+        <a-select-option value="individual">Individual Report</a-select-option>
+        <a-select-option v-if="canGenerateTeamReports" value="team">Team Report</a-select-option>
+        <a-select-option v-if="canGenerateDepartmentReports" value="department">Department Report</a-select-option>
+        <a-select-option v-if="isHR" value="organization">Organization Report</a-select-option>
+      </a-select>
       </div>
 
       <!-- Target Selection (for Managers/Directors/HR generating individual reports) -->
       <div v-if="showTargetSelection" class="filter-section">
-        <label class="filter-label">
-          {{ reportType === 'individual' ? 'Target User' : 'Target Selection' }}
-        </label>
-        <a-select
-          v-model:value="selectedTargets"
-          :style="{ width: '100%' }"
-          :mode="reportType === 'individual' ? 'default' : 'multiple'"
-          :placeholder="getTargetPlaceholder()"
-          :disabled="isGenerating || isLoadingOptions"
-          :loading="isLoadingOptions"
+      <label class="filter-label">
+        {{ reportType === 'individual' ? 'Target User' : 'Target Selection' }}
+      </label>
+      <a-select
+        v-model:value="selectedTargets"
+        :style="{ width: '100%' }"
+        :mode="reportType === 'individual' ? 'default' : 'multiple'"
+        :placeholder="getTargetPlaceholder()"
+        :disabled="isGenerating || isLoadingOptions"
+        :loading="isLoadingOptions"
+      >
+        <a-select-option
+        v-for="option in availableTargets"
+        :key="option.value"
+        :value="option.value"
         >
-          <a-select-option
-            v-for="option in availableTargets"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </a-select-option>
-        </a-select>
+        {{ option.label }}
+        </a-select-option>
+      </a-select>
       </div>
 
       <!-- HR Organization Filters -->
       <div v-if="isHR && reportType === 'organization'" class="hr-organization-filters">
-        <div class="filter-section">
-          <label class="filter-label">Scope Type</label>
-          <a-select
-            v-model:value="scopeType"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            @change="onScopeTypeChange"
-          >
-            <a-select-option value="departments">Departments</a-select-option>
-            <a-select-option value="teams">Teams</a-select-option>
-            <a-select-option value="individuals">Individuals</a-select-option>
-          </a-select>
-        </div>
-        
-        <div v-if="scopeType" class="filter-section">
-          <label class="filter-label">Select {{ scopeType }}</label>
-          <a-select
-            v-model:value="scopeValues"
-            :style="{ width: '100%' }"
-            mode="multiple"
-            :placeholder="'Select ' + scopeType"
-            :disabled="isGenerating || isLoadingOptions"
-            :loading="isLoadingOptions"
-          >
-            <a-select-option
-              v-for="option in scopeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </a-select-option>
-          </a-select>
-        </div>
-
-        <div class="filter-hint">
-          <InfoCircleOutlined />
-          <span>HR can generate organization-wide reports across departments, teams, or individuals</span>
-        </div>
-      </div>
-
-      <!-- User Role Info -->
-      <div v-if="currentUser" class="role-info">
-        <a-tag :color="getRoleColor(currentUser.role)" class="role-tag">
-          {{ currentUser.role || 'Staff' }}
-        </a-tag>
-        <span class="department-info">
-          {{ currentUser.department || 'No Department' }}
-        </span>
-      </div>
-
-      <!-- Report Type Selection (for non-Staff users) -->
-      <div v-if="canSelectReportType" class="filter-section">
-        <label class="filter-label">Report Type</label>
+      <div class="filter-section">
+        <label class="filter-label">Scope Type</label>
         <a-select
-          v-model:value="reportType"
-          :style="{ width: '100%' }"
-          :disabled="isGenerating"
-          @change="onReportTypeChange"
+        v-model:value="scopeType"
+        :style="{ width: '100%' }"
+        :disabled="isGenerating"
+        @change="onScopeTypeChange"
         >
-          <a-select-option value="individual">Individual Report</a-select-option>
-          <a-select-option v-if="canGenerateTeamReports" value="team">Team Report</a-select-option>
-          <a-select-option v-if="canGenerateDepartmentReports" value="department">Department Report</a-select-option>
-          <a-select-option v-if="isHR" value="organization">Organization Report</a-select-option>
+        <a-select-option value="departments">Departments</a-select-option>
+        <a-select-option value="teams">Teams</a-select-option>
+        <a-select-option value="individuals">Individuals</a-select-option>
+        </a-select>
+      </div>
+      
+      <div v-if="scopeType" class="filter-section">
+        <label class="filter-label">Select {{ scopeType }}</label>
+        <a-select
+        v-model:value="scopeValues"
+        :style="{ width: '100%' }"
+        mode="multiple"
+        :placeholder="'Select ' + scopeType"
+        :disabled="isGenerating || isLoadingOptions"
+        :loading="isLoadingOptions"
+        >
+        <a-select-option
+          v-for="option in scopeOptions"
+          :key="option.value"
+          :value="option.value"
+        >
+          {{ option.label }}
+        </a-select-option>
         </a-select>
       </div>
 
-      <!-- Target Selection (for Managers/Directors/HR generating individual reports) -->
-      <div v-if="showTargetSelection" class="filter-section">
-        <label class="filter-label">
-          {{ reportType === 'individual' ? 'Target User' : 'Target Selection' }}
-        </label>
-        <a-select
-          v-model:value="selectedTargets"
-          :style="{ width: '100%' }"
-          :mode="reportType === 'individual' ? 'default' : 'multiple'"
-          :placeholder="getTargetPlaceholder()"
-          :disabled="isGenerating || isLoadingOptions"
-          :loading="isLoadingOptions"
-        >
-          <a-select-option
-            v-for="option in availableTargets"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </a-select-option>
-        </a-select>
+      <div class="filter-hint">
+        <InfoCircleOutlined />
+        <span>HR can generate organization-wide reports across departments, teams, or individuals</span>
       </div>
-
-      <!-- HR Organization Filters -->
-      <div v-if="isHR && reportType === 'organization'" class="hr-organization-filters">
-        <div class="filter-section">
-          <label class="filter-label">Scope Type</label>
-          <a-select
-            v-model:value="scopeType"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-            @change="onScopeTypeChange"
-          >
-            <a-select-option value="departments">Departments</a-select-option>
-            <a-select-option value="teams">Teams</a-select-option>
-            <a-select-option value="individuals">Individuals</a-select-option>
-          </a-select>
-        </div>
-        
-        <div v-if="scopeType" class="filter-section">
-          <label class="filter-label">Select {{ scopeType }}</label>
-          <a-select
-            v-model:value="scopeValues"
-            :style="{ width: '100%' }"
-            mode="multiple"
-            :placeholder="'Select ' + scopeType"
-            :disabled="isGenerating || isLoadingOptions"
-            :loading="isLoadingOptions"
-          >
-            <a-select-option
-              v-for="option in scopeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }}
-            </a-select-option>
-          </a-select>
-        </div>
-
-        <div class="filter-hint">
-          <InfoCircleOutlined />
-          <span>HR can generate organization-wide reports across departments, teams, or individuals</span>
-        </div>
       </div>
 
       <!-- Date Range Picker -->
       <div class="filter-section">
-        <label class="filter-label">Date Range</label>
-        <a-range-picker
-          v-model:value="dateRange"
-          format="YYYY-MM-DD"
-          :style="{ width: '100%' }"
-          :disabled="isGenerating"
-        />
+      <label class="filter-label">Date Range</label>
+      <a-range-picker
+        v-model:value="dateRange"
+        format="YYYY-MM-DD"
+        :style="{ width: '100%' }"
+        :disabled="isGenerating"
+      />
       </div>
 
-        <!-- Status Filter -->
-        <div class="filter-section">
-          <label class="filter-label">Task Status</label>
-          <a-checkbox-group
-            v-model:value="statusFilter"
-            :style="{ width: '100%' }"
-            :disabled="isGenerating"
-          >
-            <div class="checkbox-grid">
-              <a-checkbox value="Unassigned">Unassigned</a-checkbox>
-              <a-checkbox value="Ongoing">Ongoing</a-checkbox>
-              <a-checkbox value="Completed">Completed</a-checkbox>
-              <a-checkbox value="Under Review">Under Review</a-checkbox>
-            </div>
-          </a-checkbox-group>
+      <!-- Status Filter -->
+      <div class="filter-section">
+      <label class="filter-label">Task Status</label>
+      <a-checkbox-group
+        v-model:value="statusFilter"
+        :style="{ width: '100%' }"
+        :disabled="isGenerating"
+      >
+        <div class="checkbox-grid">
+        <a-checkbox value="Unassigned">Unassigned</a-checkbox>
+        <a-checkbox value="Ongoing">Ongoing</a-checkbox>
+        <a-checkbox value="Completed">Completed</a-checkbox>
+        <a-checkbox value="Under Review">Under Review</a-checkbox>
         </div>
+      </a-checkbox-group>
+      </div>
 
       <!-- Generate Button -->
       <a-button
-        type="primary"
-        block
-        size="large"
-        :loading="isGeneratingPreview"
-        :disabled="!canGenerate"
-        @click="generatePreview"
-        class="generate-button"
+      type="primary"
+      block
+      size="large"
+      :loading="isGeneratingPreview"
+      :disabled="!canGenerate"
+      @click="generatePreview"
+      class="generate-button"
       >
-        <template #icon>
-          <FileTextOutlined v-if="!isGeneratingPreview" />
-        </template>
-        {{ isGeneratingPreview ? 'Generating Preview...' : 'Generate Preview' }}
+      <template #icon>
+        <FileTextOutlined v-if="!isGeneratingPreview" />
+      </template>
+      {{ isGeneratingPreview ? 'Generating Preview...' : 'Generate Preview' }}
       </a-button>
 
       <!-- Preview Modal -->
       <ReportPreviewModal 
-        :isOpen="showPreviewModal"
-        :reportData="previewData"
-        @close="handleClosePreview"
-        @export="generateReport"
+      :isOpen="showPreviewModal"
+      :reportData="previewData"
+      @close="handleClosePreview"
+      @export="generateReport"
       />
 
-        <!-- Info Message -->
-        <div class="info-message" v-if="!currentUser">
-          <InfoCircleOutlined />
-          <span>Please log in to generate reports</span>
-        </div>
-
-        <!-- Success/Error Messages -->
-        <a-alert
-          v-if="successMessage"
-          :message="successMessage"
-          type="success"
-          show-icon
-          closable
-          @close="successMessage = ''"
-          class="compact-alert"
-        />
-
-        <a-alert
-          v-if="errorMessage"
-          :message="errorMessage"
-          type="error"
-          show-icon
-          closable
-          @close="errorMessage = ''"
-          class="compact-alert"
-        />
+      <!-- Info Message -->
+      <div class="info-message" v-if="!currentUser">
+      <InfoCircleOutlined />
+      <span>Please log in to generate reports</span>
       </div>
+
+      <!-- Success/Error Messages -->
+      <a-alert
+      v-if="successMessage"
+      :message="successMessage"
+      type="success"
+      show-icon
+      closable
+      @close="successMessage = ''"
+      class="compact-alert"
+      />
+
+      <a-alert
+      v-if="errorMessage"
+      :message="errorMessage"
+      type="error"
+      show-icon
+      closable
+      @close="errorMessage = ''"
+      class="compact-alert"
+      />
 
       <!-- Role-specific Report Info -->
       <div class="role-specific-info">
-        <h4 class="info-title">Available Features for {{ currentUser?.role || 'Staff' }}</h4>
-        <div class="report-info">
-          <div class="info-item">
-            <CheckCircleOutlined class="info-icon success" />
-            <span>Individual task reports</span>
-          </div>
-          <div v-if="canGenerateTeamReports" class="info-item">
-            <TeamOutlined class="info-icon primary" />
-            <span>Team performance reports</span>
-          </div>
-          <div v-if="canGenerateDepartmentReports" class="info-item">
-            <BankOutlined class="info-icon secondary" />
-            <span>Department analysis</span>
-          </div>
-          <div v-if="isHR" class="info-item">
-            <GlobalOutlined class="info-icon warning" />
-            <span>Organization-wide insights</span>
-          </div>
-          <div class="info-item">
-            <PieChartOutlined class="info-icon primary" />
-            <span>Visual analytics & charts</span>
-          </div>
-          <div class="info-item">
-            <CalendarOutlined class="info-icon secondary" />
-            <span>Duration & deadline tracking</span>
-          </div>
-          <div class="info-item">
-            <FilterOutlined class="info-icon info" />
-            <span>Advanced filtering options</span>
-          </div>
+      <h4 class="info-title">Available Features for {{ currentUser?.role || 'Staff' }}</h4>
+      <div class="report-info">
+        <div class="info-item">
+        <CheckCircleOutlined class="info-icon success" />
+        <span>Individual task reports</span>
         </div>
+        <div v-if="canGenerateTeamReports" class="info-item">
+        <TeamOutlined class="info-icon primary" />
+        <span>Team performance reports</span>
+        </div>
+        <div v-if="canGenerateDepartmentReports" class="info-item">
+        <BankOutlined class="info-icon secondary" />
+        <span>Department analysis</span>
+        </div>
+        <div v-if="isHR" class="info-item">
+        <GlobalOutlined class="info-icon warning" />
+        <span>Organization-wide insights</span>
+        </div>
+        <div class="info-item">
+        <PieChartOutlined class="info-icon primary" />
+        <span>Visual analytics & charts</span>
+        </div>
+        <div class="info-item">
+        <CalendarOutlined class="info-icon secondary" />
+        <span>Duration & deadline tracking</span>
+        </div>
+        <div class="info-item">
+        <FilterOutlined class="info-icon info" />
+        <span>Advanced filtering options</span>
+        </div>
+      </div>
       </div>
     </div>
   </a-card>
