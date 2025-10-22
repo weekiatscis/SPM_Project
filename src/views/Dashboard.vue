@@ -14,21 +14,6 @@
             </a-tooltip>
           </div>
           <a-space :size="12">
-            <!-- Approvals Button (for Managers/Directors only) -->
-            <a-button 
-              v-if="isManagerOrDirector" 
-              @click="showApprovalsModal = true" 
-              type="primary"
-              class="approval-button"
-            >
-              <template #icon><CheckCircleOutlined /></template>
-              Approvals
-              <a-badge 
-                v-if="pendingApprovalsCount > 0" 
-                :count="pendingApprovalsCount" 
-                :offset="[10, -5]"
-              />
-            </a-button>
             <a-button @click="handleRefresh" :loading="isLoading" class="action-button">
               <template #icon><ReloadOutlined /></template>
               Refresh
@@ -125,25 +110,6 @@
       @open-task="handleOpenTask"
     />
 
-    <!-- Approvals Modal -->
-    <a-modal
-      v-model:open="showApprovalsModal"
-      title="Task Approvals"
-      width="1200px"
-      :footer="null"
-      :destroyOnClose="true"
-      class="approvals-modal"
-    >
-      <div class="modal-content">
-        <TaskApprovalsTable
-          :pending-tasks="pendingApprovalTasks"
-          :is-loading="isLoadingApprovals"
-          @approve="handleApproveTask"
-          @reject="handleRejectTask"
-          @refresh="loadPendingApprovals"
-        />
-      </div>
-    </a-modal>
   </div>
 </template>
 
@@ -155,15 +121,13 @@ import {
   ReloadOutlined, 
   ExportOutlined, 
   TableOutlined, 
-  BarChartOutlined,
-  CheckCircleOutlined 
+  BarChartOutlined
 } from '@ant-design/icons-vue'
 import TeamMetrics from '../components/manager/TeamMetrics.vue'
 import TaskFilters from '../components/manager/TaskFilters.vue'
 import TeamTasksTable from '../components/manager/TeamTasksTable.vue'
 import TeamChartsView from '../components/manager/TeamChartsView.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
-import TaskApprovalsTable from '../components/manager/TaskApprovalsTable.vue'
 
 const authStore = useAuthStore()
 
@@ -178,12 +142,6 @@ const showTaskDetail = ref(false)
 const selectedTask = ref(null)
 const taskAccessInfo = ref(null)
 const activeTab = ref('table') // Default to table view
-const showApprovalsModal = ref(false) // Modal state for approvals
-
-// Approval-related state
-const pendingApprovalTasks = ref([])
-const isLoadingApprovals = ref(false)
-const pendingApprovalsCount = computed(() => pendingApprovalTasks.value.length)
 
 // Computed properties for role-based behavior
 const userRole = computed(() => authStore.user?.role)
@@ -708,140 +666,10 @@ const stopAutoRefresh = () => {
   }
 }
 
-// Approval-related methods
-const loadPendingApprovals = async () => {
-  if (!isManagerOrDirector.value) return
-  
-  isLoadingApprovals.value = true
-  try {
-    const userId = authStore.user?.user_id
-    if (!userId) throw new Error('User not authenticated')
-
-    const response = await fetch(`${TASK_SERVICE_URL}/tasks/pending-approvals/${userId}`)
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-
-    const data = await response.json()
-    pendingApprovalTasks.value = data.tasks || []
-    
-    console.log(`✅ Loaded ${pendingApprovalTasks.value.length} pending approval tasks`)
-  } catch (err) {
-    console.error('Failed to load pending approvals:', err)
-    notification.error({
-      message: 'Error Loading Approvals',
-      description: 'Failed to load pending approval tasks. Please try again.',
-      placement: 'topRight',
-      duration: 3
-    })
-  } finally {
-    isLoadingApprovals.value = false
-  }
-}
-
-const handleApproveTask = async (task) => {
-  try {
-    const userId = authStore.user?.user_id
-    if (!userId) throw new Error('User not authenticated')
-
-    const response = await fetch(`${TASK_SERVICE_URL}/tasks/${task.id}/approve`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        approved_by: userId
-      })
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || 'Failed to approve task')
-    }
-
-    notification.success({
-      message: 'Task Approved',
-      description: `"${task.title}" has been approved and marked as completed.`,
-      placement: 'topRight',
-      duration: 3
-    })
-
-    // Reload pending approvals and team tasks
-    await loadPendingApprovals()
-    await fetchTeamTasks()
-
-  } catch (err) {
-    console.error('Failed to approve task:', err)
-    notification.error({
-      message: 'Approval Failed',
-      description: err.message || 'Failed to approve task. Please try again.',
-      placement: 'topRight',
-      duration: 4
-    })
-  }
-}
-
-const handleRejectTask = async (task, reason = '') => {
-  try {
-    if (!reason) {
-      reason = prompt(`Reason for rejecting "${task.title}"?`) || 'No reason provided'
-    }
-
-    const userId = authStore.user?.user_id
-    if (!userId) throw new Error('User not authenticated')
-
-    const response = await fetch(`${TASK_SERVICE_URL}/tasks/${task.id}/reject`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        rejected_by: userId,
-        reason: reason
-      })
-    })
-
-    if (!response.ok) {
-      const errorData = await response.json()
-      throw new Error(errorData.error || 'Failed to reject task')
-    }
-
-    notification.warning({
-      message: 'Task Rejected',
-      description: `"${task.title}" has been sent back for revisions.`,
-      placement: 'topRight',
-      duration: 3
-    })
-
-    // Reload pending approvals and team tasks
-    await loadPendingApprovals()
-    await fetchTeamTasks()
-
-  } catch (err) {
-    console.error('Failed to reject task:', err)
-    notification.error({
-      message: 'Rejection Failed',
-      description: err.message || 'Failed to reject task. Please try again.',
-      placement: 'topRight',
-      duration: 4
-    })
-  }
-}
-
-// Watchers
-watch(pendingApprovalsCount, (newCount) => {
-  // Auto-close modal when no more approvals pending
-  if (newCount === 0 && showApprovalsModal.value) {
-    showApprovalsModal.value = false
-  }
-})
 
 // Lifecycle hooks
 onMounted(() => {
   fetchTeamTasks()
-  if (isManagerOrDirector.value) {
-    loadPendingApprovals()
-  }
   startAutoRefresh()
 })
 
@@ -926,24 +754,6 @@ onUnmounted(() => {
 }
 
 /* Action Buttons */
-.approval-button {
-  height: 40px !important;
-  padding: 0 20px !important;
-  font-size: 14px !important;
-  font-weight: 600 !important;
-  border-radius: 10px !important;
-  background: #722ed1 !important;
-  border-color: #722ed1 !important;
-  box-shadow: 0 2px 8px rgba(114, 46, 209, 0.25) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-.approval-button:hover {
-  background: #531dab !important;
-  transform: translateY(-2px) !important;
-  box-shadow: 0 4px 12px rgba(114, 46, 209, 0.35) !important;
-}
-
 .action-button {
   height: 40px !important;
   padding: 0 16px !important;
@@ -1034,51 +844,6 @@ onUnmounted(() => {
 
 .charts-container {
   margin-top: 0;
-}
-
-/* Approvals Modal */
-.approvals-modal :deep(.ant-modal-content) {
-  border-radius: 16px;
-}
-
-.approvals-modal :deep(.ant-modal-header) {
-  border-radius: 16px 16px 0 0;
-  padding: 20px 24px;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.approvals-modal :deep(.ant-modal-title) {
-  font-size: 20px;
-  font-weight: 700;
-  color: #111827;
-}
-
-.approvals-modal :deep(.ant-modal-body) {
-  padding: 24px;
-}
-
-.modal-content {
-  max-height: 70vh;
-  overflow-y: auto;
-}
-
-/* Custom Scrollbar for Modal */
-.modal-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.modal-content::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 4px;
-}
-
-.modal-content::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 4px;
-}
-
-.modal-content::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
 }
 
 /* Dark Mode Support */
