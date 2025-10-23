@@ -60,42 +60,21 @@
       <!-- HR Organization Filters -->
       <div v-if="isHR && reportType === 'organization'" class="hr-organization-filters">
       <div class="filter-section">
-        <label class="filter-label">Scope Type</label>
+        <label class="filter-label">Trend Interval</label>
         <a-select
-        v-model:value="scopeType"
+        v-model:value="trendGranularity"
         :style="{ width: '100%' }"
         :disabled="isGenerating"
-        @change="onScopeTypeChange"
         >
-        <a-select-option value="departments">Departments</a-select-option>
-        <a-select-option value="teams">Teams</a-select-option>
-        <a-select-option value="individuals">Individuals</a-select-option>
-        </a-select>
-      </div>
-      
-      <div v-if="scopeType" class="filter-section">
-        <label class="filter-label">Select {{ scopeType }}</label>
-        <a-select
-        v-model:value="scopeValues"
-        :style="{ width: '100%' }"
-        mode="multiple"
-        :placeholder="'Select ' + scopeType"
-        :disabled="isGenerating || isLoadingOptions"
-        :loading="isLoadingOptions"
-        >
-        <a-select-option
-          v-for="option in scopeOptions"
-          :key="option.value"
-          :value="option.value"
-        >
-          {{ option.label }}
-        </a-select-option>
+        <a-select-option value="monthly">Monthly</a-select-option>
+        <a-select-option value="weekly">Weekly</a-select-option>
+        <a-select-option value="daily">Daily</a-select-option>
         </a-select>
       </div>
 
       <div class="filter-hint">
         <InfoCircleOutlined />
-        <span>HR can generate organization-wide reports across departments, teams, or individuals</span>
+        <span>Organization report compares departments and highlights trends for the selected interval</span>
       </div>
       </div>
 
@@ -268,11 +247,9 @@ export default {
     // Advanced role-based filters
     const reportType = ref('individual')
     const selectedTargets = ref(null)
-    const scopeType = ref('')
-    const scopeValues = ref([])
     const availableTargets = ref([])
-    const scopeOptions = ref([])
     const isLoadingOptions = ref(false)
+    const trendGranularity = ref('monthly')
 
     // Team member table columns
     const teamMemberColumns = [
@@ -351,8 +328,7 @@ export default {
       }
       
       // For other roles, check if required selections are made
-      if (showTargetSelection.value && !selectedTargets.value) return false
-      if (isHR.value && reportType.value === 'organization' && (!scopeType.value || !scopeValues.value?.length)) return false
+        if (showTargetSelection.value && !selectedTargets.value) return false
       
       return true
     })
@@ -384,9 +360,10 @@ export default {
         const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
         const response = await fetch(`${reportServiceUrl}/report-options?user_id=${currentUser.value.user_id}&report_type=${reportType.value}`)
         
-        if (response.ok) {
-          const data = await response.json()
-          availableTargets.value = data.options || []
+          if (response.ok) {
+            const data = await response.json()
+            const options = (data.options || []).filter(option => option && option.value)
+            availableTargets.value = options
         } else {
           console.error('Failed to load report options')
           availableTargets.value = []
@@ -399,38 +376,16 @@ export default {
       }
     }
 
-    const loadScopeOptions = async () => {
-      if (!isHR.value || !scopeType.value) return
-
-      isLoadingOptions.value = true
-      try {
-        const reportServiceUrl = import.meta.env.VITE_REPORT_SERVICE_URL || 'http://localhost:8090'
-        const response = await fetch(`${reportServiceUrl}/report-options?user_id=${currentUser.value.user_id}&scope_type=${scopeType.value}`)
-        
-        if (response.ok) {
-          const data = await response.json()
-          scopeOptions.value = data.options || []
-        } else {
-          console.error('Failed to load scope options')
-          scopeOptions.value = []
-        }
-      } catch (error) {
-        console.error('Error loading scope options:', error)
-        scopeOptions.value = []
-      } finally {
-        isLoadingOptions.value = false
-      }
-    }
-
     // Event handlers
     const onReportTypeChange = () => {
-      selectedTargets.value = null
-      loadAvailableTargets()
-    }
-
-    const onScopeTypeChange = () => {
-      scopeValues.value = []
-      loadScopeOptions()
+      // Reset selection based on report type - start empty for user selection
+      if (reportType.value === 'team' || reportType.value === 'department') {
+        selectedTargets.value = []  // Empty array for multi-select
+      } else {
+        selectedTargets.value = null  // Null for single select
+      }
+      trendGranularity.value = 'monthly'
+      loadAvailableTargets()  // Load options but don't auto-select
     }
 
     const generatePreview = async () => {
@@ -455,16 +410,15 @@ export default {
         }
 
         // Add target selection for non-staff users
-        if (reportType.value === 'individual' && selectedTargets.value) {
-          requestBody.user_id = selectedTargets.value
-        } else if (reportType.value === 'team' && selectedTargets.value) {
-          requestBody.teams = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
-        } else if (reportType.value === 'department' && selectedTargets.value) {
-          requestBody.departments = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
-        } else if (reportType.value === 'organization' && isHR.value) {
-          requestBody.scope_type = scopeType.value
-          requestBody.scope_values = scopeValues.value
-        }
+      if (reportType.value === 'individual' && selectedTargets.value) {
+        requestBody.user_id = selectedTargets.value
+      } else if (reportType.value === 'team' && selectedTargets.value) {
+        requestBody.teams = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
+      } else if (reportType.value === 'department' && selectedTargets.value) {
+        requestBody.departments = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
+      } else if (reportType.value === 'organization' && isHR.value) {
+        requestBody.trend_granularity = trendGranularity.value
+      }
 
         // Add date range if selected
         if (dateRange.value && dateRange.value.length === 2) {
@@ -531,7 +485,7 @@ export default {
       if (type === 'individual') return 'Target User'
       if (type === 'team') return 'Team'
       if (type === 'department') return 'Department'
-      if (type === 'organization') return 'Scope'
+      if (type === 'organization') return 'Organization Scope'
       return 'Target'
     }
 
@@ -540,9 +494,16 @@ export default {
       
       const summary = previewData.value.summary
       if (summary.target_user) return summary.target_user
+      if (summary.selected_teams?.length) return summary.selected_teams.join(', ')
       if (summary.team_name) return summary.team_name
       if (summary.department) return summary.department
-      if (summary.scope_type) return `${summary.scope_type} analysis`
+      if (summary.scope_type) {
+        if (summary.scope_type === 'Organization' && summary.trend_granularity) {
+          const trendLabel = summary.trend_granularity.charAt(0).toUpperCase() + summary.trend_granularity.slice(1)
+          return `${summary.scope_type} (${trendLabel} trend)`
+        }
+        return `${summary.scope_type} analysis`
+      }
       return ''
     }
 
@@ -568,16 +529,15 @@ export default {
         }
 
         // Add target selection for non-staff users
-        if (reportType.value === 'individual' && selectedTargets.value) {
-          requestBody.user_id = selectedTargets.value
-        } else if (reportType.value === 'team' && selectedTargets.value) {
-          requestBody.teams = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
-        } else if (reportType.value === 'department' && selectedTargets.value) {
-          requestBody.departments = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
-        } else if (reportType.value === 'organization' && isHR.value) {
-          requestBody.scope_type = scopeType.value
-          requestBody.scope_values = scopeValues.value
-        }
+      if (reportType.value === 'individual' && selectedTargets.value) {
+        requestBody.user_id = selectedTargets.value
+      } else if (reportType.value === 'team' && selectedTargets.value) {
+        requestBody.teams = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
+      } else if (reportType.value === 'department' && selectedTargets.value) {
+        requestBody.departments = Array.isArray(selectedTargets.value) ? selectedTargets.value : [selectedTargets.value]
+      } else if (reportType.value === 'organization' && isHR.value) {
+        requestBody.trend_granularity = trendGranularity.value
+      }
 
         // Add date range if selected
         if (dateRange.value && dateRange.value.length === 2) {
@@ -638,11 +598,6 @@ export default {
       onReportTypeChange()
       clearPreview() // Clear preview when report type changes
     })
-    
-    watch(() => scopeType.value, () => {
-      onScopeTypeChange()
-      clearPreview() // Clear preview when scope type changes
-    })
 
     watch(() => selectedTargets.value, () => {
       clearPreview() // Clear preview when targets change
@@ -656,9 +611,14 @@ export default {
       clearPreview() // Clear preview when status filter changes
     })
 
+    watch(() => trendGranularity.value, () => {
+      clearPreview()
+    })
+
     // Load initial data
     onMounted(() => {
       if (showTargetSelection.value) {
+        // Load available targets but don't auto-select - let user choose
         loadAvailableTargets()
       }
     })
@@ -675,11 +635,9 @@ export default {
       showPreviewModal,
       reportType,
       selectedTargets,
-      scopeType,
-      scopeValues,
       availableTargets,
-      scopeOptions,
       isLoadingOptions,
+      trendGranularity,
       teamMemberColumns,
       userRole,
       isStaff,
@@ -694,7 +652,6 @@ export default {
       getRoleColor,
       getTargetPlaceholder,
       onReportTypeChange,
-      onScopeTypeChange,
       generatePreview,
       clearPreview,
       handleClosePreview,
@@ -901,13 +858,6 @@ export default {
 .form-row .ant-form-item {
   flex: 1;
   margin-bottom: 0;
-}
-
-.scope-filters {
-  background: #f5f5f5;
-  border-radius: 8px;
-  padding: 16px;
-  margin-top: 12px;
 }
 
 .filter-row {

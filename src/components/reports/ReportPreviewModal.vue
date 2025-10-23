@@ -92,13 +92,49 @@
               <span class="stat-label">Avg Completion Rate</span>
               <span class="stat-value">{{ Math.round(reportData.summary.avg_completion_rate) }}%</span>
             </div>
+            <div v-if="reportData.summary?.avg_time_per_employee_days !== undefined || reportData.summary?.avg_time_per_employee_hours !== undefined" class="stat-item">
+              <span class="stat-label">{{ reportData.summary?.avg_time_per_employee_days !== undefined ? 'Avg Days / Employee' : 'Avg Hours / Employee' }}</span>
+              <span class="stat-value">{{ reportData.summary?.avg_time_per_employee_days !== undefined ? formatDays(reportData.summary.avg_time_per_employee_days) : formatHours(reportData.summary.avg_time_per_employee_hours) }}</span>
+            </div>
+            <div v-if="reportData.summary?.avg_tasks_per_employee !== undefined" class="stat-item">
+              <span class="stat-label">Avg Tasks / Employee</span>
+              <span class="stat-value">{{ reportData.summary.avg_tasks_per_employee?.toFixed(1) }}</span>
+            </div>
+            <div v-if="reportData.summary?.avg_time_per_task_days !== undefined || reportData.summary?.avg_time_per_task_hours !== undefined" class="stat-item">
+              <span class="stat-label">{{ reportData.summary?.avg_time_per_task_days !== undefined ? 'Avg Days / Task' : 'Avg Hours / Task' }}</span>
+              <span class="stat-value">{{ reportData.summary?.avg_time_per_task_days !== undefined ? formatDays(reportData.summary.avg_time_per_task_days) : formatHours(reportData.summary.avg_time_per_task_hours) }}</span>
+            </div>
+            <div v-if="reportData.summary?.avg_completion_time_days !== undefined || reportData.summary?.avg_completion_time_hours !== undefined" class="stat-item">
+              <span class="stat-label">Avg Completion Time</span>
+              <span class="stat-value">{{ reportData.summary?.avg_completion_time_days !== undefined ? formatDays(reportData.summary.avg_completion_time_days) : formatHours(reportData.summary.avg_completion_time_hours) }}</span>
+            </div>
+            <div v-if="reportData.summary?.total_time_spent_days !== undefined || reportData.summary?.total_time_spent_hours !== undefined" class="stat-item">
+              <span class="stat-label">{{ reportData.summary?.total_time_spent_days !== undefined ? 'Total Days Spent' : 'Total Hours Spent' }}</span>
+              <span class="stat-value">{{ reportData.summary?.total_time_spent_days !== undefined ? formatDays(reportData.summary.total_time_spent_days) : formatHours(reportData.summary.total_time_spent_hours) }}</span>
+            </div>
             <div v-if="reportData.summary?.total_teams" class="stat-item">
               <span class="stat-label">Total Teams</span>
               <span class="stat-value">{{ reportData.summary.total_teams }}</span>
             </div>
+            <div v-if="reportData.summary?.completion_rate !== undefined" class="stat-item highlight">
+              <span class="stat-label">Department Completion Rate</span>
+              <span class="stat-value">{{ Math.round(reportData.summary.completion_rate) }}%</span>
+            </div>
+            <div v-if="reportData.summary?.overdue_rate !== undefined" class="stat-item">
+              <span class="stat-label">Overdue Rate</span>
+              <span class="stat-value">{{ Math.round(reportData.summary.overdue_rate) }}%</span>
+            </div>
+            <div v-if="reportData.summary?.overdue_tasks !== undefined" class="stat-item">
+              <span class="stat-label">Overdue Tasks</span>
+              <span class="stat-value">{{ reportData.summary.overdue_tasks }}</span>
+            </div>
             <div v-if="reportData.summary?.total_departments" class="stat-item">
               <span class="stat-label">Total Departments</span>
               <span class="stat-value">{{ reportData.summary.total_departments }}</span>
+            </div>
+            <div v-if="reportData.summary?.total_employees" class="stat-item">
+              <span class="stat-label">Employees</span>
+              <span class="stat-value">{{ reportData.summary.total_employees }}</span>
             </div>
           </div>
         </div>
@@ -143,7 +179,7 @@
           :pagination="false"
           size="small"
           class="comparison-table"
-        />
+        />  
       </div>
 
       <!-- Charts Section -->
@@ -458,6 +494,8 @@ const drawAnalyticsCharts = () => {
           drawSmallPieChart(ctx, chart.data, chart.title, canvas.width, canvas.height)
         } else if (chart.type === 'bar') {
           drawSmallBarChart(ctx, chart.data, chart.title, canvas.width, canvas.height)
+        } else if (chart.type === 'bar_vertical') {
+          drawVerticalBarChart(ctx, chart.data, chart.title, canvas.width, canvas.height)
         }
       }, index * 50) // Stagger the drawing
     })
@@ -764,12 +802,144 @@ const drawSmallBarChart = (ctx, data, title, width, height) => {
   }
 }
 
+const drawVerticalBarChart = (ctx, rawData, title, width, height) => {
+  console.log('Drawing vertical bar chart:', title, rawData)
+
+  if (!rawData || typeof rawData !== 'object') {
+    return
+  }
+
+  const entries = Object.entries(rawData)
+    .map(([label, value]) => [String(label), typeof value === 'number' ? value : Number(value)])
+    .filter(([, value]) => !Number.isNaN(value) && Number.isFinite(value))
+
+  if (entries.length === 0) {
+    ctx.fillStyle = '#6b7280'
+    ctx.font = '12px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText('No data available', width / 2, height / 2)
+    return
+  }
+
+  const values = entries.map(([, value]) => value)
+  const maxValue = Math.max(...values)
+  const margins = { top: 52, right: 40, bottom: 62, left: 68 }
+  const chartWidth = width - margins.left - margins.right
+  const chartHeight = height - margins.top - margins.bottom
+  const barSpacing = chartWidth / entries.length
+  const barWidth = Math.min(46, barSpacing * 0.55)
+
+  ctx.fillStyle = '#f8fafc'
+  ctx.fillRect(0, 0, width, height)
+
+  const gradient = ctx.createLinearGradient(0, 0, width, 0)
+  gradient.addColorStop(0, '#1e40af')
+  gradient.addColorStop(1, '#3b82f6')
+
+  ctx.fillStyle = gradient
+  ctx.font = 'bold 14px Arial'
+  ctx.textAlign = 'center'
+  ctx.fillText(title, width / 2, 24)
+
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '10px Arial'
+  ctx.fillText(`Max: ${maxValue.toFixed(maxValue < 10 ? 2 : 0)}`, width / 2, 39)
+
+  ctx.strokeStyle = '#9ca3af'
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(margins.left, margins.top)
+  ctx.lineTo(margins.left, height - margins.bottom)
+  ctx.lineTo(width - margins.right, height - margins.bottom)
+  ctx.stroke()
+
+  const yTicks = 5
+  ctx.strokeStyle = 'rgba(203, 213, 225, 0.7)'
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '10px Arial'
+  ctx.textAlign = 'right'
+
+  for (let i = 0; i <= yTicks; i += 1) {
+    const ratio = i / yTicks
+    const y = height - margins.bottom - (ratio * chartHeight)
+    ctx.beginPath()
+    ctx.moveTo(margins.left, y)
+    ctx.lineTo(width - margins.right, y)
+    ctx.stroke()
+
+    const tickValue = maxValue * ratio
+    ctx.fillText(tickValue.toFixed(maxValue < 10 ? 2 : 0), margins.left - 10, y + 3)
+  }
+
+  const colorPairs = [
+    ['#3b82f6', '#1d4ed8'],
+    ['#22c55e', '#16a34a'],
+    ['#f59e0b', '#d97706'],
+    ['#a855f7', '#9333ea'],
+    ['#ef4444', '#dc2626'],
+    ['#06b6d4', '#0891b2'],
+    ['#8b5cf6', '#7c3aed'],
+    ['#f97316', '#ea580c']
+  ]
+
+  entries.forEach(([label, value], index) => {
+    const ratio = maxValue === 0 ? 0 : value / maxValue
+    const barHeight = ratio * chartHeight
+    const x = margins.left + index * barSpacing + (barSpacing - barWidth) / 2
+    const y = height - margins.bottom - barHeight
+
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)'
+    ctx.fillRect(x + 2, y + 2, barWidth, barHeight)
+
+    const [colorStart, colorEnd] = colorPairs[index % colorPairs.length]
+    const barGradient = ctx.createLinearGradient(x, y, x, height - margins.bottom)
+    barGradient.addColorStop(0, colorStart)
+    barGradient.addColorStop(1, colorEnd)
+
+    ctx.fillStyle = barGradient
+    ctx.fillRect(x, y, barWidth, barHeight)
+
+    ctx.strokeStyle = colorEnd
+    ctx.lineWidth = 1
+    ctx.strokeRect(x, y, barWidth, barHeight)
+
+    ctx.fillStyle = '#111827'
+    ctx.font = 'bold 11px Arial'
+    ctx.textAlign = 'center'
+    ctx.fillText(
+      value.toFixed(value < 10 ? 2 : 0),
+      x + barWidth / 2,
+      y - 6
+    )
+
+    ctx.save()
+    ctx.translate(x + barWidth / 2, height - margins.bottom + 14)
+    ctx.rotate(-Math.PI / 6)
+    ctx.fillStyle = '#374151'
+    ctx.font = '11px Arial'
+
+    let labelText = label
+    if (label.length > 16) {
+      labelText = `${label.slice(0, 13)}…`
+    }
+    ctx.fillText(labelText, 0, 0)
+    ctx.restore()
+  })
+}
+
 // Table columns
 const teamMemberColumns = [
   {
     title: 'Name',
     dataIndex: 'name',
     key: 'name',
+  },
+  {
+    title: 'Team',
+    dataIndex: 'team_name',
+    key: 'team_name',
+    align: 'center',
+    customRender: ({ record }) => record.team_name || '—'
   },
   {
     title: 'Total Tasks',
@@ -890,9 +1060,15 @@ const getTargetLabel = () => {
   
   const type = props.reportData.report_type
   if (type === 'individual') return 'Target User'
-  if (type === 'team') return 'Team'
+  if (type === 'team') {
+    const selectedTeams = props.reportData?.summary?.selected_teams
+    if (Array.isArray(selectedTeams) && selectedTeams.length > 1) {
+      return 'Teams'
+    }
+    return 'Team'
+  }
   if (type === 'department') return 'Department'
-  if (type === 'organization') return 'Scope'
+  if (type === 'organization') return 'Organization Scope'
   return 'Target'
 }
 
@@ -901,9 +1077,18 @@ const getTargetInfo = () => {
   
   const summary = props.reportData.summary
   if (summary?.target_user) return summary.target_user
+  if (Array.isArray(summary?.selected_teams) && summary.selected_teams.length) {
+    return summary.selected_teams.join(', ')
+  }
   if (summary?.team_name) return summary.team_name
   if (summary?.department) return summary.department
-  if (summary?.scope_type) return `${summary.scope_type} analysis`
+  if (summary?.scope_type) {
+    if (summary.scope_type === 'Organization' && summary.trend_granularity) {
+      const trendLabel = summary.trend_granularity.charAt(0).toUpperCase() + summary.trend_granularity.slice(1)
+      return `${summary.scope_type} (${trendLabel} trend)`
+    }
+    return `${summary.scope_type} analysis`
+  }
   return ''
 }
 
@@ -923,6 +1108,12 @@ const getFiltersInfo = () => {
   
   if (filters.status_filter && filters.status_filter.length > 0 && !filters.status_filter.includes('All')) {
     parts.push(`Status: ${filters.status_filter.join(', ')}`)
+  }
+  
+  const trend = props.reportData.summary?.trend_granularity
+  if (trend) {
+    const formattedTrend = trend.charAt(0).toUpperCase() + trend.slice(1)
+    parts.push(`Trend: ${formattedTrend}`)
   }
   
   return parts.join(' | ') || 'No filters applied'
@@ -954,6 +1145,22 @@ const formatDate = (dateString) => {
   } catch {
     return 'N/A'
   }
+}
+
+const formatHours = (value) => {
+  if (value === undefined || value === null) return '0'
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return '0'
+  const formatted = numeric >= 10 ? numeric.toFixed(0) : numeric.toFixed(1)
+  return `${formatted}h`
+}
+
+const formatDays = (value) => {
+  if (value === undefined || value === null) return '0'
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return '0'
+  const formatted = numeric >= 10 ? numeric.toFixed(0) : numeric.toFixed(1)
+  return `${formatted} days`
 }
 
 const handleClose = () => {
