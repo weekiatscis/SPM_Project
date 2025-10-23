@@ -313,6 +313,7 @@ export default {
       if (reportType.value === 'department' && isHR.value) {
         return true
       }
+      // Managers should NOT see target selection for team reports - they only see their own team
       return false
     })
 
@@ -322,13 +323,16 @@ export default {
       // Staff can always generate their own reports
       if (isStaff.value) return true
       
-      // For team reports, target selection is mandatory
-      if (reportType.value === 'team' && (!selectedTargets.value || (Array.isArray(selectedTargets.value) && selectedTargets.value.length === 0))) {
+      // Managers can generate team reports without target selection (they see their own team)
+      if (isManager.value && reportType.value === 'team') return true
+      
+      // For team reports that require target selection, target selection is mandatory
+      if (reportType.value === 'team' && showTargetSelection.value && (!selectedTargets.value || (Array.isArray(selectedTargets.value) && selectedTargets.value.length === 0))) {
         return false
       }
       
       // For other roles, check if required selections are made
-        if (showTargetSelection.value && !selectedTargets.value) return false
+      if (showTargetSelection.value && !selectedTargets.value) return false
       
       return true
     })
@@ -393,6 +397,8 @@ export default {
         message.error('Please log in to generate reports')
         return
       }
+
+      console.log('Generate preview - Role:', userRole.value, 'Report type:', reportType.value, 'Selected targets:', selectedTargets.value)
 
       isGeneratingPreview.value = true
       errorMessage.value = ''
@@ -512,6 +518,8 @@ export default {
         message.error('Please log in to generate reports')
         return
       }
+
+      console.log('Generate report - Role:', userRole.value, 'Report type:', reportType.value, 'Selected targets:', selectedTargets.value)
 
       isGenerating.value = true
       errorMessage.value = ''

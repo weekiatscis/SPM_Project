@@ -175,7 +175,7 @@
         <h2 class="section-title">{{ getComparisonTitle() }}</h2>
         <a-table 
           :dataSource="getComparisonData()" 
-          :columns="comparisonColumns"
+          :columns="getComparisonColumns()"
           :pagination="false"
           size="small"
           class="comparison-table"
@@ -973,38 +973,85 @@ const teamMemberColumns = [
   }
 ]
 
-const comparisonColumns = [
-  {
-    title: 'Name',
-    dataIndex: 'team_name',
-    key: 'team_name',
-    customRender: ({ record }) => record.team_name || record.department || record.scope_name
-  },
-  {
-    title: 'Total Tasks',
-    dataIndex: 'total_tasks',
-    key: 'total_tasks',
-    align: 'center'
-  },
-  {
-    title: 'Completed',
-    dataIndex: 'completed_tasks',
-    key: 'completed_tasks',
-    align: 'center'
-  },
-  {
-    title: 'Completion Rate',
-    key: 'completion_rate',
-    align: 'center',
-    customRender: ({ record }) => `${record.completion_rate?.toFixed(1) || 0}%`
-  },
-  {
-    title: 'Overdue',
-    dataIndex: 'overdue_tasks',
-    key: 'overdue_tasks',
-    align: 'center'
+const getComparisonColumns = () => {
+  const type = props.reportData?.report_type
+  const userRole = props.reportData?.user_role
+  
+  if (type === 'team' && userRole === 'Manager') {
+    // Member comparison columns for managers
+    return [
+      {
+        title: 'Member Name',
+        dataIndex: 'member_name',
+        key: 'member_name'
+      },
+      {
+        title: 'Total Tasks',
+        dataIndex: 'total_tasks',
+        key: 'total_tasks',
+        align: 'center'
+      },
+      {
+        title: 'Completed',
+        dataIndex: 'completed_tasks',
+        key: 'completed_tasks',
+        align: 'center'
+      },
+      {
+        title: 'Completion Rate',
+        key: 'completion_rate',
+        align: 'center',
+        customRender: ({ record }) => `${record.completion_rate?.toFixed(1) || 0}%`
+      },
+      {
+        title: 'Overdue',
+        dataIndex: 'overdue_tasks',
+        key: 'overdue_tasks',
+        align: 'center'
+      },
+      {
+        title: 'Avg Time (Days)',
+        key: 'avg_completion_time_days',
+        align: 'center',
+        customRender: ({ record }) => formatDays(record.avg_completion_time_days)
+      }
+    ]
+  } else {
+    // Team/Department comparison columns
+    return [
+      {
+        title: 'Name',
+        dataIndex: 'team_name',
+        key: 'team_name',
+        customRender: ({ record }) => record.team_name || record.department || record.scope_name
+      },
+      {
+        title: 'Total Tasks',
+        dataIndex: 'total_tasks',
+        key: 'total_tasks',
+        align: 'center'
+      },
+      {
+        title: 'Completed',
+        dataIndex: 'completed_tasks',
+        key: 'completed_tasks',
+        align: 'center'
+      },
+      {
+        title: 'Completion Rate',
+        key: 'completion_rate',
+        align: 'center',
+        customRender: ({ record }) => `${record.completion_rate?.toFixed(1) || 0}%`
+      },
+      {
+        title: 'Overdue',
+        dataIndex: 'overdue_tasks',
+        key: 'overdue_tasks',
+        align: 'center'
+      }
+    ]
   }
-]
+}
 
 const taskColumns = [
   {
@@ -1123,6 +1170,9 @@ const getComparisonTitle = () => {
   if (!props.reportData) return 'Comparison'
   
   const type = props.reportData.report_type
+  const userRole = props.reportData.user_role
+  
+  if (type === 'team' && userRole === 'Manager') return 'Member Performance Comparison'
   if (type === 'team') return 'Team Comparison'
   if (type === 'department') return 'Department Comparison'
   if (type === 'organization') return 'Organization Comparison'

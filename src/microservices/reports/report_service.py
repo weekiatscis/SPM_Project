@@ -2287,29 +2287,54 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
             member_ids.update({member.get('user_id') for member in team_members if member.get('user_id')})
             member_ids.discard(None)
 
+            # Get all team tasks for overall team status
             team_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
             tasks_by_scope[team_label] = team_tasks
 
-            metrics = calculate_team_metrics(team_tasks)
+            # Create member comparison data instead of team comparison
+            member_comparison_data = []
+            all_team_task_statuses = []
+            
+            for member_id in member_ids:
+                member_details = get_user_details(member_id)
+                if not member_details:
+                    continue
+                
+                member_tasks = fetch_tasks_for_user(member_id, start_date, end_date, status_filter)
+                member_metrics = calculate_team_metrics(member_tasks)
+                
+                # Collect task statuses for team pie chart
+                all_team_task_statuses.extend([task.get('status', 'Unknown') for task in member_tasks])
+                
+                member_comparison_data.append({
+                    'member_name': member_details.get('name', 'Unknown'),
+                    'member_id': member_id,
+                    'total_tasks': member_metrics['total_tasks'],
+                    'completed_tasks': member_metrics['completed_tasks'], 
+                    'completion_rate': member_metrics['completion_rate'],
+                    'overdue_tasks': member_metrics['overdue_tasks'],
+                    'avg_completion_time_hours': member_metrics.get('avg_completion_time_hours', 0),
+                    'avg_completion_time_days': member_metrics.get('avg_completion_time_hours', 0) / 24,
+                    'time_spent_hours': member_metrics.get('total_time_spent_hours', 0),
+                    'time_spent_days': member_metrics.get('total_time_spent_hours', 0) / 24
+                })
+                
+                # Also add member snapshot for detailed data
+                append_member_snapshot(member_id, team_label)
+
+            # Store member comparison data for manager reports
+            team_comparison_data = member_comparison_data
+            logger.info(f"🔍 Manager team report - Created {len(member_comparison_data)} member comparisons")
+            logger.info(f"🔍 Team task status distribution: {Counter(all_team_task_statuses)}")
+            
+            # Calculate team-level metrics for summary
+            team_metrics = calculate_team_metrics(team_tasks)
             team_summaries.append({
                 'team_id': requesting_user_id,
                 'team_name': team_label,
                 'department': department,
-                'metrics': metrics
+                'metrics': team_metrics
             })
-            team_comparison_data.append({
-                'team_name': team_label,
-                'total_tasks': metrics['total_tasks'],
-                'completed_tasks': metrics['completed_tasks'],
-                'completion_rate': metrics['completion_rate'],
-                'overdue_tasks': metrics['overdue_tasks'],
-                'avg_completion_time_hours': metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0)),
-                'avg_completion_time': metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0)),
-                'time_spent_hours': metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0))
-            })
-
-            for member_id in member_ids:
-                append_member_snapshot(member_id, team_label)
 
         elif user_role in (UserRole.DIRECTOR.value, UserRole.HR.value):
             selected_teams = data.get('teams', [])
@@ -2404,36 +2429,69 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
             'total_time_spent_days': total_time_spent_days
         }
 
-        completion_by_team = {summary['team_name']: summary['metrics']['completed_tasks'] for summary in team_summaries}
-        total_tasks_by_team = {summary['team_name']: summary['metrics']['total_tasks'] for summary in team_summaries}
-        overdue_by_team = {summary['team_name']: summary['metrics']['overdue_tasks'] for summary in team_summaries}
-        completion_rate_by_team = {
-            summary['team_name']: round(summary['metrics']['completion_rate'], 2) for summary in team_summaries
-        }
-
-        pie_source = completion_by_team if sum(completion_by_team.values()) > 0 else total_tasks_by_team
-
-        preview_data['charts'] = [
-            {
-                'type': 'pie',
-                'title': 'Team Contribution (Completed Tasks)',
-                'data': pie_source
-            },
-            {
-                'type': 'bar_vertical',
-                'title': 'Completion Rate by Team (%)',
-                'data': completion_rate_by_team
-            },
-            {
-                'type': 'bar_vertical',
-                'title': 'Overdue Tasks by Team',
-                'data': overdue_by_team
+        # Different charts based on user role
+        if user_role == UserRole.MANAGER.value:
+            # Manager-specific charts focusing on individual member performance
+            
+            # Member task completion data
+            member_completion = {member['member_name']: member['completed_tasks'] for member in team_comparison_data}
+            member_total_tasks = {member['member_name']: member['total_tasks'] for member in team_comparison_data}
+            member_completion_rates = {member['member_name']: round(member['completion_rate'], 2) for member in team_comparison_data}
+            
+            # Team task status distribution using the collected statuses
+            team_status_counter = Counter(all_team_task_statuses)
+            team_status_distribution = dict(team_status_counter)
+            
+            preview_data['charts'] = [
+                {
+                    'type': 'pie',
+                    'title': 'Team Task Status Distribution', 
+                    'data': team_status_distribution
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Tasks Completed by Member',
+                    'data': member_completion
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Member Completion Rate (%)',
+                    'data': member_completion_rates
+                }
+            ]
+        else:
+            # Director/HR charts focusing on team comparisons
+            completion_by_team = {summary['team_name']: summary['metrics']['completed_tasks'] for summary in team_summaries}
+            total_tasks_by_team = {summary['team_name']: summary['metrics']['total_tasks'] for summary in team_summaries}
+            overdue_by_team = {summary['team_name']: summary['metrics']['overdue_tasks'] for summary in team_summaries}
+            completion_rate_by_team = {
+                summary['team_name']: round(summary['metrics']['completion_rate'], 2) for summary in team_summaries
             }
-        ]
+
+            pie_source = completion_by_team if sum(completion_by_team.values()) > 0 else total_tasks_by_team
+
+            preview_data['charts'] = [
+                {
+                    'type': 'pie',
+                    'title': 'Team Contribution (Completed Tasks)',
+                    'data': pie_source
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Completion Rate by Team (%)',
+                    'data': completion_rate_by_team
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Overdue Tasks by Team',
+                    'data': overdue_by_team
+                }
+            ]
 
         preview_data['detailed_data'] = {
             'team_members': team_members_data,
-            'team_comparison': team_comparison_data,
+            'team_comparison': team_comparison_data,  # For managers, this contains member comparison data
+            'member_comparison': team_comparison_data if user_role == UserRole.MANAGER.value else [],  # Explicit member comparison for managers
             'tasks_by_scope': {scope: filter_high_priority_tasks(tasks, 8) for scope, tasks in tasks_by_scope.items()}  # Top 8 high priority tasks per team
         }
         
