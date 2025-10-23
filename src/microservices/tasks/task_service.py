@@ -86,12 +86,6 @@ class TaskUpdate(BaseModel):
     updated_by: Optional[str] = None  # Track who is making the update
     recurrence: Optional[str] = None
     completed_date: Optional[str] = None  # Date when task was marked as completed
-    # Approval workflow fields
-    pending_approval: Optional[bool] = None
-    approval_requested_by: Optional[str] = None
-    approval_requested_at: Optional[str] = None
-    approved_by: Optional[str] = None
-    approved_at: Optional[str] = None
 
 
 # Pydantic model for rescheduling a task
@@ -288,12 +282,6 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
         "parent_task_id": row.get("parent_task_id"),
         "recurrence": row.get("recurrence"),  # Add recurrence field
         "completedDate": row.get("completed_date"),  # Date when task was marked as completed
-        # Approval workflow fields
-        "pending_approval": row.get("pending_approval", False),
-        "approval_requested_by": row.get("approval_requested_by"),
-        "approval_requested_at": row.get("approval_requested_at"),
-        "approved_by": row.get("approved_by"),
-        "approved_at": row.get("approved_at"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at", row.get("created_at")),
     }
@@ -1353,88 +1341,90 @@ def check_task_access(task_id: str):
         return jsonify({"error": f"Failed to check task access: {str(exc)}"}), 500
 
 
-@app.route("/tasks/pending-approvals/<user_id>", methods=["GET"])
-def get_pending_approval_tasks(user_id: str):
-    """
-    GET /tasks/pending-approvals/<user_id> - Get tasks pending approval for a manager
-    Returns tasks where:
-    - pending_approval = true
-    - The task owner's superior is the manager (user_id)
-    """
-    print(f"=== PENDING APPROVALS DEBUG: Called with user_id={user_id} ===")
-    try:
-        if not user_id or user_id.strip() == "":
-            return jsonify({"error": "Invalid user ID"}), 400
-
-        # First, check if the user is a manager/director
-        user_role = get_user_role(user_id)
-        if not user_role or user_role not in ['Manager', 'Director']:
-            return jsonify({"error": "Only managers and directors can approve tasks"}), 403
-
-        # Get all tasks with pending_approval = true
-        pending_tasks_response = supabase.table("task").select("*").eq("pending_approval", True).execute()
-        
-        print(f"DEBUG: Found {len(pending_tasks_response.data)} tasks with pending_approval=True")
-        for task in pending_tasks_response.data:
-            print(f"DEBUG: Task {task.get('task_id')} owned by {task.get('owner_id')}")
-            
-        # Let's also try a different query approach if the above doesn't work
-        if not pending_tasks_response.data:
-            print("DEBUG: Trying alternative query approach...")
-            alt_response = supabase.table("task").select("*").execute()
-            print(f"DEBUG: Total tasks in database: {len(alt_response.data)}")
-            pending_tasks = [task for task in alt_response.data if task.get('pending_approval') is True]
-            print(f"DEBUG: Tasks with pending_approval=True (filtered): {len(pending_tasks)}")
-            if pending_tasks:
-                pending_tasks_response.data = pending_tasks
-        
-        if not pending_tasks_response.data:
-            return jsonify({"tasks": []}), 200
-
-        # Filter tasks where the manager is the superior of the task owner
-        user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
-        manager_approval_tasks = []
-        
-        for task in pending_tasks_response.data:
-            task_owner_id = task.get("owner_id")
-            if not task_owner_id:
-                continue
-                
-            try:
-                # Get the task owner's superior from user service
-                response = requests.get(f"{user_service_url}/users/{task_owner_id}", timeout=5)
-                if response.ok:
-                    user_data = response.json()
-                    user_superior = user_data.get("user", {}).get("superior")
-                    
-                    print(f"DEBUG: Task owner {task_owner_id} has superior {user_superior}, manager is {user_id}")
-                    
-                    # If this manager is the superior of the task owner, include the task
-                    if user_superior == user_id:
-                        print(f"DEBUG: MATCH! Adding task {task.get('task_id')} to approval list")
-                        # Add user name for display
-                        try:
-                            owner_response = requests.get(f"{user_service_url}/users/{task_owner_id}", timeout=5)
-                            if owner_response.ok:
-                                owner_data = owner_response.json()
-                                task["owner_name"] = owner_data.get("user", {}).get("name", "Unknown")
-                            else:
-                                task["owner_name"] = "Unknown"
-                        except:
-                            task["owner_name"] = "Unknown"
-                            
-                        manager_approval_tasks.append(map_db_row_to_api(task))
-                    else:
-                        print(f"DEBUG: No match - superior {user_superior} != manager {user_id}")
-            except Exception as e:
-                print(f"Error checking superior for user {task_owner_id}: {e}")
-                continue
-
-        return jsonify({"tasks": manager_approval_tasks}), 200
-
-    except Exception as exc:
-        print(f"ERROR: Failed to get pending approval tasks: {exc}")
-        return jsonify({"error": str(exc)}), 500
+# DEPRECATED: Approval workflow has been removed
+# These columns no longer exist in the database: pending_approval, approval_requested_by, approval_requested_at, approved_by, approved_at
+# @app.route("/tasks/pending-approvals/<user_id>", methods=["GET"])
+# def get_pending_approval_tasks(user_id: str):
+#     """
+#     GET /tasks/pending-approvals/<user_id> - Get tasks pending approval for a manager
+#     Returns tasks where:
+#     - pending_approval = true
+#     - The task owner's superior is the manager (user_id)
+#     """
+#     print(f"=== PENDING APPROVALS DEBUG: Called with user_id={user_id} ===")
+#     try:
+#         if not user_id or user_id.strip() == "":
+#             return jsonify({"error": "Invalid user ID"}), 400
+#
+#         # First, check if the user is a manager/director
+#         user_role = get_user_role(user_id)
+#         if not user_role or user_role not in ['Manager', 'Director']:
+#             return jsonify({"error": "Only managers and directors can approve tasks"}), 403
+#
+#         # Get all tasks with pending_approval = true
+#         pending_tasks_response = supabase.table("task").select("*").eq("pending_approval", True).execute()
+#         
+#         print(f"DEBUG: Found {len(pending_tasks_response.data)} tasks with pending_approval=True")
+#         for task in pending_tasks_response.data:
+#             print(f"DEBUG: Task {task.get('task_id')} owned by {task.get('owner_id')}")
+#             
+#         # Let's also try a different query approach if the above doesn't work
+#         if not pending_tasks_response.data:
+#             print("DEBUG: Trying alternative query approach...")
+#             alt_response = supabase.table("task").select("*").execute()
+#             print(f"DEBUG: Total tasks in database: {len(alt_response.data)}")
+#             pending_tasks = [task for task in alt_response.data if task.get('pending_approval') is True]
+#             print(f"DEBUG: Tasks with pending_approval=True (filtered): {len(pending_tasks)}")
+#             if pending_tasks:
+#                 pending_tasks_response.data = pending_tasks
+#         
+#         if not pending_tasks_response.data:
+#             return jsonify({"tasks": []}), 200
+#
+#         # Filter tasks where the manager is the superior of the task owner
+#         user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
+#         manager_approval_tasks = []
+#         
+#         for task in pending_tasks_response.data:
+#             task_owner_id = task.get("owner_id")
+#             if not task_owner_id:
+#                 continue
+#                 
+#             try:
+#                 # Get the task owner's superior from user service
+#                 response = requests.get(f"{user_service_url}/users/{task_owner_id}", timeout=5)
+#                 if response.ok:
+#                     user_data = response.json()
+#                     user_superior = user_data.get("user", {}).get("superior")
+#                     
+#                     print(f"DEBUG: Task owner {task_owner_id} has superior {user_superior}, manager is {user_id}")
+#                     
+#                     # If this manager is the superior of the task owner, include the task
+#                     if user_superior == user_id:
+#                         print(f"DEBUG: MATCH! Adding task {task.get('task_id')} to approval list")
+#                         # Add user name for display
+#                         try:
+#                             owner_response = requests.get(f"{user_service_url}/users/{task_owner_id}", timeout=5)
+#                             if owner_response.ok:
+#                                 owner_data = owner_response.json()
+#                                 task["owner_name"] = owner_data.get("user", {}).get("name", "Unknown")
+#                             else:
+#                                 task["owner_name"] = "Unknown"
+#                         except:
+#                             task["owner_name"] = "Unknown"
+#                             
+#                         manager_approval_tasks.append(map_db_row_to_api(task))
+#                     else:
+#                         print(f"DEBUG: No match - superior {user_superior} != manager {user_id}")
+#             except Exception as e:
+#                 print(f"Error checking superior for user {task_owner_id}: {e}")
+#                 continue
+#
+#         return jsonify({"tasks": manager_approval_tasks}), 200
+#
+#     except Exception as exc:
+#         print(f"ERROR: Failed to get pending approval tasks: {exc}")
+#         return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/tasks/<task_id>", methods=["GET"])
@@ -1923,9 +1913,7 @@ def update_task(task_id: str):
             # Prepare update data (only include non-None values, exclude fields that are handled automatically)
             # Note: completed_date and approval fields are excluded because they're handled automatically
             exclude_fields = {
-                "reminder_days", "email_enabled", "in_app_enabled", "updated_by", "completed_date",
-                "pending_approval", "approval_requested_by", "approval_requested_at", 
-                "approved_by", "approved_at"
+                "reminder_days", "email_enabled", "in_app_enabled", "updated_by", "completed_date"
             }
             update_data = {k: v for k, v in task_data.dict(exclude=exclude_fields).items() if v is not None}
             actor_id = task_data.updated_by or existing_task.get("owner_id", "system")
@@ -2039,42 +2027,14 @@ def update_task(task_id: str):
             if new_status == "Completed" and old_status != "Completed":
                 from datetime import date
                 
-                # Get the user who is making this update
-                updated_by = task_data.updated_by or complete_existing_task.get("owner_id", "system")
-                
-                # Check if the user is a staff member
-                if is_staff_member(updated_by):
-                    # Staff members need approval - change status to "Pending Approval" instead of "Completed"
-                    update_data["status"] = "Pending Approval"
-                    update_data["pending_approval"] = True
-                    update_data["approval_requested_by"] = updated_by
-                    update_data["approval_requested_at"] = datetime.now(timezone.utc).isoformat()
-                    
-                    print(f"⏳ Staff member {updated_by} requesting approval for task {task_id}")
-                    print(f"   Status changed from '{old_status}' to 'Pending Approval'")
-                else:
-                    # Manager/Director can mark as completed directly
-                    update_data["completed_date"] = date.today().isoformat()  # YYYY-MM-DD format
-                    update_data["pending_approval"] = False  # Ensure this is false for manager completions
-                    print(f"✅ Manager/Director {updated_by} marked task {task_id} as completed, setting completed_date to {update_data['completed_date']}")
+                # Set completed_date when task is marked as completed
+                update_data["completed_date"] = date.today().isoformat()  # YYYY-MM-DD format
+                print(f"✅ Task {task_id} marked as completed, setting completed_date to {update_data['completed_date']}")
             
-            # If task status is changed FROM completed to something else, clear completed_date and approval flags
+            # If task status is changed FROM completed to something else, clear completed_date
             elif old_status == "Completed" and new_status != "Completed":
                 update_data["completed_date"] = None
-                update_data["pending_approval"] = False
-                update_data["approval_requested_by"] = None
-                update_data["approval_requested_at"] = None
-                update_data["approved_by"] = None
-                update_data["approved_at"] = None
-                print(f"🔄 Task {task_id} status changed from Completed to {new_status}, clearing completed_date and approval flags")
-            
-            # If task status is changed FROM "Pending Approval" to something else (rejection case)
-            elif old_status == "Pending Approval" and new_status != "Pending Approval":
-                update_data["completed_date"] = None
-                update_data["pending_approval"] = False
-                update_data["approval_requested_by"] = None
-                update_data["approval_requested_at"] = None
-                print(f"🔄 Task {task_id} status changed from Pending Approval to {new_status}, clearing approval flags")
+                print(f"🔄 Task {task_id} status changed from Completed to {new_status}, clearing completed_date")
 
         # Update in database
         response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
@@ -2314,169 +2274,171 @@ def delete_task(task_id: str):
         return jsonify({"error": f"Failed to delete task: {str(exc)}"}), 500
 
 
-@app.route("/tasks/<task_id>/approve", methods=["POST"])
-def approve_task_completion(task_id: str):
-    """
-    POST /tasks/<task_id>/approve - Manager approves a task completion
-    """
-    try:
-        data = request.get_json()
-        manager_id = data.get("approved_by")
-        
-        if not manager_id:
-            return jsonify({"error": "approved_by is required"}), 400
-        
-        # Get the task
-        task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
-        if not task_response.data:
-            return jsonify({"error": "Task not found"}), 404
-        
-        task = task_response.data[0]
-        
-        # Verify the task is pending approval
-        if not task.get("pending_approval"):
-            return jsonify({"error": "Task is not pending approval"}), 400
-        
-        # Verify the manager has authority (is the superior of the task owner)
-        owner_id = task.get("owner_id")
-        if not owner_id:
-            return jsonify({"error": "Task has no owner"}), 400
-            
-        try:
-            user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
-            import requests
-            response = requests.get(f"{user_service_url}/users/{owner_id}", timeout=5)
-            if response.ok:
-                user_data = response.json()
-                superior_id = user_data.get("user", {}).get("superior")
-                
-                if superior_id != manager_id:
-                    return jsonify({"error": "Unauthorized: You are not the superior of this task owner"}), 403
-            else:
-                return jsonify({"error": "Could not verify manager authority"}), 500
-        except Exception as e:
-            return jsonify({"error": f"Error verifying manager authority: {str(e)}"}), 500
-        
-        # Approve the task
-        from datetime import date
-        update_data = {
-            "status": "Completed",
-            "completed_date": date.today().isoformat(),
-            "pending_approval": False,
-            "approved_by": manager_id,
-            "approved_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
-        
-        if not response.data:
-            return jsonify({"error": "Failed to approve task"}), 500
-        
-        updated_task = map_db_row_to_api(response.data[0])
-        
-        # Log the approval
-        log_task_change(
-            task_id=task_id,
-            action="approve_completion",
-            field="status",
-            user_id=manager_id,
-            old_value=task.get("status"),
-            new_value="Completed"
-        )
-        
-        # Handle recurring tasks if applicable
-        if task.get("recurrence"):
-            new_instance = create_recurring_task_instance(response.data[0])
-            if new_instance:
-                print(f"✅ Created recurring task instance: {new_instance.get('task_id')}")
-        
-        return jsonify({
-            "message": "Task completion approved",
-            "task": updated_task
-        }), 200
-        
-    except Exception as exc:
-        print(f"ERROR: Failed to approve task: {exc}")
-        return jsonify({"error": str(exc)}), 500
+# DEPRECATED: Approval workflow has been removed
+# @app.route("/tasks/<task_id>/approve", methods=["POST"])
+# def approve_task_completion(task_id: str):
+#     """
+#     POST /tasks/<task_id>/approve - Manager approves a task completion
+#     """
+#     try:
+#         data = request.get_json()
+#         manager_id = data.get("approved_by")
+#         
+#         if not manager_id:
+#             return jsonify({"error": "approved_by is required"}), 400
+#         
+#         # Get the task
+#         task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
+#         if not task_response.data:
+#             return jsonify({"error": "Task not found"}), 404
+#         
+#         task = task_response.data[0]
+#         
+#         # Verify the task is pending approval
+#         if not task.get("pending_approval"):
+#             return jsonify({"error": "Task is not pending approval"}), 400
+#         
+#         # Verify the manager has authority (is the superior of the task owner)
+#         owner_id = task.get("owner_id")
+#         if not owner_id:
+#             return jsonify({"error": "Task has no owner"}), 400
+#             
+#         try:
+#             user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
+#             import requests
+#             response = requests.get(f"{user_service_url}/users/{owner_id}", timeout=5)
+#             if response.ok:
+#                 user_data = response.json()
+#                 superior_id = user_data.get("user", {}).get("superior")
+#                 
+#                 if superior_id != manager_id:
+#                     return jsonify({"error": "Unauthorized: You are not the superior of this task owner"}), 403
+#             else:
+#                 return jsonify({"error": "Could not verify manager authority"}), 500
+#         except Exception as e:
+#             return jsonify({"error": f"Error verifying manager authority: {str(e)}"}), 500
+#         
+#         # Approve the task
+#         from datetime import date
+#         update_data = {
+#             "status": "Completed",
+#             "completed_date": date.today().isoformat(),
+#             "pending_approval": False,
+#             "approved_by": manager_id,
+#             "approved_at": datetime.now(timezone.utc).isoformat()
+#         }
+#         
+#         response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
+#         
+#         if not response.data:
+#             return jsonify({"error": "Failed to approve task"}), 500
+#         
+#         updated_task = map_db_row_to_api(response.data[0])
+#         
+#         # Log the approval
+#         log_task_change(
+#             task_id=task_id,
+#             action="approve_completion",
+#             field="status",
+#             user_id=manager_id,
+#             old_value=task.get("status"),
+#             new_value="Completed"
+#         )
+#         
+#         # Handle recurring tasks if applicable
+#         if task.get("recurrence"):
+#             new_instance = create_recurring_task_instance(response.data[0])
+#             if new_instance:
+#                 print(f"✅ Created recurring task instance: {new_instance.get('task_id')}")
+#         
+#         return jsonify({
+#             "message": "Task completion approved",
+#             "task": updated_task
+#         }), 200
+#         
+#     except Exception as exc:
+#         print(f"ERROR: Failed to approve task: {exc}")
+#         return jsonify({"error": str(exc)}), 500
 
 
-@app.route("/tasks/<task_id>/reject", methods=["POST"])
-def reject_task_completion(task_id: str):
-    """
-    POST /tasks/<task_id>/reject - Manager rejects a task completion
-    """
-    try:
-        data = request.get_json()
-        manager_id = data.get("rejected_by")
-        rejection_reason = data.get("reason", "No reason provided")
-        
-        if not manager_id:
-            return jsonify({"error": "rejected_by is required"}), 400
-        
-        # Get the task
-        task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
-        if not task_response.data:
-            return jsonify({"error": "Task not found"}), 404
-        
-        task = task_response.data[0]
-        
-        # Verify the task is pending approval
-        if not task.get("pending_approval"):
-            return jsonify({"error": "Task is not pending approval"}), 400
-        
-        # Verify the manager has authority
-        owner_id = task.get("owner_id")
-        if not owner_id:
-            return jsonify({"error": "Task has no owner"}), 400
-            
-        try:
-            user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
-            import requests
-            response = requests.get(f"{user_service_url}/users/{owner_id}", timeout=5)
-            if response.ok:
-                user_data = response.json()
-                superior_id = user_data.get("user", {}).get("superior")
-                
-                if superior_id != manager_id:
-                    return jsonify({"error": "Unauthorized: You are not the superior of this task owner"}), 403
-            else:
-                return jsonify({"error": "Could not verify manager authority"}), 500
-        except Exception as e:
-            return jsonify({"error": f"Error verifying manager authority: {str(e)}"}), 500
-        
-        # Reject the task - return to original status
-        update_data = {
-            "pending_approval": False,
-            "approval_requested_by": None,
-            "approval_requested_at": None
-        }
-        
-        response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
-        
-        if not response.data:
-            return jsonify({"error": "Failed to reject task"}), 500
-        
-        updated_task = map_db_row_to_api(response.data[0])
-        
-        # Log the rejection
-        log_task_change(
-            task_id=task_id,
-            action="reject_completion",
-            field="pending_approval",
-            user_id=manager_id,
-            old_value=True,
-            new_value=False
-        )
-        
-        return jsonify({
-            "message": "Task completion rejected",
-            "task": updated_task,
-            "reason": rejection_reason
-        }), 200
-        
-    except Exception as exc:
-        print(f"ERROR: Failed to reject task: {exc}")
-        return jsonify({"error": str(exc)}), 500
+# DEPRECATED: Approval workflow has been removed
+# @app.route("/tasks/<task_id>/reject", methods=["POST"])
+# def reject_task_completion(task_id: str):
+#     """
+#     POST /tasks/<task_id>/reject - Manager rejects a task completion
+#     """
+#     try:
+#         data = request.get_json()
+#         manager_id = data.get("rejected_by")
+#         rejection_reason = data.get("reason", "No reason provided")
+#         
+#         if not manager_id:
+#             return jsonify({"error": "rejected_by is required"}), 400
+#         
+#         # Get the task
+#         task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
+#         if not task_response.data:
+#             return jsonify({"error": "Task not found"}), 404
+#         
+#         task = task_response.data[0]
+#         
+#         # Verify the task is pending approval
+#         if not task.get("pending_approval"):
+#             return jsonify({"error": "Task is not pending approval"}), 400
+#         
+#         # Verify the manager has authority
+#         owner_id = task.get("owner_id")
+#         if not owner_id:
+#             return jsonify({"error": "Task has no owner"}), 400
+#             
+#         try:
+#             user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
+#             import requests
+#             response = requests.get(f"{user_service_url}/users/{owner_id}", timeout=5)
+#             if response.ok:
+#                 user_data = response.json()
+#                 superior_id = user_data.get("user", {}).get("superior")
+#                 
+#                 if superior_id != manager_id:
+#                     return jsonify({"error": "Unauthorized: You are not the superior of this task owner"}), 403
+#             else:
+#                 return jsonify({"error": "Could not verify manager authority"}), 500
+#         except Exception as e:
+#             return jsonify({"error": f"Error verifying manager authority: {str(e)}"}), 500
+#         
+#         # Reject the task - return to original status
+#         update_data = {
+#             "pending_approval": False,
+#             "approval_requested_by": None,
+#             "approval_requested_at": None
+#         }
+#         
+#         response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
+#         
+#         if not response.data:
+#             return jsonify({"error": "Failed to reject task"}), 500
+#         
+#         updated_task = map_db_row_to_api(response.data[0])
+#         
+#         # Log the rejection
+#         log_task_change(
+#             task_id=task_id,
+#             action="reject_completion",
+#             field="pending_approval",
+#             user_id=manager_id,
+#             old_value=True,
+#             new_value=False
+#         )
+#         
+#         return jsonify({
+#             "message": "Task completion rejected",
+#             "task": updated_task,
+#             "reason": rejection_reason
+#         }), 200
+#         
+#     except Exception as exc:
+#         print(f"ERROR: Failed to reject task: {exc}")
+#         return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/health", methods=["GET"])
