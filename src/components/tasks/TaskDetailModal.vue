@@ -293,7 +293,7 @@ export default {
       default: false
     }
   },
-  emits: ['close', 'edit', 'delete', 'open-task'],
+  emits: ['close', 'edit', 'delete', 'open-task', 'task-updated'],
   setup(props, { emit }) {
     const authStore = useAuthStore()
     const isDeleting = ref(false)
@@ -954,14 +954,16 @@ export default {
         }
         alert(successMessage)
         
-        // Update local task object
-        props.task.status = 'Completed'
+        // Emit task-updated event with the updated task data
+        const updatedTask = {
+          ...props.task,
+          status: 'Completed',
+          completedDate: result.task?.completed_date || new Date().toISOString()
+        }
+        emit('task-updated', updatedTask)
         
-        // Close the modal and emit event
+        // Close the modal
         emit('close')
-        
-        // Optionally emit a refresh event or update event
-        window.location.reload() // Simple approach to refresh the list
         
       } catch (error) {
         console.error('Failed to mark task as completed:', error)

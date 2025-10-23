@@ -2,15 +2,12 @@
   <a-card
     :hoverable="true"
     :style="{ 
-      width: '100%',
-      marginLeft: task.isSubtask ? '32px' : '0',
-      borderLeft: task.isSubtask ? '3px solid #1890ff' : 'none'
+      width: '100%'
     }"
     :class="[
       'cursor-pointer',
       'task-card',
       { 'urgent-task': (isDueWithin24Hours(task.dueDate) || isOverdue(task.dueDate)) && task.status !== 'Completed' },
-      { 'subtask-card': task.isSubtask },
       { 'parent-task-card': task.isParent }
     ]"
     @click="$emit('view-details', task)"
@@ -24,11 +21,19 @@
           <div class="task-title-section">
             <div class="title-with-badge">
               <a-typography-text 
-                :strong="!task.isSubtask" 
-                :class="{ 'subtask-title': task.isSubtask, 'main-title': !task.isSubtask }"
+                strong
+                class="main-title"
               >
                 {{ task.title }}
               </a-typography-text>
+              
+              <!-- Subtask Label - Inline after title -->
+              <span v-if="task.isSubtask" class="subtask-label">
+                <svg class="subtask-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                <span class="subtask-text">Subtask</span>
+              </span>
               
               <!-- Due Soon Badge - Inline -->
               <span v-if="isDueWithin24Hours(task.dueDate) && !isOverdue(task.dueDate) && task.status !== 'Completed'" class="urgent-badge">
@@ -48,11 +53,6 @@
               <!-- Collaborator badge -->
               <a-tag v-if="isCollaborator()" color="purple" class="task-badge">
                 Collaborator
-              </a-tag>
-              
-              <!-- Subtask badge -->
-              <a-tag v-if="task.isSubtask" color="blue" class="task-badge">
-                Subtask
               </a-tag>
             
               <a-tooltip v-if="task.recurrence" :title="getRecurrenceTooltip(task.recurrence)">
@@ -350,12 +350,6 @@ export default {
   letter-spacing: -0.01em !important;
 }
 
-.subtask-title {
-  font-size: 14px !important;
-  color: #6b7280 !important;
-  font-weight: 500 !important;
-}
-
 /* Badges */
 .task-badges {
   display: flex;
@@ -465,6 +459,44 @@ export default {
   border-radius: 12px 12px 0 0;
 }
 
+/* Subtask Label - Prominent Design */
+.subtask-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #e6f7ff;
+  color: #0958d9;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #91caff;
+  letter-spacing: 0.2px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.subtask-icon {
+  width: 14px;
+  height: 14px;
+  color: #1890ff;
+  flex-shrink: 0;
+}
+
+.subtask-text {
+  text-transform: uppercase;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.subtask-label:hover {
+  background: #bae0ff;
+  border-color: #69b1ff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(24, 144, 255, 0.15);
+  transition: all 0.2s ease;
+}
+
 /* Clean Badge - Integrated Design */
 .urgent-badge {
   display: inline-flex;
@@ -531,17 +563,6 @@ export default {
   transform: rotate(90deg);
 }
 
-/* Subtask styling */
-.subtask-card {
-  background-color: #f0f5ff;
-  border-left-width: 3px !important;
-  position: relative;
-}
-
-.subtask-title {
-  font-size: 14px;
-  color: #595959;
-}
 
 /* Parent task styling */
 .parent-task-card {
@@ -567,8 +588,4 @@ export default {
   transform: translateY(-2px);
 }
 
-.subtask-card:hover {
-  transform: translateX(2px) translateY(-1px);
-  background-color: #e6f7ff;
-}
 </style>

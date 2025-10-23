@@ -902,7 +902,9 @@ export default {
           assignee_name: userNameMap[t.owner_id] || 'Unassigned',
           department: userDepartmentMap[t.owner_id] || 'N/A',
           collaborators: t.collaborators || [],
-          project: t.project || project.value.project_name
+          project: t.project || project.value.project_name,
+          parent_task_id: t.parent_task_id || null,
+          isSubtask: t.isSubtask || !!t.parent_task_id
         }))
       } catch (err) {
         console.error('Failed to load project tasks:', err)
