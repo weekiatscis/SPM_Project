@@ -2,7 +2,11 @@
     <a-config-provider>
       <!-- Show auth pages (login/signup) without any layout -->
       <div v-if="isLoginPage">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <transition name="auth-fade" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
       </div>
 
       <!-- Show main app layout for all other pages -->
@@ -187,3 +191,71 @@ export default {
   }
 }
 </script>
+
+<style>
+/* Auth Page 360° Flip Transitions */
+.auth-fade-enter-active,
+.auth-fade-leave-active {
+  transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+/* Login → Signup (flip forward) */
+.auth-fade-leave-active {
+  position: absolute;
+  width: 100%;
+  animation: flipOut 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.auth-fade-enter-active {
+  animation: flipIn 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes flipOut {
+  0% {
+    transform: perspective(1200px) rotateY(0deg) scale(1);
+    opacity: 1;
+  }
+  49% {
+    opacity: 1;
+  }
+  50% {
+    transform: perspective(1200px) rotateY(180deg) scale(0.9);
+    opacity: 0;
+  }
+  100% {
+    transform: perspective(1200px) rotateY(180deg) scale(0.9);
+    opacity: 0;
+  }
+}
+
+@keyframes flipIn {
+  0% {
+    transform: perspective(1200px) rotateY(-180deg) scale(0.9);
+    opacity: 0;
+  }
+  50% {
+    transform: perspective(1200px) rotateY(-180deg) scale(0.9);
+    opacity: 0;
+  }
+  51% {
+    opacity: 1;
+  }
+  100% {
+    transform: perspective(1200px) rotateY(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Ensure smooth rendering */
+.auth-fade-enter-from,
+.auth-fade-leave-to {
+  opacity: 0;
+}
+
+.auth-fade-enter-to,
+.auth-fade-leave-from {
+  opacity: 1;
+}
+</style>

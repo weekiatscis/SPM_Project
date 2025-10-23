@@ -40,23 +40,24 @@
 
       <!-- Projects -->
       <div class="nav-group">
-        <div 
-          class="nav-item nav-group-header" 
+        <div
+          class="nav-item nav-group-header"
           :class="{ 'active': isActive('/projects') }"
-          @click="toggleProjects"
+          @click="navigateToProjects"
         >
           <div class="nav-icon">
             <ProjectIcon />
           </div>
           <span v-if="!isCollapsed" class="nav-label">Projects</span>
-          <svg 
-            v-if="!isCollapsed" 
-            class="expand-arrow" 
+          <svg
+            v-if="!isCollapsed"
+            class="expand-arrow"
             :class="{ 'expanded': projectsExpanded }"
-            width="16" 
-            height="16" 
-            viewBox="0 0 16 16" 
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
             fill="none"
+            @click.stop="toggleProjects"
           >
             <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
@@ -166,11 +167,15 @@ const handleSidebarLeave = () => {
   }, 300)
 }
 
+const navigateToProjects = () => {
+  // Navigate to projects page when clicking anywhere on the header except arrow
+  router.push('/projects')
+}
+
 const toggleProjects = () => {
+  // Only toggle the dropdown, don't navigate
   if (!props.isCollapsed) {
     projectsExpanded.value = !projectsExpanded.value
-  } else {
-    router.push('/projects')
   }
 }
 
@@ -395,6 +400,8 @@ onUnmounted(() => {
   right: 12px;
   transition: transform 0.3s ease;
   color: currentColor;
+  cursor: pointer;
+  padding: 4px;
 }
 
 .expand-arrow.expanded {

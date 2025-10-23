@@ -63,20 +63,82 @@
             <span class="text-white text-xs font-medium">{{ getInitials(currentUserName) }}</span>
           </div>
         </div>
-        <div class="flex-1">
-          <textarea
-            v-model="newComment"
-            :disabled="isAddingComment"
-            placeholder="Add a comment..."
-            rows="3"
-            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-            @keydown.ctrl.enter="addComment"
-            @keydown.meta.enter="addComment"
-          ></textarea>
+        <div class="flex-1 relative">
+          <!-- Comment Input Field with Inline Tags -->
+          <div
+            ref="commentTextarea"
+            contenteditable="true"
+            :class="[
+              'comment-input-field',
+              'w-full min-h-[76px] p-3 border border-gray-300 rounded-lg',
+              'focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none',
+              { 'opacity-50 cursor-not-allowed': isAddingComment }
+            ]"
+            @input="handleContentEditableInput"
+            @keyup="handleContentEditableInput"
+            @keydown="handleKeydown"
+            @paste="handlePaste"
+          >
+            <!-- Mentioned Users Tags (inline) -->
+            <a-tag
+              v-for="user in mentionedUsers"
+              :key="user.user_id"
+              closable
+              color="blue"
+              contenteditable="false"
+              @close.stop="removeMention(user.user_id)"
+              class="inline-flex items-center mr-1 mb-1"
+              style="vertical-align: middle; user-select: none;"
+            >
+              <span class="text-xs">@{{ user.name }}</span>
+            </a-tag>
+            <!-- Placeholder -->
+            <span
+              v-if="mentionedUsers.length === 0 && !newComment"
+              class="placeholder-text"
+            >
+              Add a comment... (Type @ to mention someone)
+            </span>
+          </div>
+          
+          <!-- Mention Dropdown -->
+          <div
+            v-if="showMentionDropdown"
+            class="absolute z-50 mt-1 w-64 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto"
+            :style="dropdownStyle"
+          >
+            <div v-if="isLoadingDepartmentMembers" class="p-3 text-center text-sm text-gray-500">
+              <div class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+              Loading members...
+            </div>
+            <div v-else-if="filteredMentionUsers.length === 0" class="p-3 text-center text-sm text-gray-500">
+              No members found
+            </div>
+            <div v-else>
+              <button
+                v-for="(user, index) in filteredMentionUsers"
+                :key="user.user_id"
+                @click="selectMention(user)"
+                @mouseenter="selectedMentionIndex = index"
+                :class="[
+                  'w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors flex items-center gap-2',
+                  { 'bg-blue-100': selectedMentionIndex === index }
+                ]"
+              >
+                <div class="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span class="text-white text-xs font-medium">{{ getInitials(user.name) }}</span>
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="text-sm font-medium text-gray-900 truncate">{{ user.name }}</div>
+                  <div class="text-xs text-gray-500 truncate">{{ user.role }}</div>
+                </div>
+              </button>
+            </div>
+          </div>
           <div class="flex justify-end items-center mt-2">
             <button
               @click="addComment"
-              :disabled="!newComment.trim() || isAddingComment"
+              :disabled="(!newComment.trim() && mentionedUsers.length === 0) || isAddingComment"
               class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {{ isAddingComment ? 'Posting...' : 'Post Comment' }}
@@ -122,6 +184,17 @@ export default {
     const isAddingComment = ref(false)
     const newComment = ref('')
     const userCache = ref({})
+    const commentTextarea = ref(null)
+    
+    // Mention functionality
+    const departmentMembers = ref([])
+    const isLoadingDepartmentMembers = ref(false)
+    const showMentionDropdown = ref(false)
+    const mentionSearchQuery = ref('')
+    const mentionStartPos = ref(0)
+    const selectedMentionIndex = ref(0)
+    const dropdownStyle = ref({})
+    const mentionedUsers = ref([])
 
     const currentUserId = computed(() => authStore.user?.user_id)
     const currentUserName = computed(() => {
@@ -267,11 +340,234 @@ export default {
       }
     }
 
+    // Fetch department members for mentions
+    const fetchDepartmentMembers = async () => {
+      if (!authStore.user?.department) return
+      
+      isLoadingDepartmentMembers.value = true
+      try {
+        const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
+        const response = await fetch(`${userServiceUrl}/users/departments/${authStore.user.department}`)
+        
+        if (response.ok) {
+          const data = await response.json()
+          // Filter out current user from the list
+          departmentMembers.value = (data.users || []).filter(
+            user => user.user_id !== currentUserId.value
+          )
+        }
+      } catch (error) {
+        console.error('Failed to fetch department members:', error)
+      } finally {
+        isLoadingDepartmentMembers.value = false
+      }
+    }
+    
+    // Filtered mention users based on search query
+    const filteredMentionUsers = computed(() => {
+      if (!mentionSearchQuery.value) {
+        return departmentMembers.value
+      }
+      
+      const query = mentionSearchQuery.value.toLowerCase()
+      return departmentMembers.value.filter(user => 
+        user.name.toLowerCase().includes(query) ||
+        user.role.toLowerCase().includes(query)
+      )
+    })
+    
+    // Handle contenteditable input
+    const handleContentEditableInput = (event) => {
+      const element = event.target || commentTextarea.value
+      if (!element) return
+      
+      // Get text content directly from the element
+      let textContent = ''
+      
+      // Extract text from all child nodes, excluding tag components
+      Array.from(element.childNodes).forEach(node => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          textContent += node.textContent
+        } else if (node.nodeType === Node.ELEMENT_NODE && !node.classList.contains('ant-tag')) {
+          textContent += node.textContent
+        }
+      })
+      
+      newComment.value = textContent
+      
+      console.log('Current text:', textContent)
+      
+      // Detect @ mentions
+      const text = textContent
+      const lastAtIndex = text.lastIndexOf('@')
+      
+      console.log('Last @ index:', lastAtIndex)
+      
+      if (lastAtIndex !== -1) {
+        const textAfterAt = text.substring(lastAtIndex + 1)
+        console.log('Text after @:', textAfterAt)
+        
+        if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
+          mentionStartPos.value = lastAtIndex
+          mentionSearchQuery.value = textAfterAt
+          showMentionDropdown.value = true
+          selectedMentionIndex.value = 0
+          
+          console.log('Showing dropdown, search query:', textAfterAt)
+          
+          calculateDropdownPosition()
+          
+          if (departmentMembers.value.length === 0 && !isLoadingDepartmentMembers.value) {
+            fetchDepartmentMembers()
+          }
+        } else {
+          showMentionDropdown.value = false
+        }
+      } else {
+        showMentionDropdown.value = false
+      }
+    }
+    
+    // Handle paste to strip formatting
+    const handlePaste = (event) => {
+      event.preventDefault()
+      const text = event.clipboardData.getData('text/plain')
+      document.execCommand('insertText', false, text)
+    }
+    
+    // Calculate dropdown position relative to cursor
+    const calculateDropdownPosition = () => {
+      if (!commentTextarea.value) return
+      
+      // Simple positioning below the textarea
+      dropdownStyle.value = {
+        bottom: 'auto',
+        left: '0px'
+      }
+    }
+    
+    // Handle keyboard navigation in mention dropdown
+    const handleKeydown = (event) => {
+      // Handle Ctrl/Cmd + Enter to submit
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        event.preventDefault()
+        addComment()
+        return
+      }
+      
+      if (!showMentionDropdown.value) return
+      
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        selectedMentionIndex.value = Math.min(
+          selectedMentionIndex.value + 1,
+          filteredMentionUsers.value.length - 1
+        )
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        selectedMentionIndex.value = Math.max(selectedMentionIndex.value - 1, 0)
+      } else if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
+        if (filteredMentionUsers.value.length > 0) {
+          event.preventDefault()
+          selectMention(filteredMentionUsers.value[selectedMentionIndex.value])
+        }
+      } else if (event.key === 'Escape') {
+        showMentionDropdown.value = false
+      }
+    }
+    
+    // Select a mention from dropdown
+    const selectMention = (user) => {
+      // Check if user is already mentioned
+      if (!mentionedUsers.value.find(u => u.user_id === user.user_id)) {
+        mentionedUsers.value.push({
+          user_id: user.user_id,
+          name: user.name
+        })
+      }
+      
+      // Remove the @ and search text from the content
+      const beforeMention = newComment.value.substring(0, mentionStartPos.value)
+      const afterMention = newComment.value.substring(mentionStartPos.value + mentionSearchQuery.value.length + 1)
+      
+      // Update the text content in the contenteditable div
+      if (commentTextarea.value) {
+        // Get all text nodes and update them
+        const textNodes = []
+        const walker = document.createTreeWalker(
+          commentTextarea.value,
+          NodeFilter.SHOW_TEXT,
+          null,
+          false
+        )
+        
+        let node
+        while (node = walker.nextNode()) {
+          textNodes.push(node)
+        }
+        
+        // Clear text nodes and set new content
+        textNodes.forEach(node => {
+          if (node.textContent.includes('@')) {
+            node.textContent = beforeMention + afterMention
+          }
+        })
+      }
+      
+      newComment.value = beforeMention + afterMention
+      
+      // Close dropdown
+      showMentionDropdown.value = false
+      
+      // Focus back on contenteditable and position cursor after the tag
+      setTimeout(() => {
+        if (commentTextarea.value) {
+          commentTextarea.value.focus()
+          
+          // Move cursor to the end of the contenteditable div (after all tags)
+          const range = document.createRange()
+          const selection = window.getSelection()
+          
+          // Find the last child node (or create a text node if needed)
+          let lastNode = commentTextarea.value.lastChild
+          
+          // If the last child is a tag, we need to add a text node after it
+          if (!lastNode || lastNode.nodeType !== Node.TEXT_NODE) {
+            const textNode = document.createTextNode('\u00A0') // Non-breaking space
+            commentTextarea.value.appendChild(textNode)
+            lastNode = textNode
+          }
+          
+          // Set cursor position at the end
+          range.setStart(lastNode, lastNode.textContent.length)
+          range.collapse(true)
+          selection.removeAllRanges()
+          selection.addRange(range)
+        }
+      }, 10)
+    }
+    
+    // Remove a mention tag
+    const removeMention = (userId) => {
+      mentionedUsers.value = mentionedUsers.value.filter(u => u.user_id !== userId)
+    }
+    
     const addComment = async () => {
-      if (!newComment.value.trim() || !canComment.value || isAddingComment.value) return
+      // Allow comment if there's text OR mentions
+      const hasContent = newComment.value.trim() || mentionedUsers.value.length > 0
+      if (!hasContent || !canComment.value || isAddingComment.value) return
 
       isAddingComment.value = true
       try {
+        // Build the final comment text with mentions
+        let finalCommentText = newComment.value.trim()
+        
+        // Prepend mentions if any
+        if (mentionedUsers.value.length > 0) {
+          const mentions = mentionedUsers.value.map(u => `@${u.name}`).join(' ')
+          finalCommentText = mentions + (finalCommentText ? ' ' + finalCommentText : '')
+        }
+        
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const response = await fetch(`${taskServiceUrl}/tasks/${props.taskId}/comments`, {
           method: 'POST',
@@ -279,7 +575,7 @@ export default {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            comment_text: newComment.value.trim(),
+            comment_text: finalCommentText,
             user_id: currentUserId.value
           })
         })
@@ -299,6 +595,13 @@ export default {
           // Add the new comment to the beginning of the list (since backend returns latest first)
           comments.value.unshift(result.comment)
           newComment.value = ''
+          mentionedUsers.value = [] // Clear mentioned users
+          
+          // Clear the contenteditable div
+          if (commentTextarea.value) {
+            commentTextarea.value.innerHTML = ''
+          }
+          
           emit('comments-updated', comments.value.length)
         } else {
           throw new Error('Server returned invalid response')
@@ -350,13 +653,54 @@ export default {
       formatCommentDate,
       getUserName,
       addComment,
-      fetchComments
+      fetchComments,
+      commentTextarea,
+      showMentionDropdown,
+      filteredMentionUsers,
+      isLoadingDepartmentMembers,
+      selectedMentionIndex,
+      dropdownStyle,
+      handleContentEditableInput,
+      handleKeydown,
+      handlePaste,
+      selectMention,
+      mentionedUsers,
+      removeMention
     }
   }
 }
 </script>
 
 <style scoped>
+/* Comment input field (contenteditable) */
+.comment-input-field {
+  min-height: 76px;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+}
+
+.comment-input-field:empty:before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+}
+
+.placeholder-text {
+  color: #9ca3af;
+  pointer-events: none;
+  position: absolute;
+  left: 12px;
+  top: 12px;
+}
+
+.comment-input-field:focus .placeholder-text {
+  display: none;
+}
+
 /* Custom scrollbar for comments list */
 .task-comments .max-h-64::-webkit-scrollbar {
   width: 8px;

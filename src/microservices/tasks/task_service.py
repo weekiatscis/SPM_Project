@@ -473,6 +473,163 @@ def save_notification_preferences(user_id: str, task_id: str, email_enabled: boo
         traceback.print_exc()
         return False
 
+def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: str, commenter_name: str):
+    """Send notifications to users mentioned in a comment"""
+    print("="*80)
+    print("🔔 NOTIFY_COMMENT_MENTIONS CALLED")
+    print("="*80)
+    print(f"📋 Task Data: {task_data}")
+    print(f"💬 Comment Text: {comment_text}")
+    print(f"👤 Commenter ID: {commenter_id}")
+    print(f"👤 Commenter Name: {commenter_name}")
+
+    try:
+        # Extract @mentions from comment text using regex
+        import re
+        mention_pattern = r'@([^\s]+)'
+        mentioned_names = re.findall(mention_pattern, comment_text)
+        
+        if not mentioned_names:
+            print("ℹ️  No mentions found in comment")
+            return
+        
+        print(f"📝 Found {len(mentioned_names)} mention(s): {mentioned_names}")
+        
+        # Get all users from database to match names
+        all_users_response = supabase.table("user").select("user_id, name").execute()
+        if not all_users_response.data:
+            print("❌ Could not fetch users from database")
+            return
+        
+        # Create a mapping of names to user IDs (case-insensitive)
+        name_to_user_id = {}
+        for user in all_users_response.data:
+            user_name = user.get('name', '').strip()
+            if user_name:
+                name_to_user_id[user_name.lower()] = user['user_id']
+        
+        # Find user IDs for mentioned names
+        mentioned_user_ids = []
+        for mentioned_name in mentioned_names:
+            # Try exact match first, then case-insensitive
+            user_id = name_to_user_id.get(mentioned_name.lower())
+            if user_id:
+                mentioned_user_ids.append(user_id)
+                print(f"✅ Matched mention '@{mentioned_name}' to user ID: {user_id}")
+            else:
+                print(f"⚠️  Could not find user for mention '@{mentioned_name}'")
+        
+        if not mentioned_user_ids:
+            print("ℹ️  No valid user IDs found for mentions")
+            return
+        
+        # Remove duplicates
+        mentioned_user_ids = list(set(mentioned_user_ids))
+        print(f"👥 Sending mention notifications to {len(mentioned_user_ids)} user(s)")
+        
+        notifications_created = 0
+        for mentioned_user_id in mentioned_user_ids:
+            # Skip if user mentioned themselves
+            if mentioned_user_id == commenter_id:
+                print(f"⏭️  Skipping self-mention for user {mentioned_user_id}")
+                continue
+            
+            # Truncate comment for notification
+            truncated_comment = comment_text[:100] + "..." if len(comment_text) > 100 else comment_text
+            
+            notification_data = {
+                "user_id": mentioned_user_id,
+                "title": f"You were mentioned in '{task_data['title']}'",
+                "message": f"{commenter_name} mentioned you: {truncated_comment}",
+                "type": "mention",
+                "task_id": task_data["task_id"],
+                "due_date": task_data.get("due_date"),
+                "priority": task_data.get("priority", "Medium"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "is_read": False
+            }
+            
+            print(f"📝 Creating mention notification for user {mentioned_user_id}")
+            
+            # Check notification preferences
+            prefs = get_notification_preferences(mentioned_user_id, task_data["task_id"])
+            
+            # Store in-app notification if enabled
+            if prefs.get("in_app_enabled", True):
+                try:
+                    # Check for duplicate within last 2 minutes
+                    existing_check = supabase.table("notifications").select("id").eq(
+                        "user_id", mentioned_user_id
+                    ).eq("task_id", task_data["task_id"]).eq("type", "mention").gte(
+                        "created_at", (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+                    ).execute()
+                    
+                    if existing_check.data and len(existing_check.data) > 0:
+                        print(f"⏭️  Duplicate mention notification detected, skipping...")
+                        continue
+                    
+                    response = supabase.table("notifications").insert(notification_data).execute()
+                    
+                    if response.data:
+                        notifications_created += 1
+                        print(f"✅ Mention notification created! ID: {response.data[0].get('id')}")
+                        
+                        # Send real-time notification
+                        try:
+                            notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                            realtime_data = {
+                                "user_id": mentioned_user_id,
+                                "title": notification_data["title"],
+                                "message": notification_data["message"],
+                                "type": notification_data["type"],
+                                "task_id": notification_data.get("task_id"),
+                                "created_at": notification_data["created_at"]
+                            }
+                            notif_response = requests.post(
+                                f"{notification_service_url}/notifications/realtime",
+                                json=realtime_data,
+                                timeout=5,
+                                headers={'Content-Type': 'application/json'}
+                            )
+                            print(f"   Real-time mention notification sent: {notif_response.status_code}")
+                        except Exception as e:
+                            print(f"⚠️  Failed to send real-time notification: {e}")
+                
+                except Exception as insert_error:
+                    print(f"❌ Error creating mention notification: {insert_error}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Send email if enabled
+            if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
+                user_email = get_user_email(mentioned_user_id)
+                if user_email:
+                    try:
+                        print(f"📧 Sending mention email to {user_email}...")
+                        send_notification_email(
+                            user_email=user_email,
+                            notification_type="mention",
+                            task_title=task_data["title"],
+                            comment_text=truncated_comment,
+                            commenter_name=commenter_name,
+                            task_id=task_data["task_id"],
+                            due_date=task_data.get("due_date"),
+                            priority=task_data.get("priority", "Medium")
+                        )
+                        print(f"✅ Mention email sent to {user_email}")
+                    except Exception as e:
+                        print(f"❌ Failed to send mention email: {e}")
+        
+        print(f"\n{'='*80}")
+        print(f"📊 SUMMARY: Created {notifications_created} mention notification(s)")
+        print(f"{'='*80}\n")
+    
+    except Exception as e:
+        print(f"❌❌❌ CRITICAL ERROR in notify_comment_mentions: {e}")
+        import traceback
+        traceback.print_exc()
+        print(f"{'='*80}\n")
+
 def notify_task_comment(task_data: dict, comment_text: str, commenter_id: str, commenter_name: str):
     """Send notification to all stakeholders when a comment is added to a task"""
     print("="*80)
@@ -1341,90 +1498,6 @@ def check_task_access(task_id: str):
         return jsonify({"error": f"Failed to check task access: {str(exc)}"}), 500
 
 
-@app.route("/tasks/pending-approvals/<user_id>", methods=["GET"])
-def get_pending_approval_tasks(user_id: str):
-    """
-    GET /tasks/pending-approvals/<user_id> - Get tasks pending approval for a manager
-    Returns tasks where:
-    - pending_approval = true
-    - The task owner's superior is the manager (user_id)
-    """
-    print(f"=== PENDING APPROVALS DEBUG: Called with user_id={user_id} ===")
-    try:
-        if not user_id or user_id.strip() == "":
-            return jsonify({"error": "Invalid user ID"}), 400
-
-        # First, check if the user is a manager/director
-        user_role = get_user_role(user_id)
-        if not user_role or user_role not in ['Manager', 'Director']:
-            return jsonify({"error": "Only managers and directors can approve tasks"}), 403
-
-        # Get all tasks with pending_approval = true
-        pending_tasks_response = supabase.table("task").select("*").eq("pending_approval", True).execute()
-        
-        print(f"DEBUG: Found {len(pending_tasks_response.data)} tasks with pending_approval=True")
-        for task in pending_tasks_response.data:
-            print(f"DEBUG: Task {task.get('task_id')} owned by {task.get('owner_id')}")
-            
-        # Let's also try a different query approach if the above doesn't work
-        if not pending_tasks_response.data:
-            print("DEBUG: Trying alternative query approach...")
-            alt_response = supabase.table("task").select("*").execute()
-            print(f"DEBUG: Total tasks in database: {len(alt_response.data)}")
-            pending_tasks = [task for task in alt_response.data if task.get('pending_approval') is True]
-            print(f"DEBUG: Tasks with pending_approval=True (filtered): {len(pending_tasks)}")
-            if pending_tasks:
-                pending_tasks_response.data = pending_tasks
-        
-        if not pending_tasks_response.data:
-            return jsonify({"tasks": []}), 200
-
-        # Filter tasks where the manager is the superior of the task owner
-        user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
-        manager_approval_tasks = []
-        
-        for task in pending_tasks_response.data:
-            task_owner_id = task.get("owner_id")
-            if not task_owner_id:
-                continue
-                
-            try:
-                # Get the task owner's superior from user service
-                response = requests.get(f"{user_service_url}/users/{task_owner_id}", timeout=5)
-                if response.ok:
-                    user_data = response.json()
-                    user_superior = user_data.get("user", {}).get("superior")
-                    
-                    print(f"DEBUG: Task owner {task_owner_id} has superior {user_superior}, manager is {user_id}")
-                    
-                    # If this manager is the superior of the task owner, include the task
-                    if user_superior == user_id:
-                        print(f"DEBUG: MATCH! Adding task {task.get('task_id')} to approval list")
-                        # Add user name for display
-                        try:
-                            owner_response = requests.get(f"{user_service_url}/users/{task_owner_id}", timeout=5)
-                            if owner_response.ok:
-                                owner_data = owner_response.json()
-                                task["owner_name"] = owner_data.get("user", {}).get("name", "Unknown")
-                            else:
-                                task["owner_name"] = "Unknown"
-                        except:
-                            task["owner_name"] = "Unknown"
-                            
-                        manager_approval_tasks.append(map_db_row_to_api(task))
-                    else:
-                        print(f"DEBUG: No match - superior {user_superior} != manager {user_id}")
-            except Exception as e:
-                print(f"Error checking superior for user {task_owner_id}: {e}")
-                continue
-
-        return jsonify({"tasks": manager_approval_tasks}), 200
-
-    except Exception as exc:
-        print(f"ERROR: Failed to get pending approval tasks: {exc}")
-        return jsonify({"error": str(exc)}), 500
-
-
 @app.route("/tasks/<task_id>", methods=["GET"])
 def get_task(task_id: str):
     """
@@ -1598,8 +1671,46 @@ def get_user_accessible_tasks(user_id: str):
             if task_id not in all_tasks:
                 all_tasks[task_id] = task
 
+        # Filter out parent tasks if user only has access to subtasks
+        # If user is a collaborator on a subtask but NOT on the parent task,
+        # only the subtask should appear (not the parent)
+        filtered_tasks = {}
+        
+        # Create a set of task IDs the user has direct access to (as owner or collaborator)
+        user_accessible_task_ids = set(t.get("task_id") for t in owned_tasks + collaborated_tasks)
+        
+        logger.info(f"User {user_id} has direct access to {len(user_accessible_task_ids)} tasks")
+        
+        for task_id, task in all_tasks.items():
+            parent_task_id = task.get("parent_task_id")
+            
+            # If this is a subtask, always include it (user has access to it)
+            if parent_task_id:
+                logger.info(f"Including subtask {task_id} (parent: {parent_task_id})")
+                filtered_tasks[task_id] = task
+            else:
+                # This is a parent task or standalone task
+                # Check if there are any subtasks that user has access to
+                user_subtasks = [
+                    t for t in all_tasks.values() 
+                    if t.get("parent_task_id") == task_id
+                ]
+                
+                # Only include the parent task if:
+                # 1. User has direct access to this parent task (owner or collaborator), OR
+                # 2. User has no subtasks under this parent (meaning they have access to parent only)
+                if task_id in user_accessible_task_ids:
+                    # User has direct access to parent task - include it
+                    logger.info(f"Including parent task {task_id} (user has direct access)")
+                    filtered_tasks[task_id] = task
+                elif user_subtasks:
+                    # User has subtasks but no direct access to parent - exclude parent
+                    logger.info(f"Excluding parent task {task_id} (user only has access to {len(user_subtasks)} subtask(s))")
+                # If user_subtasks exists but user doesn't have direct access to parent,
+                # exclude the parent (user only sees the subtasks)
+
         # Map to API format
-        tasks = [map_db_row_to_api(task) for task in all_tasks.values()]
+        tasks = [map_db_row_to_api(task) for task in filtered_tasks.values()]
         
         return jsonify({"tasks": tasks, "count": len(tasks)}), 200
 
@@ -2272,171 +2383,6 @@ def delete_task(task_id: str):
         return jsonify({"error": f"Failed to delete task: {str(exc)}"}), 500
 
 
-@app.route("/tasks/<task_id>/approve", methods=["POST"])
-def approve_task_completion(task_id: str):
-    """
-    POST /tasks/<task_id>/approve - Manager approves a task completion
-    """
-    try:
-        data = request.get_json()
-        manager_id = data.get("approved_by")
-        
-        if not manager_id:
-            return jsonify({"error": "approved_by is required"}), 400
-        
-        # Get the task
-        task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
-        if not task_response.data:
-            return jsonify({"error": "Task not found"}), 404
-        
-        task = task_response.data[0]
-        
-        # Verify the task is pending approval
-        if not task.get("pending_approval"):
-            return jsonify({"error": "Task is not pending approval"}), 400
-        
-        # Verify the manager has authority (is the superior of the task owner)
-        owner_id = task.get("owner_id")
-        if not owner_id:
-            return jsonify({"error": "Task has no owner"}), 400
-            
-        try:
-            user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
-            import requests
-            response = requests.get(f"{user_service_url}/users/{owner_id}", timeout=5)
-            if response.ok:
-                user_data = response.json()
-                superior_id = user_data.get("user", {}).get("superior")
-                
-                if superior_id != manager_id:
-                    return jsonify({"error": "Unauthorized: You are not the superior of this task owner"}), 403
-            else:
-                return jsonify({"error": "Could not verify manager authority"}), 500
-        except Exception as e:
-            return jsonify({"error": f"Error verifying manager authority: {str(e)}"}), 500
-        
-        # Approve the task
-        from datetime import date
-        update_data = {
-            "status": "Completed",
-            "completed_date": date.today().isoformat(),
-            "pending_approval": False,
-            "approved_by": manager_id,
-            "approved_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
-        
-        if not response.data:
-            return jsonify({"error": "Failed to approve task"}), 500
-        
-        updated_task = map_db_row_to_api(response.data[0])
-        
-        # Log the approval
-        log_task_change(
-            task_id=task_id,
-            action="approve_completion",
-            field="status",
-            user_id=manager_id,
-            old_value=task.get("status"),
-            new_value="Completed"
-        )
-        
-        # Handle recurring tasks if applicable
-        if task.get("recurrence"):
-            new_instance = create_recurring_task_instance(response.data[0])
-            if new_instance:
-                print(f"✅ Created recurring task instance: {new_instance.get('task_id')}")
-        
-        return jsonify({
-            "message": "Task completion approved",
-            "task": updated_task
-        }), 200
-        
-    except Exception as exc:
-        print(f"ERROR: Failed to approve task: {exc}")
-        return jsonify({"error": str(exc)}), 500
-
-
-@app.route("/tasks/<task_id>/reject", methods=["POST"])
-def reject_task_completion(task_id: str):
-    """
-    POST /tasks/<task_id>/reject - Manager rejects a task completion
-    """
-    try:
-        data = request.get_json()
-        manager_id = data.get("rejected_by")
-        rejection_reason = data.get("reason", "No reason provided")
-        
-        if not manager_id:
-            return jsonify({"error": "rejected_by is required"}), 400
-        
-        # Get the task
-        task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
-        if not task_response.data:
-            return jsonify({"error": "Task not found"}), 404
-        
-        task = task_response.data[0]
-        
-        # Verify the task is pending approval
-        if not task.get("pending_approval"):
-            return jsonify({"error": "Task is not pending approval"}), 400
-        
-        # Verify the manager has authority
-        owner_id = task.get("owner_id")
-        if not owner_id:
-            return jsonify({"error": "Task has no owner"}), 400
-            
-        try:
-            user_service_url = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
-            import requests
-            response = requests.get(f"{user_service_url}/users/{owner_id}", timeout=5)
-            if response.ok:
-                user_data = response.json()
-                superior_id = user_data.get("user", {}).get("superior")
-                
-                if superior_id != manager_id:
-                    return jsonify({"error": "Unauthorized: You are not the superior of this task owner"}), 403
-            else:
-                return jsonify({"error": "Could not verify manager authority"}), 500
-        except Exception as e:
-            return jsonify({"error": f"Error verifying manager authority: {str(e)}"}), 500
-        
-        # Reject the task - return to original status
-        update_data = {
-            "pending_approval": False,
-            "approval_requested_by": None,
-            "approval_requested_at": None
-        }
-        
-        response = supabase.table("task").update(update_data).eq("task_id", task_id).execute()
-        
-        if not response.data:
-            return jsonify({"error": "Failed to reject task"}), 500
-        
-        updated_task = map_db_row_to_api(response.data[0])
-        
-        # Log the rejection
-        log_task_change(
-            task_id=task_id,
-            action="reject_completion",
-            field="pending_approval",
-            user_id=manager_id,
-            old_value=True,
-            new_value=False
-        )
-        
-        return jsonify({
-            "message": "Task completion rejected",
-            "task": updated_task,
-            "reason": rejection_reason
-        }), 200
-        
-    except Exception as exc:
-        print(f"ERROR: Failed to reject task: {exc}")
-        return jsonify({"error": str(exc)}), 500
-
-
 @app.route("/health", methods=["GET"])
 def health_check():
     """Health check endpoint"""
@@ -2468,14 +2414,15 @@ def get_all_users():
 def get_user_by_id(user_id: str):
     """Get user info by user_id from Supabase user table"""
     try:
-        response = supabase.table("user").select("user_id, name, email").eq("user_id", user_id).execute()
+        response = supabase.table("user").select("user_id, name, email, department").eq("user_id", user_id).execute()
 
         if response.data and len(response.data) > 0:
             user_row = response.data[0]
             return jsonify({"user": {
                 "user_id": user_row.get("user_id"),
                 "name": user_row.get("name"),
-                "email": user_row.get("email")
+                "email": user_row.get("email"),
+                "department": user_row.get("department")
             }}), 200
         else:
             return jsonify({"error": "User not found", "user_id": user_id}), 404
@@ -2739,6 +2686,21 @@ def add_task_comment(task_id: str):
             import traceback
             traceback.print_exc()
             # Don't fail the request if notifications fail
+        
+        # Send mention notifications
+        try:
+            notify_comment_mentions(
+                task_data=task,
+                comment_text=comment_data.comment_text,
+                commenter_id=user_id,
+                commenter_name=user_name
+            )
+            print(f"✅ Mention notifications function completed for task {task_id}")
+        except Exception as mention_error:
+            print(f"❌❌❌ EXCEPTION in mention notification: {mention_error}")
+            import traceback
+            traceback.print_exc()
+            # Don't fail the request if mention notifications fail
 
         response_data = {
             "success": True,
