@@ -2472,14 +2472,15 @@ def get_all_users():
 def get_user_by_id(user_id: str):
     """Get user info by user_id from Supabase user table"""
     try:
-        response = supabase.table("user").select("user_id, name, email").eq("user_id", user_id).execute()
+        response = supabase.table("user").select("user_id, name, email, department").eq("user_id", user_id).execute()
 
         if response.data and len(response.data) > 0:
             user_row = response.data[0]
             return jsonify({"user": {
                 "user_id": user_row.get("user_id"),
                 "name": user_row.get("name"),
-                "email": user_row.get("email")
+                "email": user_row.get("email"),
+                "department": user_row.get("department")
             }}), 200
         else:
             return jsonify({"error": "User not found", "user_id": user_id}), 404

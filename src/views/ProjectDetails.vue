@@ -167,11 +167,25 @@
       <!-- My Tasks Section -->
       <div class="section-card">
         <div class="section-header">
-          <h2 class="section-title">
-            <CheckCircleOutlined class="title-icon" />
-            My Tasks
-          </h2>
-          <span class="task-count">{{ getMyTasks().length }}</span>
+          <div class="section-title-group">
+            <h2 class="section-title">
+              <CheckCircleOutlined class="title-icon" />
+              My Tasks
+            </h2>
+            <span class="task-count">{{ getMyTasks().length }}</span>
+          </div>
+
+          <!-- Search Input for My Tasks -->
+          <a-input
+            v-model:value="myTasksSearchQuery"
+            placeholder="Search my tasks by name..."
+            allowClear
+            class="search-input"
+          >
+            <template #prefix>
+              <SearchOutlined class="search-icon" />
+            </template>
+          </a-input>
         </div>
 
         <div v-if="isLoadingTasks" class="loading-content">
@@ -183,9 +197,13 @@
           <a-empty description="You have no tasks in this project yet" />
         </div>
 
+        <div v-else-if="getFilteredMyTasks().length === 0 && myTasksSearchQuery" class="empty-content">
+          <a-empty description="No tasks match your search" />
+        </div>
+
         <div v-else class="tasks-table-container">
           <a-table
-            :dataSource="getMyTasks()"
+            :dataSource="getFilteredMyTasks()"
             :columns="taskColumns"
             :pagination="false"
             :rowKey="record => record.id"
@@ -224,6 +242,11 @@
                   {{ formatTaskDate(record.dueDate) }}
                 </span>
               </template>
+              <template v-else-if="column.key === 'timeTaken'">
+                <span class="time-taken-cell">
+                  {{ getTaskTimeTaken(record) }}
+                </span>
+              </template>
               <template v-else-if="column.key === 'department'">
                 {{ record.department || 'N/A' }}
               </template>
@@ -238,16 +261,34 @@
       <!-- Other Project Tasks Section -->
       <div class="section-card" v-if="getOtherTasks().length > 0">
         <div class="section-header">
-          <h2 class="section-title">
-            <UnorderedListOutlined class="title-icon" />
-            Other Project Tasks
-          </h2>
-          <span class="task-count">{{ getOtherTasks().length }}</span>
+          <div class="section-title-group">
+            <h2 class="section-title">
+              <UnorderedListOutlined class="title-icon" />
+              Other Project Tasks
+            </h2>
+            <span class="task-count">{{ getOtherTasks().length }}</span>
+          </div>
+
+          <!-- Search Input for Other Tasks -->
+          <a-input
+            v-model:value="otherTasksSearchQuery"
+            placeholder="Search other tasks by name..."
+            allowClear
+            class="search-input"
+          >
+            <template #prefix>
+              <SearchOutlined class="search-icon" />
+            </template>
+          </a-input>
         </div>
 
-        <div class="tasks-table-container">
+        <div v-if="getFilteredOtherTasks().length === 0 && otherTasksSearchQuery" class="empty-content">
+          <a-empty description="No tasks match your search" />
+        </div>
+
+        <div v-else class="tasks-table-container">
           <a-table
-            :dataSource="getOtherTasks()"
+            :dataSource="getFilteredOtherTasks()"
             :columns="taskColumns"
             :pagination="false"
             :rowKey="record => record.id"
@@ -284,6 +325,11 @@
                   'completed-text': record.status === 'Completed'
                 }">
                   {{ formatTaskDate(record.dueDate) }}
+                </span>
+              </template>
+              <template v-else-if="column.key === 'timeTaken'">
+                <span class="time-taken-cell">
+                  {{ getTaskTimeTaken(record) }}
                 </span>
               </template>
               <template v-else-if="column.key === 'department'">
@@ -454,10 +500,12 @@ import {
   MessageOutlined,
   FlagOutlined,
   PlusOutlined,
-  MoreOutlined
+  MoreOutlined,
+  SearchOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useProjectEvents } from '../composables/useProjectEvents'
+import { calculateTimeTaken } from '../utils/dateUtils'
 import ProjectFormModal from '../components/projects/ProjectFormModal.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
 import TaskFormModal from '../components/tasks/TaskFormModal.vue'
@@ -491,7 +539,8 @@ export default {
     MessageOutlined,
     FlagOutlined,
     PlusOutlined,
-    MoreOutlined
+    MoreOutlined,
+    SearchOutlined
   },
   setup() {
     const route = useRoute()
@@ -526,6 +575,10 @@ export default {
     // Report preview modal state
     const showReportPreviewModal = ref(false)
     const reportPreviewData = ref(null)
+
+    // Search state
+    const myTasksSearchQuery = ref('')
+    const otherTasksSearchQuery = ref('')
 
     // Check if current user is the project owner
     const isProjectOwner = computed(() => {
@@ -602,15 +655,15 @@ export default {
     const getPriorityText = (priority) => {
       const priorityNum = parseInt(priority)
       if (!isNaN(priorityNum) && priorityNum >= 1 && priorityNum <= 10) {
-        return `Priority: ${priorityNum} / 10`
+        return `Priority: ${priorityNum}`
       }
       // Fallback for legacy text values
       const priorityStr = String(priority).toLowerCase()
-      if (priorityStr === 'high') return 'Priority: 9 / 10'
-      if (priorityStr === 'medium') return 'Priority: 5 / 10'
-      if (priorityStr === 'low') return 'Priority: 3 / 10'
-      if (priorityStr === 'lowest') return 'Priority: 1 / 10'
-      return 'Priority: 5 / 10'
+      if (priorityStr === 'high') return 'Priority: 9'
+      if (priorityStr === 'medium') return 'Priority: 5'
+      if (priorityStr === 'low') return 'Priority: 3'
+      if (priorityStr === 'lowest') return 'Priority: 1'
+      return 'Priority: 5'
     }
 
     const getTeamMembersCount = () => {
@@ -642,6 +695,18 @@ export default {
     const getCompletionPercentage = () => {
       if (projectTasks.value.length === 0) return 0
       return Math.round((getCompletedTasksCount() / projectTasks.value.length) * 100)
+    }
+
+    const getTaskTimeTaken = (task) => {
+      if (!task.created_at) return 'N/A'
+
+      // If task is completed, calculate time from created_at to completedDate
+      if (task.status === 'Completed' && task.completedDate) {
+        return calculateTimeTaken(task.created_at, task.completedDate)
+      }
+
+      // If task is still in progress, calculate time from created_at to now
+      return calculateTimeTaken(task.created_at)
     }
 
     // Table columns definition
@@ -689,7 +754,7 @@ export default {
         title: 'Due Date',
         dataIndex: 'dueDate',
         key: 'dueDate',
-        width: '12%',
+        width: '10%',
         align: 'center',
         sorter: (a, b) => {
           if (!a.dueDate) return 1
@@ -699,10 +764,30 @@ export default {
         sortDirections: ['ascend', 'descend']
       },
       {
+        title: 'Time Taken',
+        dataIndex: 'timeTaken',
+        key: 'timeTaken',
+        width: '12%',
+        align: 'center',
+        sorter: (a, b) => {
+          // Sort by total milliseconds for accurate sorting
+          const getTimeDiff = (task) => {
+            if (!task.created_at) return 0
+            const start = new Date(task.created_at)
+            const end = task.status === 'Completed' && task.completedDate
+              ? new Date(task.completedDate)
+              : new Date()
+            return end - start
+          }
+          return getTimeDiff(a) - getTimeDiff(b)
+        },
+        sortDirections: ['ascend', 'descend']
+      },
+      {
         title: 'Department',
         dataIndex: 'department',
         key: 'department',
-        width: '12%',
+        width: '10%',
         align: 'center',
         sorter: (a, b) => (a.department || 'N/A').localeCompare(b.department || 'N/A'),
         sortDirections: ['ascend', 'descend']
@@ -742,6 +827,26 @@ export default {
         }
         return true
       })
+    }
+
+    const getFilteredMyTasks = () => {
+      const myTasks = getMyTasks()
+      if (!myTasksSearchQuery.value) return myTasks
+
+      const query = myTasksSearchQuery.value.toLowerCase().trim()
+      return myTasks.filter(task =>
+        task.title.toLowerCase().includes(query)
+      )
+    }
+
+    const getFilteredOtherTasks = () => {
+      const otherTasks = getOtherTasks()
+      if (!otherTasksSearchQuery.value) return otherTasks
+
+      const query = otherTasksSearchQuery.value.toLowerCase().trim()
+      return otherTasks.filter(task =>
+        task.title.toLowerCase().includes(query)
+      )
     }
 
     const loadProjectTasks = async () => {
@@ -788,6 +893,7 @@ export default {
           title: t.title,
           dueDate: t.dueDate || null,
           completedDate: t.completedDate || null,
+          created_at: t.created_at || null,
           status: t.status,
           description: t.description || 'No description available',
           priority: t.priority || 'Medium',
@@ -1390,6 +1496,8 @@ export default {
       showTeamMembersModal,
       showCreateTaskModal,
       isProjectOwner,
+      myTasksSearchQuery,
+      otherTasksSearchQuery,
       handleTeamUpdate,
       handleCreateTask,
       handleTaskCreated,
@@ -1408,6 +1516,9 @@ export default {
       getCompletionPercentage,
       getMyTasks,
       getOtherTasks,
+      getFilteredMyTasks,
+      getFilteredOtherTasks,
+      getTaskTimeTaken,
       taskColumns,
       handleEdit,
       handleDelete,
@@ -1768,6 +1879,13 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 32px;
+  gap: 24px;
+}
+
+.section-title-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .section-title {
@@ -1797,6 +1915,29 @@ export default {
   font-size: 14px;
   font-weight: 600;
   color: #667eea;
+}
+
+/* Search Input */
+.search-input {
+  width: 300px;
+  height: 40px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.search-input:hover {
+  border-color: #667eea;
+}
+
+.search-input:focus,
+.search-input:focus-within {
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+
+.search-icon {
+  color: #9ca3af;
+  font-size: 16px;
 }
 
 /* Progress Stats */
@@ -1953,6 +2094,12 @@ export default {
 .completed-text {
   color: #10b981;
   font-weight: 600;
+}
+
+.time-taken-cell {
+  color: #667eea;
+  font-weight: 500;
+  font-size: 13px;
 }
 
 .task-priority {
@@ -2200,6 +2347,16 @@ export default {
 
   .section-title {
     font-size: 20px;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .search-input {
+    width: 100%;
   }
 }
 

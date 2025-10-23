@@ -1056,11 +1056,11 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         pie_data.append(summary['under_review_tasks'])
         pie_colors.append(HexColor('#a855f7'))
 
-    # Create pie chart
-    pie_drawing = Drawing(240, 200)
+    # Create pie chart with legend below
+    pie_drawing = Drawing(240, 280)  # Increased height to accommodate legend below
     pie = Pie()
-    pie.x = 40
-    pie.y = 30
+    pie.x = 50  # Centered horizontally
+    pie.y = 130  # Moved up to make room for legend below
     pie.width = 140
     pie.height = 140
     pie.data = pie_data if pie_data else [1]  # Show single slice if no data
@@ -1078,14 +1078,14 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     pie_drawing.add(pie)
 
-    # Add legend to pie chart
-    legend_x = 190
-    legend_y = 150
+    # Add legend below the pie chart
+    legend_x = 20  # Left aligned
+    legend_start_y = 100  # Below the pie chart
     box_size = 10
     spacing = 20
 
     for i, (label, count) in enumerate(zip(pie_labels, pie_data)):
-        y_pos = legend_y - (i * spacing)
+        y_pos = legend_start_y - (i * spacing)
 
         # Color box
         rect = Rect(legend_x, y_pos - box_size/2, box_size, box_size)
@@ -1096,7 +1096,7 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
         # Label text
         text = String(legend_x + box_size + 5, y_pos - 3, f"{label}: {count}")
-        text.fontSize = 8
+        text.fontSize = 9
         text.fillColor = HexColor('#1e293b')
         text.fontName = 'Helvetica'
         pie_drawing.add(text)
