@@ -38,7 +38,7 @@
     />
 
     <!-- Metrics Row -->
-    <TeamMetrics :tasks="filteredTasks" />
+    <TeamMetrics :tasks="tasks" />
 
     <!-- Tabs for Table/Charts View -->
     <a-card class="content-card">
@@ -108,6 +108,8 @@
       :access-info="taskAccessInfo"
       @close="showTaskDetail = false"
       @open-task="handleOpenTask"
+      @task-updated="handleTaskUpdated"
+      @delete="handleTaskDeleted"
     />
 
   </div>
@@ -328,14 +330,15 @@ const fetchTeamTasks = async () => {
   error.value = null
   
   try {
-    // For Staff: Fetch only their own tasks
+    // For Staff: Fetch all accessible tasks (owned + collaborated)
     if (userRole.value === 'Staff') {
       const userId = authStore.user?.user_id
       if (!userId) {
         throw new Error('User ID not available')
       }
       
-      const res = await fetch(`${TASK_SERVICE_URL}/tasks?owner_id=${userId}`)
+      // Use accessible-tasks endpoint to include tasks where user is owner or collaborator
+      const res = await fetch(`${TASK_SERVICE_URL}/users/${userId}/accessible-tasks`)
       if (!res.ok) {
         throw new Error('Failed to fetch tasks')
       }
@@ -643,9 +646,33 @@ const handleTaskUpdated = (updatedTask) => {
     tasks.value[index] = { ...tasks.value[index], ...updatedTask }
   }
   
+  // Also update the selected task to reflect changes immediately
+  if (selectedTask.value && selectedTask.value.id === updatedTask.id) {
+    selectedTask.value = { ...selectedTask.value, ...updatedTask }
+  }
+  
   notification.success({
     message: 'Task Updated',
     description: 'The task has been updated successfully.',
+    placement: 'topRight',
+    duration: 2
+  })
+}
+
+const handleTaskDeleted = (deletedTask) => {
+  // Remove task from the list
+  const index = tasks.value.findIndex(t => t.id === deletedTask.id)
+  if (index !== -1) {
+    tasks.value.splice(index, 1)
+  }
+  
+  // Close the modal
+  showTaskDetail.value = false
+  selectedTask.value = null
+  
+  notification.success({
+    message: 'Task Deleted',
+    description: 'The task has been deleted successfully.',
     placement: 'topRight',
     duration: 2
   })

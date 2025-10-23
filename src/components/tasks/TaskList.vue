@@ -373,6 +373,7 @@ export default {
           recurrence: t.recurrence || null,
           priority: t.priority || 5,
           parent_task_id: t.parent_task_id || null,
+          isSubtask: t.isSubtask || !!t.parent_task_id,
           owner_id: t.owner_id || null,
           collaborators: t.collaborators || [],
           assignee: t.assignee || null,
@@ -415,21 +416,56 @@ export default {
       }
     }
 
-    // All tasks computed property with sorting (subtasks excluded from list)
+    // All tasks computed property with sorting
     const allTasks = computed(() => {
-      // Filter out subtasks - only show parent tasks in the list
-      const parentTasks = tasks.value.filter(t => !t.parent_task_id && !t.isSubtask)
+      // Include:
+      // 1. Parent tasks (tasks without parent_task_id)
+      // 2. Standalone subtasks (subtasks where user doesn't have access to parent)
+      // Exclude:
+      // - Subtasks where the parent task is also in the user's task list (shown under parent)
+      
+      console.log('🔍 Computing allTasks, total tasks:', tasks.value.length)
+      
+      const parentTaskIds = new Set(
+        tasks.value.filter(t => !t.parent_task_id).map(t => t.id)
+      )
+      
+      console.log('📋 Parent task IDs in user\'s list:', Array.from(parentTaskIds))
+      
+      const visibleTasks = tasks.value.filter(t => {
+        // Include all parent tasks
+        if (!t.parent_task_id && !t.isSubtask) {
+          console.log(`✅ Including parent task: ${t.title} (${t.id})`)
+          return true
+        }
+        
+        // Include subtasks only if their parent is NOT in the user's accessible tasks
+        // This means user has access to subtask but not parent - show as standalone
+        if (t.parent_task_id) {
+          const hasParentAccess = parentTaskIds.has(t.parent_task_id)
+          if (!hasParentAccess) {
+            console.log(`✅ Including standalone subtask: ${t.title} (${t.id}) - parent ${t.parent_task_id} not accessible`)
+          } else {
+            console.log(`⏭️  Excluding subtask: ${t.title} (${t.id}) - parent ${t.parent_task_id} is accessible`)
+          }
+          return !hasParentAccess
+        }
+        
+        return false
+      })
+      
+      console.log('📊 Visible tasks count:', visibleTasks.length)
       
       // Apply sorting
-      let sorted = [...parentTasks]
+      let sorted = [...visibleTasks]
       if (sortBy.value === 'dueDate-asc') {
-        sorted = parentTasks.sort((a, b) => {
+        sorted = visibleTasks.sort((a, b) => {
           if (!a.dueDate) return 1
           if (!b.dueDate) return -1
           return new Date(a.dueDate) - new Date(b.dueDate)
         })
       } else if (sortBy.value === 'dueDate-desc') {
-        sorted = parentTasks.sort((a, b) => {
+        sorted = visibleTasks.sort((a, b) => {
           if (!a.dueDate) return 1
           if (!b.dueDate) return -1
           return new Date(b.dueDate) - new Date(a.dueDate)
@@ -437,14 +473,14 @@ export default {
       } else if (sortBy.value === 'priority-asc') {
         // Sort by priority: lower numbers (1) = lower priority, higher numbers (10) = higher priority
         // Ascending = low to high (1 to 10)
-        sorted = parentTasks.sort((a, b) => {
+        sorted = visibleTasks.sort((a, b) => {
           const aPriority = typeof a.priority === 'number' ? a.priority : (parseInt(a.priority) || 5)
           const bPriority = typeof b.priority === 'number' ? b.priority : (parseInt(b.priority) || 5)
           return aPriority - bPriority
         })
       } else if (sortBy.value === 'priority-desc') {
         // Descending = high to low (10 to 1)
-        sorted = parentTasks.sort((a, b) => {
+        sorted = visibleTasks.sort((a, b) => {
           const aPriority = typeof a.priority === 'number' ? a.priority : (parseInt(a.priority) || 5)
           const bPriority = typeof b.priority === 'number' ? b.priority : (parseInt(b.priority) || 5)
           return bPriority - aPriority

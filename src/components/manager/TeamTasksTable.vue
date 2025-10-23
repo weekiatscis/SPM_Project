@@ -77,7 +77,7 @@
             <div :class="getDueDateClass(record.dueDate)">
               {{ formatDate(record.dueDate) }}
             </div>
-            <div style="font-size: 11px; color: #999;">
+            <div v-if="record.status !== 'Completed'" style="font-size: 11px; color: #999;">
               {{ getRelativeTime(record.dueDate) }}
             </div>
           </div>

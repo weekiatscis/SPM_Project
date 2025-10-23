@@ -1600,8 +1600,46 @@ def get_user_accessible_tasks(user_id: str):
             if task_id not in all_tasks:
                 all_tasks[task_id] = task
 
+        # Filter out parent tasks if user only has access to subtasks
+        # If user is a collaborator on a subtask but NOT on the parent task,
+        # only the subtask should appear (not the parent)
+        filtered_tasks = {}
+        
+        # Create a set of task IDs the user has direct access to (as owner or collaborator)
+        user_accessible_task_ids = set(t.get("task_id") for t in owned_tasks + collaborated_tasks)
+        
+        logger.info(f"User {user_id} has direct access to {len(user_accessible_task_ids)} tasks")
+        
+        for task_id, task in all_tasks.items():
+            parent_task_id = task.get("parent_task_id")
+            
+            # If this is a subtask, always include it (user has access to it)
+            if parent_task_id:
+                logger.info(f"Including subtask {task_id} (parent: {parent_task_id})")
+                filtered_tasks[task_id] = task
+            else:
+                # This is a parent task or standalone task
+                # Check if there are any subtasks that user has access to
+                user_subtasks = [
+                    t for t in all_tasks.values() 
+                    if t.get("parent_task_id") == task_id
+                ]
+                
+                # Only include the parent task if:
+                # 1. User has direct access to this parent task (owner or collaborator), OR
+                # 2. User has no subtasks under this parent (meaning they have access to parent only)
+                if task_id in user_accessible_task_ids:
+                    # User has direct access to parent task - include it
+                    logger.info(f"Including parent task {task_id} (user has direct access)")
+                    filtered_tasks[task_id] = task
+                elif user_subtasks:
+                    # User has subtasks but no direct access to parent - exclude parent
+                    logger.info(f"Excluding parent task {task_id} (user only has access to {len(user_subtasks)} subtask(s))")
+                # If user_subtasks exists but user doesn't have direct access to parent,
+                # exclude the parent (user only sees the subtasks)
+
         # Map to API format
-        tasks = [map_db_row_to_api(task) for task in all_tasks.values()]
+        tasks = [map_db_row_to_api(task) for task in filtered_tasks.values()]
         
         return jsonify({"tasks": tasks, "count": len(tasks)}), 200
 
