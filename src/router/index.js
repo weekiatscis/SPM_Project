@@ -3,15 +3,14 @@ import { useAuthStore } from '../stores/auth'
 import Home from '../views/Home.vue'
 import Projects from '../views/Projects.vue'
 import ProjectDetails from '../views/ProjectDetails.vue'
-import Login from '../views/Login.vue'
-import Signup from '../views/Signup.vue'
+import Auth from '../views/Auth.vue'
 import ProfileSettings from '../views/ProfileSettings.vue'
 import Dashboard from '../views/Dashboard.vue'
 
 const routes = [
   { path: '/', redirect: '/home' },
-  { path: '/login', name: 'Login', component: Login, meta: { requiresGuest: true } },
-  { path: '/signup', name: 'Signup', component: Signup, meta: { requiresGuest: true } },
+  { path: '/login', name: 'Login', component: Auth, meta: { requiresGuest: true } },
+  { path: '/signup', name: 'Signup', component: Auth, meta: { requiresGuest: true } },
   { path: '/home', name: 'Home', component: Home, meta: { requiresAuth: true } },
   { path: '/projects', name: 'Projects', component: Projects, meta: { requiresAuth: true } },
   { path: '/projects/:id', name: 'ProjectDetails', component: ProjectDetails, meta: { requiresAuth: true } },

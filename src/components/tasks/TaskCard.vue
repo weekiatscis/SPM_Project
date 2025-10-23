@@ -1,110 +1,112 @@
 <template>
-  <a-card
-    :hoverable="true"
-    :style="{ 
-      width: '100%'
-    }"
+  <div 
+    class="task-card-wrapper"
     :class="[
       'cursor-pointer',
-      'task-card',
+      getPriorityClass(task.priority),
       { 'urgent-task': (isDueWithin24Hours(task.dueDate) || isOverdue(task.dueDate)) && task.status !== 'Completed' },
-      { 'parent-task-card': task.isParent }
+      { 'completed-task': task.status === 'Completed' }
     ]"
     @click="$emit('view-details', task)"
   >
-    <!-- Subtle Priority Indicator -->
-    <div class="priority-indicator" :class="getPriorityClass(task.priority)"></div>
-
-    <a-row justify="space-between" align="top" :gutter="[16, 0]">
-      <a-col :span="17">
-        <div class="task-content">
-          <div class="task-title-section">
-            <div class="title-with-badge">
-              <a-typography-text 
-                strong
-                class="main-title"
-              >
-                {{ task.title }}
-              </a-typography-text>
-              
-              <!-- Subtask Label - Inline after title -->
-              <span v-if="task.isSubtask" class="subtask-label">
-                <svg class="subtask-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                </svg>
-                <span class="subtask-text">Subtask</span>
-              </span>
-              
-              <!-- Due Soon Badge - Inline -->
-              <span v-if="isDueWithin24Hours(task.dueDate) && !isOverdue(task.dueDate) && task.status !== 'Completed'" class="urgent-badge">
-                <ClockCircleOutlined class="urgent-icon" />
-                <span class="urgent-text">Due Soon</span>
-              </span>
-              
-              <!-- Overdue Badge - Inline -->
-              <span v-if="isOverdue(task.dueDate) && task.status !== 'Completed'" class="urgent-badge">
-                <ClockCircleOutlined class="urgent-icon" />
-                <span class="urgent-text">Overdue</span>
-              </span>
-            </div>
+    <!-- Glassmorphic Card -->
+    <div class="task-card-inner">
+      <!-- Left: Priority Accent -->
+      <div class="priority-accent" :class="getPriorityClass(task.priority)"></div>
+      
+      <!-- Main Content -->
+      <div class="task-main-content">
+        <!-- Top Row: Title + Quick Badges -->
+        <div class="task-header">
+          <div class="task-title-row">
+            <h4 class="task-title">{{ task.title }}</h4>
             
-            
-            <div class="task-badges">
-              <!-- Collaborator badge -->
-              <a-tag v-if="isCollaborator()" color="purple" class="task-badge">
-                Collaborator
-              </a-tag>
-            
+            <!-- Compact Inline Badges -->
+            <div class="quick-badges">
               <a-tooltip v-if="task.recurrence" :title="getRecurrenceTooltip(task.recurrence)">
-                <svg 
-                   class="recurrence-icon" 
-                   fill="none" 
-                   stroke="currentColor" 
-                   viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
+                <span class="badge-icon recurrence">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </span>
+              </a-tooltip>
+              
+              <a-tooltip v-if="task.isSubtask" title="This is a subtask">
+                <span class="badge-icon subtask">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                </span>
+              </a-tooltip>
+              
+              <a-tooltip v-if="isCollaborator()" title="You are a collaborator">
+                <span class="badge-icon collaborator">
+                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </span>
               </a-tooltip>
             </div>
           </div>
           
-          <div class="task-meta">
-            <div class="meta-item due-date">
-              <a-typography-text type="secondary" class="meta-text">
-                Due: {{ formatDate(task.dueDate) }}
-              </a-typography-text>
-            </div>
-            
-            <div v-if="(task.status === 'Ongoing' || task.status === 'Under Review') && task.created_at" class="meta-item">
-              <a-typography-text type="secondary" class="meta-text">
-                <svg class="meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Time Taken: {{ timeTaken }}
-              </a-typography-text>
-            </div>
-            
-            <div v-if="task.assignee" class="meta-item">
-              <a-typography-text type="secondary" class="meta-text">
-                Assignee: {{ task.assignee }}
-              </a-typography-text>
-            </div>
-            
-            <div v-if="task.collaborators && task.collaborators.length > 0" class="meta-item">
-              <a-typography-text type="secondary" class="meta-text">
-                Collaborators: {{ task.collaborators.length }}
-              </a-typography-text>
-            </div>
+          <!-- Status Badge -->
+          <div class="status-badge" :class="getStatusClass(task.status)">
+            <span class="status-dot"></span>
+            <span class="status-text">{{ getStatusText(task.status) }}</span>
           </div>
         </div>
-      </a-col>
-      
-      <a-col :span="7" class="status-column">
-        <a-tag :color="getStatusColor(task.status)" class="status-tag">
-          {{ getStatusText(task.status) }}
-        </a-tag>
-      </a-col>
-    </a-row>
-  </a-card>
+        
+        <!-- Bottom Row: Compact Metadata -->
+        <div class="task-footer">
+          <div class="task-metadata">
+            <!-- Due Date -->
+            <div class="meta-chip due-date" :class="{ 'overdue': isOverdue(task.dueDate) && task.status !== 'Completed', 'due-soon': isDueWithin24Hours(task.dueDate) && !isOverdue(task.dueDate) && task.status !== 'Completed' }">
+              <svg class="meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span>{{ formatDate(task.dueDate) }}</span>
+            </div>
+            
+            <!-- Time Taken (for ongoing tasks) -->
+            <div v-if="(task.status === 'Ongoing' || task.status === 'Under Review') && task.created_at" class="meta-chip">
+              <svg class="meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{{ timeTaken }}</span>
+            </div>
+            
+            <!-- Assignee -->
+            <a-tooltip v-if="task.assignee" :title="'Assigned to: ' + task.assignee">
+              <div class="meta-chip assignee">
+                <svg class="meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span class="truncate">{{ task.assignee }}</span>
+              </div>
+            </a-tooltip>
+            
+            <!-- Collaborators Count -->
+            <a-tooltip v-if="task.collaborators && task.collaborators.length > 0" :title="task.collaborators.length + ' collaborator(s)'">
+              <div class="meta-chip">
+                <svg class="meta-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+                <span>{{ task.collaborators.length }}</span>
+              </div>
+            </a-tooltip>
+          </div>
+          
+          <!-- Priority Indicator -->
+          <div class="priority-badge" :class="getPriorityClass(task.priority)">
+            <span class="priority-text">P{{ task.priority || 5 }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Hover Glow Effect -->
+    <div class="card-glow" :class="getPriorityClass(task.priority)"></div>
+  </div>
 </template>
 
 <script>
@@ -174,10 +176,20 @@ export default {
       const texts = {
         'Unassigned': 'Unassigned',
         'Ongoing': 'Ongoing',
-        'Under Review': 'Under Review',
-        'Completed': 'Completed'
+        'Under Review': 'Review',
+        'Completed': 'Done'
       }
       return texts[status] || 'Unassigned'
+    }
+    
+    const getStatusClass = (status) => {
+      const classes = {
+        'Unassigned': 'status-unassigned',
+        'Ongoing': 'status-ongoing',
+        'Under Review': 'status-review',
+        'Completed': 'status-completed'
+      }
+      return classes[status] || 'status-unassigned'
     }
 
     const isDueWithin24Hours = (dueDateString) => {
@@ -264,6 +276,7 @@ export default {
       formatDate,
       getStatusColor,
       getStatusText,
+      getStatusClass,
       isDueWithin24Hours,
       isOverdue,
       getRecurrenceTooltip,
@@ -276,316 +289,463 @@ export default {
 </script>
 
 <style scoped>
-/* Base Card Styling */
-:deep(.ant-card) {
-  border-radius: 12px !important;
-  border: 1px solid #e5e7eb !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-  position: relative !important;
+/* ===== GLASSMORPHIC IMMERSIVE DESIGN ===== */
+
+/* Main Card Wrapper */
+.task-card-wrapper {
+  position: relative;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-:deep(.ant-card-body) {
-  padding: 20px !important;
+/* Inner Card - Glassmorphism Effect */
+.task-card-inner {
+  position: relative;
+  display: flex;
+  gap: 0;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  padding: 16px 20px;
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.04),
+    0 1px 3px rgba(0, 0, 0, 0.02),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Subtle Priority Indicator */
-.priority-indicator {
+/* Priority Accent Bar */
+.priority-accent {
   position: absolute;
   left: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 0;
+  bottom: 0;
   width: 4px;
-  height: 40%;
-  border-radius: 0 4px 4px 0;
-  opacity: 0.6;
-  transition: all 0.3s ease;
+  border-radius: 16px 0 0 16px;
+  opacity: 0.7;
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.task-card:hover .priority-indicator {
-  opacity: 1;
-  width: 5px;
+.priority-accent.priority-high {
+  background: linear-gradient(180deg, #ff3b30 0%, #ff6b6b 100%);
 }
 
-.priority-high {
-  background: linear-gradient(180deg, #ff4d4f 0%, #ff7875 100%);
-  box-shadow: 0 0 8px rgba(255, 77, 79, 0.3);
+.priority-accent.priority-medium {
+  background: linear-gradient(180deg, #ff9500 0%, #ffb84d 100%);
 }
 
-.priority-medium {
-  background: linear-gradient(180deg, #faad14 0%, #ffc53d 100%);
-  box-shadow: 0 0 8px rgba(250, 173, 20, 0.3);
+.priority-accent.priority-low {
+  background: linear-gradient(180deg, #34c759 0%, #5dd879 100%);
 }
 
-.priority-low {
-  background: linear-gradient(180deg, #52c41a 0%, #73d13d 100%);
-  box-shadow: 0 0 8px rgba(82, 196, 26, 0.3);
-}
-
-/* Task Content Layout */
-.task-content {
+/* Main Content Area */
+.task-main-content {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  padding-left: 12px;
+}
+
+/* ===== HEADER SECTION ===== */
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
   gap: 12px;
 }
 
-.task-title-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.title-with-badge {
+.task-title-row {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
 }
 
-/* Title Styling */
-.main-title {
-  font-size: 16px !important;
-  font-weight: 600 !important;
-  color: #111827 !important;
-  line-height: 1.5 !important;
-  letter-spacing: -0.01em !important;
+.task-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #1d1d1f;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Badges */
-.task-badges {
+/* Quick Badge Icons */
+.quick-badges {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 4px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.task-badge {
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  padding: 2px 10px !important;
-  border-radius: 6px !important;
-  border: none !important;
-}
-
-.recurrence-icon {
-  width: 18px;
-  height: 18px;
-  color: #1890ff;
-  transition: transform 0.3s ease;
+.badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   cursor: pointer;
 }
 
-.recurrence-icon:hover {
-  transform: rotate(180deg);
-}
-
-/* Meta Information */
-.task-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.meta-item {
-  display: flex;
-  align-items: center;
-}
-
-.meta-text {
-  font-size: 13px !important;
-  color: #6b7280 !important;
-  font-weight: 500 !important;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.meta-icon {
+.badge-icon svg {
   width: 14px;
   height: 14px;
-  color: #9ca3af;
-  flex-shrink: 0;
 }
 
-.due-date .meta-text {
-  font-weight: 600 !important;
-  color: #374151 !important;
+.badge-icon.recurrence {
+  background: rgba(0, 122, 255, 0.1);
+  color: #007aff;
 }
 
-/* Status Column */
-.status-column {
-  display: flex;
-  justify-content: flex-end;
-  align-items: flex-start;
-  padding-top: 2px;
+.badge-icon.recurrence:hover {
+  background: rgba(0, 122, 255, 0.2);
+  transform: rotate(180deg) scale(1.1);
 }
 
-.status-tag {
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  padding: 6px 14px !important;
-  border-radius: 8px !important;
-  border: none !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
+.badge-icon.subtask {
+  background: rgba(88, 86, 214, 0.1);
+  color: #5856d6;
 }
 
-/* Card Hover Effect */
-.task-card:hover :deep(.ant-card) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04) !important;
-  border-color: #1890ff !important;
+.badge-icon.subtask:hover {
+  background: rgba(88, 86, 214, 0.2);
+  transform: scale(1.1);
 }
 
-/* Urgent Task Styling - Design Principles Compliant */
-.urgent-task :deep(.ant-card) {
-  border: 1.5px solid #ffa39e !important;
-  border-left: 4px solid #ff4d4f !important;
-  background: #ffffff !important;
-  box-shadow: 0 2px 8px rgba(255, 77, 79, 0.08) !important;
-  position: relative;
-  overflow: visible !important;
+.badge-icon.collaborator {
+  background: rgba(175, 82, 222, 0.1);
+  color: #af52de;
 }
 
-/* Subtle top accent - visual hierarchy */
-.urgent-task::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: #ff4d4f;
-  opacity: 0.3;
-  border-radius: 12px 12px 0 0;
+.badge-icon.collaborator:hover {
+  background: rgba(175, 82, 222, 0.2);
+  transform: scale(1.1);
 }
 
-/* Subtask Label - Prominent Design */
-.subtask-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: #e6f7ff;
-  color: #0958d9;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  border: 1px solid #91caff;
-  letter-spacing: 0.2px;
-  margin-left: 8px;
-  flex-shrink: 0;
-}
-
-.subtask-icon {
-  width: 14px;
-  height: 14px;
-  color: #1890ff;
-  flex-shrink: 0;
-}
-
-.subtask-text {
-  text-transform: uppercase;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.subtask-label:hover {
-  background: #bae0ff;
-  border-color: #69b1ff;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(24, 144, 255, 0.15);
-  transition: all 0.2s ease;
-}
-
-/* Clean Badge - Integrated Design */
-.urgent-badge {
+/* Status Badge */
+.status-badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: #fff1f0;
-  color: #cf1322;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-weight: 600;
-  border: 1px solid #ffccc7;
-  letter-spacing: 0.2px;
-  margin-left: 8px;
-}
-
-.urgent-icon {
-  font-size: 12px;
-  color: #ff4d4f;
-}
-
-.urgent-text {
-  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 8px;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
 }
 
-/* Hover effect - subtle enhancement */
-.urgent-task:hover :deep(.ant-card) {
-  border-left-color: #cf1322 !important;
-  box-shadow: 0 4px 12px rgba(255, 77, 79, 0.12) !important;
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-.urgent-task:hover .urgent-badge {
-  background: #ff4d4f;
-  color: #ffffff;
-  border-color: #ff4d4f;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(255, 77, 79, 0.2);
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
-/* Expand button */
-.expand-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
+.status-badge.status-unassigned {
+  background: rgba(142, 142, 147, 0.12);
+  color: #8e8e93;
+}
+
+.status-badge.status-unassigned .status-dot {
+  background: #8e8e93;
+}
+
+.status-badge.status-ongoing {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007aff;
+}
+
+.status-badge.status-ongoing .status-dot {
+  background: #007aff;
+}
+
+.status-badge.status-review {
+  background: rgba(255, 149, 0, 0.12);
+  color: #ff9500;
+}
+
+.status-badge.status-review .status-dot {
+  background: #ff9500;
+}
+
+.status-badge.status-completed {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34c759;
+}
+
+.status-badge.status-completed .status-dot {
+  background: #34c759;
+}
+
+/* ===== FOOTER SECTION ===== */
+.task-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.task-metadata {
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  transition: all 0.2s ease;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
 }
 
-.expand-button:hover {
-  background-color: #f0f0f0;
-}
-
-.expand-button svg {
-  transition: transform 0.2s ease;
-}
-
-.expand-button svg.rotate-90 {
-  transform: rotate(90deg);
-}
-
-
-/* Parent task styling */
-.parent-task-card {
+/* Meta Chips */
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  font-size: 11px;
   font-weight: 500;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  color: #6e6e73;
+  transition: all 0.3s ease;
+  white-space: nowrap;
 }
 
-/* Add hover effect for recurring icon */
-.w-5.h-5.text-blue-500 {
-  transition: transform 0.2s ease;
+.meta-chip:hover {
+  background: rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
-.w-5.h-5.text-blue-500:hover {
-  transform: rotate(180deg);
+.meta-chip .meta-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.7;
 }
 
-/* Enhanced card transitions */
-.task-card {
-  transition: all 0.2s ease-in-out;
+.meta-chip.due-date {
+  font-weight: 600;
+  color: #1d1d1f;
 }
 
-.task-card:hover {
-  transform: translateY(-2px);
+.meta-chip.due-date.overdue {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
 }
 
+.meta-chip.due-date.overdue .meta-icon {
+  color: #ff3b30;
+  opacity: 1;
+}
+
+.meta-chip.due-date.due-soon {
+  background: rgba(255, 149, 0, 0.12);
+  color: #ff9500;
+}
+
+.meta-chip.due-date.due-soon .meta-icon {
+  color: #ff9500;
+  opacity: 1;
+}
+
+.meta-chip.assignee {
+  max-width: 150px;
+}
+
+.meta-chip .truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Priority Badge */
+.priority-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.priority-badge.priority-high {
+  background: rgba(255, 59, 48, 0.15);
+  color: #ff3b30;
+}
+
+.priority-badge.priority-medium {
+  background: rgba(255, 149, 0, 0.15);
+  color: #ff9500;
+}
+
+.priority-badge.priority-low {
+  background: rgba(52, 199, 89, 0.15);
+  color: #34c759;
+}
+
+/* ===== HOVER EFFECTS ===== */
+
+/* Hover Glow Effect */
+.card-glow {
+  position: absolute;
+  inset: -2px;
+  border-radius: 18px;
+  opacity: 0;
+  transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.card-glow.priority-high {
+  background: radial-gradient(circle at 50% 50%, rgba(255, 59, 48, 0.15), transparent 70%);
+}
+
+.card-glow.priority-medium {
+  background: radial-gradient(circle at 50% 50%, rgba(255, 149, 0, 0.15), transparent 70%);
+}
+
+.card-glow.priority-low {
+  background: radial-gradient(circle at 50% 50%, rgba(52, 199, 89, 0.15), transparent 70%);
+}
+
+.task-card-wrapper:hover .card-glow {
+  opacity: 1;
+}
+
+.task-card-wrapper:hover .task-card-inner {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: 
+    0 12px 32px rgba(0, 0, 0, 0.08),
+    0 6px 16px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.task-card-wrapper:hover .priority-accent {
+  width: 5px;
+  opacity: 1;
+}
+
+.task-card-wrapper:active .task-card-inner {
+  transform: translateY(-1px) scale(0.99);
+}
+
+/* ===== SPECIAL STATES ===== */
+
+/* Urgent Task */
+.task-card-wrapper.urgent-task .task-card-inner {
+  border: 1px solid rgba(255, 59, 48, 0.2);
+  background: linear-gradient(135deg, rgba(255, 59, 48, 0.03) 0%, rgba(255, 255, 255, 0.85) 100%);
+}
+
+.task-card-wrapper.urgent-task .priority-accent {
+  width: 5px;
+  opacity: 1;
+  box-shadow: 0 0 12px rgba(255, 59, 48, 0.4);
+}
+
+/* Completed Task */
+.task-card-wrapper.completed-task .task-card-inner {
+  opacity: 0.7;
+  background: rgba(248, 248, 248, 0.85);
+}
+
+.task-card-wrapper.completed-task .task-title {
+  text-decoration: line-through;
+  color: #8e8e93;
+}
+
+.task-card-wrapper.completed-task:hover .task-card-inner {
+  opacity: 0.85;
+}
+
+/* ===== RESPONSIVE DESIGN ===== */
+@media (max-width: 768px) {
+  .task-card-inner {
+    padding: 14px 16px;
+  }
+  
+  .task-title {
+    font-size: 14px;
+  }
+  
+  .task-header {
+    gap: 8px;
+  }
+  
+  .task-footer {
+    gap: 8px;
+  }
+  
+  .meta-chip {
+    font-size: 10.5px;
+    padding: 4px 8px;
+  }
+  
+  .status-badge {
+    font-size: 9.5px;
+    padding: 4px 8px;
+  }
+  
+  .priority-badge {
+    font-size: 10px;
+    padding: 4px 7px;
+  }
+}
+
+/* ===== DARK MODE SUPPORT ===== */
+:global(.dark) .task-card-inner {
+  background: rgba(28, 28, 30, 0.85);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+:global(.dark) .task-title {
+  color: #f5f5f7;
+}
+
+:global(.dark) .meta-chip {
+  background: rgba(255, 255, 255, 0.08);
+  color: #a1a1a6;
+}
+
+:global(.dark) .meta-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+:global(.dark) .task-card-wrapper.completed-task .task-card-inner {
+  background: rgba(20, 20, 22, 0.85);
+}
 </style>

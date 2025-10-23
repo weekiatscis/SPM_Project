@@ -73,27 +73,21 @@
               />
             </span>
           </template>
-          <a-list
-            :data-source="ongoingTasks"
-            :loading="isLoading"
-            class="task-list-scroll"
-          >
-            <template #renderItem="{ item }">
-              <a-list-item>
-                <TaskCard
-                  :task="item"
-                  :current-user-id="authStore.user?.user_id"
-                  :is-expanded="false"
-                  :has-subtasks="hasSubtasks(item.id)"
-                  @view-details="handleTaskClick"
-                  @toggle-expand="toggleExpand"
-                />
-              </a-list-item>
-            </template>
-            <template #empty>
-              <a-empty description="No ongoing tasks" />
-            </template>
-          </a-list>
+          <a-spin :spinning="isLoading">
+            <div v-if="ongoingTasks.length > 0" class="task-grid task-list-scroll">
+              <TaskCard
+                v-for="item in ongoingTasks"
+                :key="item.id"
+                :task="item"
+                :current-user-id="authStore.user?.user_id"
+                :is-expanded="false"
+                :has-subtasks="hasSubtasks(item.id)"
+                @view-details="handleTaskClick"
+                @toggle-expand="toggleExpand"
+              />
+            </div>
+            <a-empty v-else description="No ongoing tasks" class="empty-state" />
+          </a-spin>
         </a-tab-pane>
 
         <a-tab-pane key="completed" tab="Completed">
@@ -106,27 +100,21 @@
               />
             </span>
           </template>
-          <a-list
-            :data-source="completedTasks"
-            :loading="isLoading"
-            class="task-list-scroll"
-          >
-            <template #renderItem="{ item }">
-              <a-list-item>
-                <TaskCard
-                  :task="item"
-                  :current-user-id="authStore.user?.user_id"
-                  :is-expanded="false"
-                  :has-subtasks="hasSubtasks(item.id)"
-                  @view-details="handleTaskClick"
-                  @toggle-expand="toggleExpand"
-                />
-              </a-list-item>
-            </template>
-            <template #empty>
-              <a-empty description="No completed tasks" />
-            </template>
-          </a-list>
+          <a-spin :spinning="isLoading">
+            <div v-if="completedTasks.length > 0" class="task-grid task-list-scroll">
+              <TaskCard
+                v-for="item in completedTasks"
+                :key="item.id"
+                :task="item"
+                :current-user-id="authStore.user?.user_id"
+                :is-expanded="false"
+                :has-subtasks="hasSubtasks(item.id)"
+                @view-details="handleTaskClick"
+                @toggle-expand="toggleExpand"
+              />
+            </div>
+            <a-empty v-else description="No completed tasks" class="empty-state" />
+          </a-spin>
         </a-tab-pane>
       </a-tabs>
     </a-card>
@@ -602,95 +590,213 @@ export default {
 </script>
 
 <style scoped>
+/* ===== IMMERSIVE TASK LIST DESIGN ===== */
+
 /* Container */
 .task-list-container {
   width: 100%;
+  position: relative;
 }
 
-/* Main Card Styling */
+/* Main Card - Enhanced Glassmorphism */
 .task-list-card {
-  border-radius: 16px !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
-  border: 1px solid rgba(229, 231, 235, 0.8) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border-radius: 20px !important;
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.06), 
+    0 2px 12px rgba(0, 0, 0, 0.03),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+  border: 1px solid rgba(0, 0, 0, 0.05) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.95) 100%) !important;
+  backdrop-filter: blur(30px) saturate(150%);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
   overflow: hidden !important;
-  min-height: 700px;
+  min-height: 720px;
+  position: relative;
+}
+
+/* Ambient Background Effect */
+.task-list-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at 30% 20%, rgba(0, 122, 255, 0.03) 0%, transparent 50%),
+              radial-gradient(circle at 70% 80%, rgba(52, 199, 89, 0.02) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
 }
 
 .task-list-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04) !important;
-  border-color: rgba(24, 144, 255, 0.2) !important;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.08), 
+    0 4px 16px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 1) !important;
+  border-color: rgba(0, 122, 255, 0.1) !important;
+  transform: translateY(-2px);
 }
 
-/* Header Styling */
+/* Header Styling - Premium */
 .task-list-header {
   display: flex;
   align-items: center;
   gap: 20px;
   flex-wrap: wrap;
-  padding: 12px;
+  padding: 8px 4px;
+  position: relative;
+  z-index: 1;
 }
 
 .task-list-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 700;
-  color: #111827;
-  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #1d1d1f 0%, #3a3a3c 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.03em;
+  position: relative;
 }
 
-/* Sort Buttons */
+.task-list-title::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 40px;
+  height: 3px;
+  background: linear-gradient(90deg, #007aff 0%, transparent 100%);
+  border-radius: 2px;
+}
+
+/* Sort Buttons - Elevated Design */
 .sort-buttons {
   display: flex;
-  gap: 12px;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
 }
 
 .sort-button {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 16px !important;
   height: 38px !important;
-  border-radius: 10px !important;
-  font-weight: 500;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 12px !important;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.sort-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(0, 122, 255, 0.1) 0%, transparent 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.sort-button:hover::before {
+  opacity: 1;
 }
 
 .sort-button .sort-label {
-  font-size: 14px;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  position: relative;
+  z-index: 1;
 }
 
 .sort-button .sort-arrow {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
+  position: relative;
+  z-index: 1;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .sort-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.1);
+  border-color: rgba(0, 122, 255, 0.2) !important;
 }
 
-/* Create Task Button */
+.sort-button:hover .sort-arrow {
+  transform: scale(1.2);
+}
+
+.sort-button:active {
+  transform: translateY(0);
+}
+
+/* Active Sort Button */
+.sort-button[type="primary"] {
+  background: linear-gradient(135deg, #007aff 0%, #0051d5 100%) !important;
+  border: 1px solid rgba(0, 122, 255, 0.3) !important;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+}
+
+.sort-button[type="primary"] .sort-label,
+.sort-button[type="primary"] .sort-arrow {
+  color: white !important;
+}
+
+/* Create Task Button - Hero CTA */
 .create-task-button {
   display: inline-flex !important;
   align-items: center !important;
   gap: 8px !important;
   padding: 8px 20px !important;
   height: 38px !important;
-  border-radius: 10px !important;
-  font-weight: 600 !important;
-  font-size: 14px !important;
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.25) !important;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  border-radius: 12px !important;
+  font-weight: 650 !important;
+  font-size: 13px !important;
+  letter-spacing: -0.01em !important;
+  background: linear-gradient(135deg, #007aff 0%, #0051d5 100%) !important;
+  border: none !important;
+  box-shadow: 
+    0 4px 16px rgba(0, 122, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.create-task-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.create-task-button:hover::before {
+  opacity: 1;
 }
 
 .create-task-button:hover {
-  transform: translateY(-2px) !important;
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.35) !important;
+  transform: translateY(-2px) scale(1.02) !important;
+  box-shadow: 
+    0 8px 24px rgba(0, 122, 255, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
 }
 
 .create-task-button:active {
-  transform: translateY(0) !important;
+  transform: translateY(0) scale(0.98) !important;
 }
 
 :deep(.create-task-button .anticon) {
@@ -699,65 +805,88 @@ export default {
   font-size: 16px !important;
 }
 
-/* Tabs Styling */
+/* Tabs - Modern Segmented Control */
 :deep(.ant-tabs) {
   margin-top: 0px;
+  position: relative;
+  z-index: 1;
 }
 
 :deep(.ant-tabs-nav) {
   margin-bottom: 20px !important;
-  padding: 0 4px;
+  padding: 4px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
 }
 
 :deep(.ant-tabs-tab) {
-  padding: 12px 20px !important;
-  font-size: 15px !important;
+  padding: 10px 20px !important;
+  font-size: 14px !important;
   font-weight: 600 !important;
   border-radius: 10px !important;
-  transition: all 0.3s ease !important;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+  color: #86868b !important;
+  letter-spacing: -0.01em !important;
+  margin: 0 !important;
 }
 
 :deep(.ant-tabs-tab:hover) {
-  background: rgba(24, 144, 255, 0.05) !important;
+  background: rgba(255, 255, 255, 0.5) !important;
+  color: #1d1d1f !important;
+  transform: translateY(-1px);
 }
 
 :deep(.ant-tabs-tab-active) {
-  background: linear-gradient(135deg, rgba(24, 144, 255, 0.08), rgba(64, 169, 255, 0.08)) !important;
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #007aff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 :deep(.ant-tabs-ink-bar) {
-  height: 3px !important;
-  border-radius: 2px !important;
-  background: linear-gradient(90deg, #1890ff, #40a9ff) !important;
+  display: none !important;
 }
 
-/* Badge Styling */
+/* Badge - Polished */
 :deep(.ant-badge) {
   margin-left: 8px;
 }
 
 :deep(.ant-badge-count) {
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: 700;
+  font-size: 10px;
   padding: 0 8px;
   height: 20px;
   line-height: 20px;
   border-radius: 10px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  letter-spacing: 0;
 }
 
-/* Scrollable List */
+/* Task Grid - 2 Column Layout */
+.task-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px 14px;
+  width: 100%;
+  align-content: start;
+  grid-auto-rows: min-content;
+}
+
+/* Scrollable List - Smooth */
 .task-list-scroll {
-  height: 520px;
+  height: 540px;
   overflow-y: auto;
   padding: 4px;
   margin: -4px;
+  position: relative;
+  z-index: 1;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar - Premium */
 .task-list-scroll {
   scrollbar-width: thin;
-  scrollbar-color: #d1d5db #f3f4f6;
+  scrollbar-color: rgba(0, 122, 255, 0.2) transparent;
 }
 
 .task-list-scroll::-webkit-scrollbar {
@@ -765,85 +894,122 @@ export default {
 }
 
 .task-list-scroll::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 4px;
+  background: transparent;
 }
 
 .task-list-scroll::-webkit-scrollbar-thumb {
-  background-color: #d1d5db;
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.2) 0%, rgba(0, 122, 255, 0.3) 100%);
   border-radius: 4px;
-  transition: background-color 0.2s ease;
+  transition: all 0.3s ease;
 }
 
 .task-list-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: #9ca3af;
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.3) 0%, rgba(0, 122, 255, 0.4) 100%);
 }
 
-/* List Items */
-:deep(.ant-list-item) {
-  padding: 12px 0 !important;
-  border-bottom: none !important;
+/* Empty State - Elegant */
+.empty-state {
+  padding: 100px 20px;
+  grid-column: 1 / -1;
 }
 
-/* Empty State */
 :deep(.ant-empty) {
-  padding: 60px 20px;
+  padding: 100px 20px;
 }
 
 :deep(.ant-empty-description) {
   font-size: 15px;
-  color: #6b7280;
+  color: #86868b;
   font-weight: 500;
+  letter-spacing: -0.01em;
 }
 
-/* Card Body Padding */
+/* Card Padding - Refined */
 :deep(.ant-card-body) {
-  padding: 24px !important;
+  padding: 28px 32px !important;
+  position: relative;
+  z-index: 1;
 }
 
 :deep(.ant-card-head) {
-  padding: 20px 24px !important;
-  border-bottom: 1px solid #f3f4f6 !important;
+  padding: 24px 32px !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.03) !important;
+  position: relative;
+  z-index: 1;
 }
 
-/* Dark Mode Support */
+/* Dark Mode - Premium Dark */
 :global(.dark) .task-list-card {
-  background-color: rgba(31, 41, 55, 1) !important;
-  border-color: rgba(55, 65, 81, 0.8) !important;
+  background: linear-gradient(135deg, rgba(28, 28, 30, 0.95) 0%, rgba(20, 20, 22, 0.95) 100%) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 
+    0 4px 24px rgba(0, 0, 0, 0.4), 
+    0 2px 12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+:global(.dark) .task-list-card::before {
+  background: radial-gradient(circle at 30% 20%, rgba(0, 122, 255, 0.08) 0%, transparent 50%),
+              radial-gradient(circle at 70% 80%, rgba(52, 199, 89, 0.05) 0%, transparent 50%);
 }
 
 :global(.dark) .task-list-card:hover {
-  border-color: rgba(24, 144, 255, 0.3) !important;
+  border-color: rgba(0, 122, 255, 0.2) !important;
 }
 
 :global(.dark) .task-list-title {
-  color: #f9fafb;
+  background: linear-gradient(135deg, #f5f5f7 0%, #a1a1a6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
-:global(.dark) .task-list-scroll::-webkit-scrollbar-track {
-  background: #1f2937;
+:global(.dark) .sort-button {
+  background: rgba(44, 44, 46, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 :global(.dark) .task-list-scroll::-webkit-scrollbar-thumb {
-  background-color: #4b5563;
-}
-
-:global(.dark) .task-list-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: #6b7280;
+  background: linear-gradient(180deg, rgba(0, 122, 255, 0.3) 0%, rgba(0, 122, 255, 0.4) 100%);
 }
 
 :global(.dark) :deep(.ant-card-head) {
-  border-bottom-color: #374151 !important;
+  border-bottom-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+:global(.dark) :deep(.ant-tabs-nav) {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+:global(.dark) :deep(.ant-tabs-tab-active) {
+  background: rgba(44, 44, 46, 0.95) !important;
 }
 
 /* Responsive Design */
+@media (max-width: 1200px) {
+  .task-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 14px;
+    align-content: start;
+    grid-auto-rows: min-content;
+  }
+}
+
 @media (max-width: 768px) {
+  .task-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    align-content: start;
+    grid-auto-rows: min-content;
+  }
+  
   .task-list-card {
-    min-height: 600px;
+    min-height: 620px;
+    border-radius: 18px !important;
   }
   
   .task-list-scroll {
-    height: 450px;
+    height: 480px;
   }
   
   .task-list-header {
@@ -853,13 +1019,21 @@ export default {
   }
   
   .task-list-title {
-    font-size: 18px;
+    font-size: 22px;
   }
   
   .sort-button,
   .create-task-button {
     height: 36px !important;
-    font-size: 13px !important;
+    font-size: 12.5px !important;
+  }
+  
+  :deep(.ant-card-body) {
+    padding: 22px 24px !important;
+  }
+  
+  :deep(.ant-card-head) {
+    padding: 20px 24px !important;
   }
 }
 </style>
