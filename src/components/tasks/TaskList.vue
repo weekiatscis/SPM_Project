@@ -741,16 +741,39 @@ export default {
   transform: translateY(0);
 }
 
-/* Active Sort Button */
-.sort-button[type="primary"] {
+/* Active Sort Button - Using Ant Design's primary class */
+.sort-button.ant-btn-primary {
   background: linear-gradient(135deg, #007aff 0%, #0051d5 100%) !important;
   border: 1px solid rgba(0, 122, 255, 0.3) !important;
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3) !important;
 }
 
-.sort-button[type="primary"] .sort-label,
-.sort-button[type="primary"] .sort-arrow {
+.sort-button.ant-btn-primary .sort-label,
+.sort-button.ant-btn-primary .sort-arrow {
   color: white !important;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+}
+
+/* Ensure button text is white when primary */
+:deep(.ant-btn-primary) {
+  color: white !important;
+}
+
+:deep(.ant-btn-primary .sort-label),
+:deep(.ant-btn-primary .sort-arrow) {
+  color: white !important;
+}
+
+/* Dark mode overrides */
+:global(.dark) .sort-button.ant-btn-primary {
+  background: linear-gradient(135deg, #007aff 0%, #1a73e8 100%) !important;
+  border-color: rgba(0, 122, 255, 0.5) !important;
+}
+
+:global(.dark) .sort-button.ant-btn-primary .sort-label,
+:global(.dark) .sort-button.ant-btn-primary .sort-arrow {
+  color: white !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 /* Create Task Button - Hero CTA */
