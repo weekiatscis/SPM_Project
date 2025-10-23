@@ -6,7 +6,8 @@
 
       <!-- Modal panel -->
       <div
-        class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+        class="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:w-full"
+        style="max-width: 600px;">
         <!-- Header -->
         <div class="bg-white px-6 py-4 border-b border-gray-200">
           <div class="flex items-center justify-between">

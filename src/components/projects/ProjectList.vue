@@ -27,7 +27,6 @@
           <a-tab-pane key="owned" tab="My Projects" />
           <a-tab-pane key="collaborating" tab="Collaborating" />
           <a-tab-pane key="completed" tab="Completed" />
-          <a-tab-pane key="assign" tab="Assign Task" />
           </a-tabs>
         </div>
 
@@ -72,19 +71,24 @@
       style="min-height: 500px;"
     >
       <template #title>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span>Ongoing Projects</span>
-          <a-select
-            v-model:value="sortBy"
-            size="small"
-            style="width: 180px;"
-            @change="handleSortChange"
-          >
-            <a-select-option value="name-asc">Name (A-Z)</a-select-option>
-            <a-select-option value="name-desc">Name (Z-A)</a-select-option>
-            <a-select-option value="created_at">Created Date</a-select-option>
-            <a-select-option value="due_date">Due Date</a-select-option>
-          </a-select>
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span>Ongoing Projects</span>
+            <a-select
+              v-model:value="sortBy"
+              size="small"
+              style="width: 180px;"
+              @change="handleSortChange"
+            >
+              <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+              <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+              <a-select-option value="created_at">Created Date</a-select-option>
+              <a-select-option value="due_date">Due Date</a-select-option>
+            </a-select>
+          </div>
+          <a-button type="primary" @click="activeTab = 'assign'" class="assign-task-btn">
+            Assign Task
+          </a-button>
         </div>
       </template>
 
@@ -125,19 +129,24 @@
       style="min-height: 500px;"
     >
       <template #title>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span>My Projects</span>
-          <a-select
-            v-model:value="sortBy"
-            size="small"
-            style="width: 180px;"
-            @change="handleSortChange"
-          >
-            <a-select-option value="name-asc">Name (A-Z)</a-select-option>
-            <a-select-option value="name-desc">Name (Z-A)</a-select-option>
-            <a-select-option value="created_at">Created Date</a-select-option>
-            <a-select-option value="due_date">Due Date</a-select-option>
-          </a-select>
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span>My Projects</span>
+            <a-select
+              v-model:value="sortBy"
+              size="small"
+              style="width: 180px;"
+              @change="handleSortChange"
+            >
+              <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+              <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+              <a-select-option value="created_at">Created Date</a-select-option>
+              <a-select-option value="due_date">Due Date</a-select-option>
+            </a-select>
+          </div>
+          <a-button type="primary" @click="activeTab = 'assign'" class="assign-task-btn">
+            Assign Task
+          </a-button>
         </div>
       </template>
 
@@ -178,19 +187,24 @@
       style="min-height: 500px;"
     >
       <template #title>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span>Collaborating</span>
-          <a-select
-            v-model:value="sortBy"
-            size="small"
-            style="width: 180px;"
-            @change="handleSortChange"
-          >
-            <a-select-option value="name-asc">Name (A-Z)</a-select-option>
-            <a-select-option value="name-desc">Name (Z-A)</a-select-option>
-            <a-select-option value="created_at">Created Date</a-select-option>
-            <a-select-option value="due_date">Due Date</a-select-option>
-          </a-select>
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span>Collaborating</span>
+            <a-select
+              v-model:value="sortBy"
+              size="small"
+              style="width: 180px;"
+              @change="handleSortChange"
+            >
+              <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+              <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+              <a-select-option value="created_at">Created Date</a-select-option>
+              <a-select-option value="due_date">Due Date</a-select-option>
+            </a-select>
+          </div>
+          <a-button type="primary" @click="activeTab = 'assign'" class="assign-task-btn">
+            Assign Task
+          </a-button>
         </div>
       </template>
 
@@ -227,19 +241,24 @@
       style="min-height: 500px;"
     >
       <template #title>
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <span>Completed Projects</span>
-          <a-select
-            v-model:value="sortBy"
-            size="small"
-            style="width: 180px;"
-            @change="handleSortChange"
-          >
-            <a-select-option value="name-asc">Name (A-Z)</a-select-option>
-            <a-select-option value="name-desc">Name (Z-A)</a-select-option>
-            <a-select-option value="created_at">Created Date</a-select-option>
-            <a-select-option value="due_date">Due Date</a-select-option>
-          </a-select>
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span>Completed Projects</span>
+            <a-select
+              v-model:value="sortBy"
+              size="small"
+              style="width: 180px;"
+              @change="handleSortChange"
+            >
+              <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+              <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+              <a-select-option value="created_at">Created Date</a-select-option>
+              <a-select-option value="due_date">Due Date</a-select-option>
+            </a-select>
+          </div>
+          <a-button type="primary" @click="activeTab = 'assign'" class="assign-task-btn">
+            Assign Task
+          </a-button>
         </div>
       </template>
 
@@ -406,10 +425,13 @@
                     >
                       <div style="width: 100%;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                          <div>
+                          <div style="display: flex; align-items: center; gap: 8px;">
                             <strong style="font-size: 14px;">{{ item.project_name }}</strong>
-                            <a-tag :color="getProjectStatusColor(item.status)" size="small" style="margin-left: 8px;">
+                            <a-tag :color="getProjectStatusColor(item.status)" size="small">
                               {{ item.status }}
+                            </a-tag>
+                            <a-tag v-if="isUserCollaborator(item)" class="collaborator-badge" size="small">
+                              Collaborator
                             </a-tag>
                           </div>
                           <div v-if="selectedProjectForAssign?.project_id === item.project_id">
@@ -806,6 +828,11 @@ export default {
       return colors[status] || 'default'
     }
 
+    const isUserCollaborator = (project) => {
+      if (!currentUserId || !project.collaborators) return false
+      return Array.isArray(project.collaborators) && project.collaborators.includes(currentUserId)
+    }
+
     const assignTaskToProject = async () => {
       if (selectedTasksForAssign.value.length === 0 || !selectedProjectForAssign.value) return
 
@@ -1002,6 +1029,7 @@ export default {
       searchProjects,
       selectProjectForAssign,
       getProjectStatusColor,
+      isUserCollaborator,
       assignTaskToProject
     }
   }
@@ -1289,6 +1317,41 @@ export default {
 .btn-icon {
   font-size: 16px;
   font-weight: bold;
+}
+
+:deep(.assign-task-btn) {
+  height: 36px;
+  padding: 0 20px;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  background: linear-gradient(135deg, #1890ff, #096dd9) !important;
+  border-color: #1890ff !important;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2) !important;
+}
+
+:deep(.assign-task-btn:hover) {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, #40a9ff, #1890ff) !important;
+  border-color: #40a9ff !important;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3) !important;
+}
+
+:deep(.assign-task-btn:active) {
+  background: linear-gradient(135deg, #096dd9, #0050b3) !important;
+  border-color: #096dd9 !important;
+}
+
+.collaborator-badge {
+  background: #FEF3C7 !important;
+  color: #D97706 !important;
+  border: 1px solid #FDE68A !important;
+  border-radius: 12px !important;
+  padding: 2px 10px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
 }
 
 /* Responsive Design */

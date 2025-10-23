@@ -4,9 +4,10 @@
     v-model:open="modalVisible"
     :title="null"
     :footer="null"
-    :width="600"
+    :width="896"
     :closable="false"
     :maskClosable="false"
+    centered
     @cancel="handleClose"
     class="project-modal"
   >
@@ -41,60 +42,63 @@
         @submit.prevent="saveProject"
         class="project-form"
       >
-        <!-- Project Name -->
-        <a-form-item
-          label="Project Name"
-          :validate-status="errors.project_name || isDuplicateName ? 'error' : isCheckingDuplicate ? 'validating' : ''"
-          :help="errors.project_name || (isDuplicateName ? 'A project with this name already exists' : '')"
-          required
-        >
-          <a-input
-            v-model:value="form.project_name"
-            size="large"
-            placeholder="e.g., Website Redesign, Q1 Marketing Campaign"
-            :prefix="h(EditOutlined)"
-            class="custom-input"
-            @input="onProjectNameInput"
-          />
-        </a-form-item>
+        <!-- Row 1: Project Name and Due Date -->
+        <div class="form-row">
+          <a-form-item
+            label="Project Name"
+            :validate-status="errors.project_name || isDuplicateName ? 'error' : isCheckingDuplicate ? 'validating' : ''"
+            :help="errors.project_name || (isDuplicateName ? 'A project with this name already exists' : '')"
+            required
+            class="form-item-half"
+          >
+            <a-input
+              v-model:value="form.project_name"
+              size="large"
+              placeholder="e.g., Website Redesign, Q1 Marketing Campaign"
+              :prefix="h(EditOutlined)"
+              class="custom-input"
+              @input="onProjectNameInput"
+            />
+          </a-form-item>
+
+          <a-form-item
+            label="Project Completion Date"
+            :validate-status="errors.due_date ? 'error' : ''"
+            :help="errors.due_date"
+            required
+            class="form-item-half"
+          >
+            <a-date-picker
+              v-model:value="dueDateValue"
+              size="large"
+              format="DD/MM/YYYY"
+              :style="{ width: '100%' }"
+              placeholder="Select target date"
+              :disabled-date="disabledDate"
+              class="custom-date-picker"
+            >
+              <template #suffixIcon>
+                <CalendarOutlined />
+              </template>
+            </a-date-picker>
+            <div class="date-hint">
+              <ClockCircleOutlined class="hint-icon" />
+              <span>Set a realistic deadline for project completion</span>
+            </div>
+          </a-form-item>
+        </div>
 
         <!-- Project Description -->
         <a-form-item label="Description">
           <a-textarea
             v-model:value="form.project_description"
-            :rows="4"
+            :rows="3"
             placeholder="Describe the project objectives, scope, and key deliverables..."
             size="large"
             :maxlength="500"
             show-count
             class="custom-textarea"
           />
-        </a-form-item>
-
-        <!-- Due Date -->
-        <a-form-item
-          label="Project Completion Date"
-          :validate-status="errors.due_date ? 'error' : ''"
-          :help="errors.due_date"
-          required
-        >
-          <a-date-picker
-            v-model:value="dueDateValue"
-            size="large"
-            format="DD/MM/YYYY"
-            :style="{ width: '100%' }"
-            placeholder="Select target date"
-            :disabled-date="disabledDate"
-            class="custom-date-picker"
-          >
-            <template #suffixIcon>
-              <CalendarOutlined />
-            </template>
-          </a-date-picker>
-          <div class="date-hint">
-            <ClockCircleOutlined class="hint-icon" />
-            <span>Set a realistic deadline for project completion</span>
-          </div>
         </a-form-item>
 
         <!-- Project Owner for New Projects (Read-only) -->
@@ -910,6 +914,18 @@ export default {
 
 .project-form {
   margin: 0;
+}
+
+/* Form Row for Two-Column Layout */
+.form-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 0;
+}
+
+.form-item-half {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Form Labels */
