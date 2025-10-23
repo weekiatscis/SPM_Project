@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from collections import Counter
 from enum import Enum
+from html import escape
 
 # Configure logging FIRST
 logging.basicConfig(level=logging.INFO)
@@ -23,9 +24,9 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, KeepTogether
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from reportlab.graphics.shapes import Drawing, Line
+from reportlab.graphics.shapes import Drawing, Line, Rect, String
 from reportlab.graphics.charts.piecharts import Pie
 from reportlab.lib.colors import HexColor
 
@@ -45,8 +46,9 @@ try:
     # Try multiple possible .env locations
     env_paths = [
         os.path.join(os.path.dirname(__file__), '..', '..', '..', '.env'),  # Original path
-        os.path.join(os.path.dirname(__file__), '.env'),  # Same directory
-        '.env',  # Current working directory
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '.env'),  # Absolute path version
+        os.path.join(os.getcwd(), '.env'),  # Current working directory
+        '.env',  # Current working directory (relative)
         '/app/.env'  # Docker working directory
     ]
     
@@ -59,7 +61,9 @@ try:
             break
     
     if not env_loaded:
-        print("⚠️  No .env file found, using system environment variables")
+        print("⚠️  No .env file found in any location, using system environment variables")
+        # List the paths that were tried for debugging
+        print(f"Searched paths: {env_paths}")
         load_dotenv()  # Load from system environment
         
 except Exception as e:
@@ -67,9 +71,9 @@ except Exception as e:
     print("Using system environment variables instead")
 
 # Environment variables
-TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://task-service:8080")
-PROJECT_SERVICE_URL = os.getenv("PROJECT_SERVICE_URL", "http://project-service:8082")
-USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://user-service:8081")
+TASK_SERVICE_URL = os.getenv("TASK_SERVICE_URL", "http://localhost:8080")
+PROJECT_SERVICE_URL = os.getenv("PROJECT_SERVICE_URL", "http://localhost:8082")
+USER_SERVICE_URL = os.getenv("USER_SERVICE_URL", "http://localhost:8081")
 # Add after TASK_SERVICE_URL line
 SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY: Optional[str] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -85,6 +89,92 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
+
+
+def parse_datetime(value: Optional[str]) -> Optional[datetime]:
+    """Safely parse ISO-like datetime or date strings into timezone-aware datetimes."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            text = str(value).strip()
+            if not text:
+                return None
+            if text.endswith('Z'):
+                text = text[:-1] + '+00:00'
+            dt = datetime.fromisoformat(text)
+        except Exception:
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def calculate_task_duration_metrics(task: Dict[str, Any]) -> Dict[str, Optional[float]]:
+    """Compute duration-based metrics (in days and hours) for a normalized task record."""
+    created_at = parse_datetime(task.get('created_at'))
+    updated_at = parse_datetime(task.get('updated_at'))
+    completion_ts = parse_datetime(task.get('completed_date')) or parse_datetime(task.get('completed_at'))
+
+    status = (task.get('status') or '').lower()
+    if completion_ts is None and status == 'completed':
+        completion_ts = updated_at
+
+    completion_time_hours: Optional[float] = None
+    completion_time_days: Optional[float] = None
+    if created_at and completion_ts:
+        diff = (completion_ts - created_at).total_seconds()
+        if diff >= 0:
+            completion_time_hours = diff / 3600
+            completion_time_days = diff / (3600 * 24)  # Convert to days
+
+    time_in_progress_hours: Optional[float] = None
+    if created_at:
+        effective_end = completion_ts or updated_at or datetime.now(timezone.utc)
+        if effective_end:
+            diff = (effective_end - created_at).total_seconds()
+            if diff >= 0:
+                time_in_progress_hours = diff / 3600
+
+    return {
+        'completion_time_hours': completion_time_hours,
+        'completion_time_days': completion_time_days,
+        'time_in_progress_hours': time_in_progress_hours
+    }
+
+
+def sanitize_filename_component(value: Optional[str]) -> str:
+    """Return a filesystem-safe slug for filenames."""
+    if not value:
+        return 'report'
+    safe = ''.join(ch if ch.isalnum() or ch in ('-', '_') else '_' for ch in value.strip())
+    sanitized = safe.strip('_')
+    return sanitized or 'report'
+
+
+def filter_high_priority_tasks(tasks: List[Dict[str, Any]], limit: int = 8) -> List[Dict[str, Any]]:
+    """Filter and return the highest priority tasks, up to the specified limit."""
+    if not tasks:
+        return []
+    
+    # Sort tasks by priority (higher priority number = higher priority)
+    # Handle cases where priority might be None, string, or invalid values
+    def get_priority_score(task):
+        priority = task.get('priority')
+        try:
+            return int(priority) if priority is not None else 0
+        except (ValueError, TypeError):
+            return 0
+    
+    # Sort by priority descending (highest first), then by created date (newest first)
+    sorted_tasks = sorted(tasks, key=lambda t: (
+        get_priority_score(t) or 0,
+        parse_datetime(t.get('created_at')) or datetime.min.replace(tzinfo=timezone.utc)
+    ), reverse=True)
+    
+    return sorted_tasks[:limit]
 
 
 def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
@@ -133,6 +223,11 @@ def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
                 'due_date': task.get('due_date', task.get('dueDate')),  # Handle both formats
                 'description': task.get('description', ''),
                 'owner_id': task.get('owner_id', task.get('ownerId')),
+                'priority': task.get('priority', 5),  # Default priority if not set
+                'project_id': task.get('project_id'),
+                'collaborators': task.get('collaborators', []),
+                'completed_date': task.get('completed_date') or task.get('completedDate'),
+                'completed_at': task.get('completed_at') or task.get('completedAt'),
             }
             
             # Status filter - check if task status is in the list of selected statuses
@@ -169,6 +264,8 @@ def fetch_tasks_for_user(user_id: str, start_date: Optional[str] = None,
                         continue
 
             logger.info(f"🔍 Task '{normalized_task.get('title', 'Unknown')}' passed all filters")
+            duration_metrics = calculate_task_duration_metrics(normalized_task)
+            normalized_task.update(duration_metrics)
             filtered_tasks.append(normalized_task)
 
         logger.info(f"🔍 FINAL: Filtered {len(filtered_tasks)} tasks from {len(tasks)} for user {user_id}")
@@ -500,7 +597,7 @@ def generate_pie_chart(tasks: List[Dict[str, Any]]) -> Drawing:
     from reportlab.graphics.shapes import Rect, String
 
     # Count tasks by status
-    status_counts = Counter(task.get('status', 'Unknown') for task in tasks)
+    status_counts = Counter(task.get('status') or 'Unknown' for task in tasks)
 
     # Prepare data for pie chart
     labels = list(status_counts.keys())
@@ -565,6 +662,398 @@ def generate_pie_chart(tasks: List[Dict[str, Any]]) -> Drawing:
         text.fillColor = HexColor('#262626')
         text.fontName = 'Helvetica'
         drawing.add(text)
+
+    return drawing
+
+
+def generate_bar_chart(data_dict: Dict[str, int], title: str = "Bar Chart", 
+                      max_width: int = 450, max_height: int = 250) -> Drawing:
+    """Generate a horizontal bar chart with labels and values."""
+    from reportlab.graphics.shapes import Rect, String, Line
+    
+    if not data_dict:
+        # Create empty chart
+        drawing = Drawing(max_width, max_height)
+        text = String(max_width/2, max_height/2, "No data available")
+        text.fontName = 'Helvetica'
+        text.fontSize = 12
+        text.fillColor = colors.grey
+        text.textAnchor = 'middle'
+        drawing.add(text)
+        return drawing
+    
+    # Prepare data
+    labels = list(data_dict.keys())
+    values = list(data_dict.values())
+    max_value = max(values) if values else 1
+    
+    # Calculate dimensions
+    bar_height = 25
+    bar_spacing = 35
+    left_margin = 120  # Space for labels
+    right_margin = 60  # Space for values
+    top_margin = 30
+    bottom_margin = 20
+    
+    chart_width = max_width - left_margin - right_margin
+    chart_height = len(labels) * bar_spacing + top_margin + bottom_margin
+    
+    # Create drawing
+    drawing = Drawing(max_width, max(chart_height, max_height))
+    
+    # Define colors for bars
+    colors_list = [
+        HexColor("#3b82f6"), HexColor("#22c55e"), HexColor("#f59e0b"),
+        HexColor("#a855f7"), HexColor("#ef4444"), HexColor("#06b6d4"),
+        HexColor("#84cc16"), HexColor("#f97316")
+    ]
+    
+    # Draw bars
+    for i, (label, value) in enumerate(zip(labels, values)):
+        y_pos = chart_height - top_margin - (i + 1) * bar_spacing
+        
+        # Calculate bar width
+        bar_width = (value / max_value) * chart_width if max_value > 0 else 0
+        
+        # Draw bar
+        bar_color = colors_list[i % len(colors_list)]
+        bar = Rect(left_margin, y_pos, bar_width, bar_height)
+        bar.fillColor = bar_color
+        bar.strokeColor = HexColor("#ffffff")
+        bar.strokeWidth = 1
+        drawing.add(bar)
+        
+        # Draw label (left side)
+        label_text = String(left_margin - 10, y_pos + bar_height/2 - 4, str(label))
+        label_text.fontName = 'Helvetica'
+        label_text.fontSize = 10
+        label_text.fillColor = colors.black
+        label_text.textAnchor = 'end'
+        drawing.add(label_text)
+        
+        # Draw value (right side of bar)
+        value_text = String(left_margin + bar_width + 5, y_pos + bar_height/2 - 4, str(value))
+        value_text.fontName = 'Helvetica-Bold'
+        value_text.fontSize = 10
+        value_text.fillColor = colors.black
+        drawing.add(value_text)
+    
+    # Draw title if provided
+    if title:
+        title_text = String(max_width/2, chart_height - 15, title)
+        title_text.fontName = 'Helvetica-Bold'
+        title_text.fontSize = 12
+        title_text.fillColor = colors.black
+        title_text.textAnchor = 'middle'
+        drawing.add(title_text)
+    
+    return drawing
+
+
+def generate_team_member_bar_chart(team_members_data: List[Dict[str, Any]]) -> Drawing:
+    """Generate a bar chart showing task completion by team member."""
+    from reportlab.graphics.shapes import Rect, String
+
+    if not team_members_data:
+        return generate_bar_chart({}, "Task Status by Team Member")
+
+    # Prepare data for stacked bar chart
+    member_names = []
+    completed_data = []
+    total_data = []
+    
+    for member in team_members_data:
+        name = member.get('name', 'Unknown')
+        completed = member.get('completed', 0)
+        total = member.get('total_tasks', 0)
+        
+        member_names.append(name)
+        completed_data.append(completed)
+        total_data.append(total)
+    
+    # Create drawing
+    drawing = Drawing(500, 300)
+    
+    if not member_names:
+        text = String(250, 150, "No team member data available")
+        text.fontName = 'Helvetica'
+        text.fontSize = 12
+        text.fillColor = colors.grey
+        text.textAnchor = 'middle'
+        drawing.add(text)
+        return drawing
+    
+    # Calculate dimensions
+    bar_width = 40
+    bar_spacing = 60
+    left_margin = 60
+    bottom_margin = 60
+    top_margin = 40
+    
+    max_value = max(total_data) if total_data else 1
+    chart_height = 200
+    
+    # Draw bars for each member
+    for i, (name, completed, total) in enumerate(zip(member_names, completed_data, total_data)):
+        x_pos = left_margin + i * bar_spacing
+        
+        # Calculate heights
+        total_height = (total / max_value) * chart_height if max_value > 0 else 0
+        completed_height = (completed / max_value) * chart_height if max_value > 0 else 0
+        
+        # Draw total tasks bar (background)
+        total_bar = Rect(x_pos, bottom_margin, bar_width, total_height)
+        total_bar.fillColor = HexColor("#e5e7eb")
+        total_bar.strokeColor = colors.white
+        total_bar.strokeWidth = 1
+        drawing.add(total_bar)
+        
+        # Draw completed tasks bar (foreground)
+        completed_bar = Rect(x_pos, bottom_margin, bar_width, completed_height)
+        completed_bar.fillColor = HexColor("#22c55e")
+        completed_bar.strokeColor = colors.white
+        completed_bar.strokeWidth = 1
+        drawing.add(completed_bar)
+        
+        # Draw member name (rotated)
+        name_text = String(x_pos + bar_width/2, bottom_margin - 10, name)
+        name_text.fontName = 'Helvetica'
+        name_text.fontSize = 8
+        name_text.fillColor = colors.black
+        name_text.textAnchor = 'middle'
+        drawing.add(name_text)
+        
+        # Draw values above bar
+        value_text = String(x_pos + bar_width/2, bottom_margin + total_height + 5, f"{completed}/{total}")
+        value_text.fontName = 'Helvetica-Bold'
+        value_text.fontSize = 9
+        value_text.fillColor = colors.black
+        value_text.textAnchor = 'middle'
+        drawing.add(value_text)
+    
+    # Add title
+    title_text = String(250, 280, "Task Status by Team Member")
+    title_text.fontName = 'Helvetica-Bold'
+    title_text.fontSize = 14
+    title_text.fillColor = colors.black
+    title_text.textAnchor = 'middle'
+    drawing.add(title_text)
+    
+    # Add legend
+    legend_y = 260
+    
+    # Completed legend
+    completed_legend = Rect(left_margin, legend_y, 15, 10)
+    completed_legend.fillColor = HexColor("#22c55e")
+    completed_legend.strokeColor = colors.white
+    drawing.add(completed_legend)
+    
+    completed_text = String(left_margin + 20, legend_y + 2, "Completed")
+    completed_text.fontName = 'Helvetica'
+    completed_text.fontSize = 10
+    completed_text.fillColor = colors.black
+    drawing.add(completed_text)
+    
+    # Total legend
+    total_legend = Rect(left_margin + 100, legend_y, 15, 10)
+    total_legend.fillColor = HexColor("#e5e7eb")
+    total_legend.strokeColor = colors.white
+    drawing.add(total_legend)
+    
+    total_text = String(left_margin + 120, legend_y + 2, "Total")
+    total_text.fontName = 'Helvetica'
+    total_text.fontSize = 10
+    total_text.fillColor = colors.black
+    drawing.add(total_text)
+    
+    return drawing
+
+
+def _darken_color(color: colors.Color, factor: float = 0.82) -> colors.Color:
+    """Return a slightly darker variant of a ReportLab color."""
+    try:
+        r = max(0.0, min(color.red * factor, 1.0))
+        g = max(0.0, min(color.green * factor, 1.0))
+        b = max(0.0, min(color.blue * factor, 1.0))
+        return colors.Color(r, g, b)
+    except Exception:
+        return color
+
+
+def build_preview_pie_chart(chart_title: str, data_dict: Dict[str, Any]) -> Optional[Drawing]:
+    """Build a pie chart drawing from preview chart data."""
+    from reportlab.graphics.shapes import Rect, String
+
+    if not isinstance(data_dict, dict):
+        return None
+
+    numeric_items = [
+        (str(label), float(value))
+        for label, value in data_dict.items()
+        if isinstance(value, (int, float)) and float(value) > 0
+    ]
+
+    if not numeric_items:
+        return None
+
+    labels, values = zip(*numeric_items)
+    total = sum(values) or 1
+
+    drawing = Drawing(440, 260)
+
+    pie = Pie()
+    pie.x = 120
+    pie.y = 55
+    pie.width = 180
+    pie.height = 180
+    pie.data = list(values)
+    pie.labels = list(labels)
+    pie.simpleLabels = 0
+    pie.sideLabels = 0
+    pie.slices.strokeWidth = 2
+    pie.slices.strokeColor = colors.white
+
+    palette = [
+        HexColor("#3b82f6"), HexColor("#22c55e"), HexColor("#f59e0b"),
+        HexColor("#a855f7"), HexColor("#ef4444"), HexColor("#06b6d4"),
+        HexColor("#8b5cf6"), HexColor("#f97316")
+    ]
+
+    for index, (_, value) in enumerate(numeric_items):
+        color = palette[index % len(palette)]
+        pie.slices[index].fillColor = color
+        pie.slices[index].strokeColor = _darken_color(color)
+
+    drawing.add(pie)
+
+    legend_x = 320
+    legend_y = 220
+    box_size = 12
+    spacing = 22
+
+    for idx, (label, value) in enumerate(numeric_items):
+        y = legend_y - idx * spacing
+        color = palette[idx % len(palette)]
+
+        rect = Rect(legend_x, y - box_size / 2, box_size, box_size)
+        rect.fillColor = color
+        rect.strokeColor = colors.white
+        rect.strokeWidth = 0.5
+        drawing.add(rect)
+
+        percentage = (value / total) * 100
+        text = String(
+            legend_x + box_size + 8,
+            y - 3,
+            f"{label}: {value:.1f} ({percentage:.1f}%)"
+        )
+        text.fontName = "Helvetica"
+        text.fontSize = 10
+        text.fillColor = HexColor("#1f2937")
+        drawing.add(text)
+
+    return drawing
+
+
+def build_preview_vertical_bar_chart(chart_title: str, data_dict: Dict[str, Any]) -> Optional[Drawing]:
+    """Build a vertical bar chart drawing from preview chart data."""
+    from reportlab.graphics.shapes import Rect, String, Line
+
+    if not isinstance(data_dict, dict):
+        return None
+
+    numeric_items = []
+    for label, value in data_dict.items():
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            continue
+        numeric_items.append((str(label), numeric_value))
+
+    if not numeric_items:
+        return None
+
+    labels, raw_values = zip(*numeric_items)
+    max_value = max(abs(v) for v in raw_values) or 1
+
+    drawing_width = 480
+    drawing_height = 300
+    drawing = Drawing(drawing_width, drawing_height)
+
+    left_margin = 60
+    right_margin = 40
+    bottom_margin = 60
+    top_margin = 40
+
+    available_width = drawing_width - left_margin - right_margin
+    bar_count = len(labels)
+    if bar_count == 0:
+        return None
+
+    min_bar_width = 24
+    spacing_ratio = 0.5
+    total_spacing = (bar_count - 1) * spacing_ratio
+    bar_width = available_width / (bar_count + total_spacing)
+    bar_width = min(40, max(min_bar_width, bar_width))
+
+    spacing = bar_width * spacing_ratio
+    chart_height = drawing_height - top_margin - bottom_margin
+
+    axis = Line(left_margin, bottom_margin, left_margin, bottom_margin + chart_height)
+    axis.strokeColor = HexColor("#cbd5f5")
+    axis.strokeWidth = 1
+    drawing.add(axis)
+
+    baseline = Line(left_margin, bottom_margin, drawing_width - right_margin, bottom_margin)
+    baseline.strokeColor = HexColor("#cbd5f5")
+    baseline.strokeWidth = 1
+    drawing.add(baseline)
+
+    palette = [
+        HexColor("#3b82f6"), HexColor("#22c55e"), HexColor("#f59e0b"),
+        HexColor("#a855f7"), HexColor("#ef4444"), HexColor("#06b6d4"),
+        HexColor("#8b5cf6"), HexColor("#f97316")
+    ]
+
+    current_x = left_margin
+    for index, (label, value) in enumerate(numeric_items):
+        bar_height = 0 if max_value == 0 else (abs(value) / max_value) * chart_height
+        color = palette[index % len(palette)]
+
+        bar = Rect(current_x, bottom_margin, bar_width, bar_height)
+        bar.fillColor = color
+        bar.strokeColor = HexColor("#ffffff")
+        bar.strokeWidth = 0.8
+        drawing.add(bar)
+
+        value_text = String(
+            current_x + bar_width / 2,
+            bottom_margin + bar_height + 8,
+            f"{value:.1f}" if abs(value) < 1000 else f"{value:,.0f}"
+        )
+        value_text.fontName = "Helvetica-Bold"
+        value_text.fontSize = 10
+        value_text.fillColor = HexColor("#1f2937")
+        value_text.textAnchor = "middle"
+        drawing.add(value_text)
+
+        label_text = String(current_x + bar_width / 2, bottom_margin - 12, label)
+        label_text.fontName = "Helvetica"
+        label_text.fontSize = 9
+        label_text.fillColor = HexColor("#1f2937")
+        label_text.textAnchor = "middle"
+        drawing.add(label_text)
+
+        current_x += bar_width + spacing
+
+    tick_count = min(4, int(max_value) if max_value > 1 else 1)
+    for tick in range(1, tick_count + 1):
+        fraction = tick / (tick_count + 1)
+        y = bottom_margin + fraction * chart_height
+        grid = Line(left_margin, y, drawing_width - right_margin, y)
+        grid.strokeColor = HexColor("#e2e8f0")
+        grid.strokeWidth = 0.5
+        drawing.add(grid)
 
     return drawing
 
@@ -688,10 +1177,11 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
     ongoing_tasks = len([t for t in tasks if t.get('status', '').lower() == 'ongoing'])
     completion_rate = (completed_tasks/total_tasks*100) if total_tasks > 0 else 0
 
-    # Summary section heading
+    # Summary section - keep together
+    summary_section = []
     summary_heading = Paragraph("Summary", heading_style)
-    elements.append(summary_heading)
-    elements.append(Spacer(1, 8))
+    summary_section.append(summary_heading)
+    summary_section.append(Spacer(1, 8))
 
     # Summary statistics in a grid layout
     summary_data = [
@@ -723,21 +1213,41 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
         ('LINEBELOW', (0, 0), (-1, 0), 1, HexColor('#e2e8f0')),
         ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#f1f5f9')),
     ]))
-    elements.append(summary_table)
-    elements.append(Spacer(1, 20))
+    summary_section.append(summary_table)
+    summary_section.append(Spacer(1, 20))
+    
+    elements.append(KeepTogether(summary_section))
 
-    # Add pie chart if there are tasks
+    # Add charts if there are tasks - keep charts together with headers
     if tasks:
+        # First chart section
+        chart1_section = []
         chart_heading = Paragraph("Task Status Distribution", heading_style)
-        elements.append(chart_heading)
-        elements.append(Spacer(1, 8))
+        chart1_section.append(chart_heading)
+        chart1_section.append(Spacer(1, 8))
 
         pie_chart = generate_pie_chart(tasks)
-        elements.append(pie_chart)
-        elements.append(Spacer(1, 20))
+        chart1_section.append(pie_chart)
+        chart1_section.append(Spacer(1, 16))
+        
+        elements.append(KeepTogether(chart1_section))
+        
+        # Second chart section - separate to allow page break between charts if needed
+        chart2_section = []
+        bar_chart_heading = Paragraph("Task Status Analysis", heading_style)
+        chart2_section.append(bar_chart_heading)
+        chart2_section.append(Spacer(1, 8))
+        
+        # Prepare data for bar chart
+        status_counts = Counter(task.get('status') or 'Unknown' for task in tasks)
+        bar_chart = generate_bar_chart(dict(status_counts), "Tasks by Status")
+        chart2_section.append(bar_chart)
+        chart2_section.append(Spacer(1, 24))
+        
+        elements.append(KeepTogether(chart2_section))
 
-    # Task details table - start on new page for cleaner layout
-    elements.append(PageBreak())
+    # Task details table - add space for better flow
+    elements.append(Spacer(1, 16))
     table_heading = Paragraph("Task Details", heading_style)
     elements.append(table_heading)
     elements.append(Spacer(1, 8))
@@ -1018,11 +1528,12 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     elements.append(overview_table)
     elements.append(Spacer(1, 20))
 
-    # Summary statistics with pie chart
+    # Summary statistics with pie chart - keep together
+    summary_section = []
     summary = report_data['summary']
     summary_heading = Paragraph("Project Performance Summary", heading_style)
-    elements.append(summary_heading)
-    elements.append(Spacer(1, 12))
+    summary_section.append(summary_heading)
+    summary_section.append(Spacer(1, 12))
 
     # Calculate overdue count from task groups
     overdue_count = len(report_data['task_groups'].get('Overdue', []))
@@ -1143,14 +1654,17 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]))
 
-    elements.append(summary_combined)
-    elements.append(Spacer(1, 20))
+    summary_section.append(summary_combined)
+    summary_section.append(Spacer(1, 20))
+    
+    elements.append(KeepTogether(summary_section))
 
-    # Team performance
+    # Team performance - keep together
     if report_data['team_performance']:
+        team_section = []
         team_heading = Paragraph("Team Member Performance", heading_style)
-        elements.append(team_heading)
-        elements.append(Spacer(1, 8))
+        team_section.append(team_heading)
+        team_section.append(Spacer(1, 8))
 
         requesting_user_name = report_data.get('requesting_user_name')
         team_data = [['Team Member', 'Department', 'Total Tasks', 'Completed', 'Completion Rate']]
@@ -1301,19 +1815,22 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
     # Task breakdown - new page
     elements.append(PageBreak())
     tasks_heading = Paragraph("Task Breakdown by Status", heading_style)
-    elements.append(tasks_heading)
-    elements.append(Spacer(1, 8))
+    task_breakdown_section.append(tasks_heading)
+    task_breakdown_section.append(Spacer(1, 8))
+    
+    elements.append(KeepTogether(task_breakdown_section))
 
-    # Iterate through task groups
+    # Iterate through task groups - each status group separately
     task_groups = report_data['task_groups']
     for status, tasks in task_groups.items():
         if not tasks:
             continue
 
+        task_status_section = []
         # Status section header
         status_para = Paragraph(f"<b>{status}</b> ({len(tasks)} tasks)",
                                ParagraphStyle('StatusHeader', fontSize=12, textColor=HexColor('#1e293b'), spaceAfter=8))
-        elements.append(status_para)
+        task_status_section.append(status_para)
 
         # Tasks table
         task_data = [['Task Title', 'Assignee', 'Priority', 'Due Date']]
@@ -1373,10 +1890,11 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
                 ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
             ]))
 
-        elements.append(task_table)
-        elements.append(Spacer(1, 16))
-
-    # Footer
+        task_status_section.append(task_table)
+        task_status_section.append(Spacer(1, 16))
+        
+        # Keep each status section together, but allow page breaks between different status sections
+        elements.append(KeepTogether(task_status_section))    # Footer
     footer_style = ParagraphStyle(
         'Footer',
         parent=styles['Normal'],
@@ -1474,6 +1992,9 @@ class ReportType(Enum):
 
 def get_user_details(user_id: str) -> Dict[str, Any]:
     """Fetch user details from Supabase."""
+    if not user_id or user_id == 'None':
+        logger.warning(f"Invalid user_id provided: {user_id}")
+        return None
     try:
         response = supabase.table('user').select('*').eq('user_id', user_id).execute()
         if response.data:
@@ -1498,9 +2019,13 @@ def get_team_members(department: str, superior_id: str = None) -> List[Dict[str,
 def get_all_departments() -> List[str]:
     """Fetch all unique departments."""
     try:
-        response = supabase.table('user').select('department').execute()
-        departments = list(set([user['department'] for user in response.data]))
-        return departments
+        response = supabase.table('user').select('department').eq('is_active', True).execute()
+        # Filter out empty, null, or None departments
+        departments = list(set([
+            user['department'] for user in response.data 
+            if user.get('department') and user['department'].strip()
+        ]))
+        return sorted(departments)  # Return sorted list for consistency
     except Exception as e:
         logger.error(f"Error fetching departments: {e}")
         return []
@@ -1514,6 +2039,8 @@ def validate_report_access(requesting_user: Dict[str, Any], report_data: Dict[st
     report_type = report_data.get('report_type', 'individual')
     
     logger.info(f"Validating access - User: {requesting_user.get('name')} ({user_role}), Report: {report_type}")
+    logger.info(f"User details: {requesting_user}")
+    logger.info(f"Report data: {report_data}")
     
     # HR has access to ALL report types and can generate reports for anyone
     if user_role == UserRole.HR.value:
@@ -1598,6 +2125,18 @@ def validate_report_access(requesting_user: Dict[str, Any], report_data: Dict[st
         else:
             logger.warning(f"Staff cannot generate {report_type} reports")
             return False
+
+    # Handle case where user might not have a role set or has an unknown role
+    elif not user_role:
+        logger.warning("User has no role defined - checking if it's a basic individual report")
+        # Allow individual reports if the user is requesting their own data
+        if report_type == ReportType.INDIVIDUAL.value:
+            target_user_id = report_data.get('user_id')
+            if target_user_id == requesting_user.get('user_id'):
+                logger.info("User with no role generating own individual report - access granted")
+                return True
+        logger.warning("User with no role cannot generate reports except their own individual report")
+        return False
     
     logger.warning(f"Unknown role or unauthorized access: {user_role}")
     return False
@@ -1615,6 +2154,1668 @@ def fetch_tasks_for_multiple_users(user_ids: List[str], start_date: Optional[str
             logger.warning(f"Failed to fetch tasks for user {user_id}: {e}")
     return all_tasks
 
+def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: str, 
+                               data: Dict[str, Any], start_date: Optional[str] = None,
+                               end_date: Optional[str] = None, 
+                               status_filter: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Generate preview data for reports with enhanced chart information."""
+    
+    user_role = requesting_user.get('role')
+    requesting_user_id = requesting_user.get('user_id')
+    
+    preview_data = {
+        'report_type': report_type,
+        'user_role': user_role,
+        'generated_by': requesting_user.get('name', 'Unknown'),
+        'generated_at': datetime.now().isoformat(),
+        'filters': {
+            'start_date': start_date,
+            'end_date': end_date,
+            'status_filter': status_filter
+        },
+        'charts': [],
+        'summary': {},
+        'detailed_data': {}
+    }
+    
+    trend_granularity = data.get('trend_granularity', 'monthly')
+    if trend_granularity not in {'daily', 'weekly', 'monthly'}:
+        trend_granularity = 'monthly'
+    preview_data['filters']['trend_granularity'] = trend_granularity
+
+    if report_type == ReportType.INDIVIDUAL.value:
+        # Individual report
+        target_user_id = data.get('user_id', requesting_user_id)
+        if not target_user_id:
+            target_user_id = requesting_user_id
+        target_user = get_user_details(target_user_id) if target_user_id != requesting_user_id else requesting_user
+        
+        tasks = fetch_tasks_for_user(target_user_id, start_date, end_date, status_filter)
+        
+        # Calculate individual metrics
+        task_status_count = Counter([task.get('status') or 'Unknown' for task in tasks])
+        raw_priority_count = Counter([task.get('priority') or 'Unknown' for task in tasks])
+
+        # Normalise priority distribution on a 1–10 scale
+        priority_distribution = {str(i): 0 for i in range(1, 11)}
+        unspecified_priority = 0
+
+        for priority_value, count in raw_priority_count.items():
+            try:
+                priority_int = int(priority_value)
+            except (TypeError, ValueError):
+                priority_int = None
+
+            if priority_int is not None and 1 <= priority_int <= 10:
+                priority_distribution[str(priority_int)] += count
+            else:
+                unspecified_priority += count
+
+        completion_hours = [
+            task.get('completion_time_hours') for task in tasks
+            if task.get('completion_time_hours') is not None
+        ]
+        avg_completion_time_hours = (
+            sum(completion_hours) / len(completion_hours)
+            if completion_hours else 0
+        )
+        total_time_spent_hours = sum(completion_hours)
+        
+        # Convert to days
+        avg_completion_time_days = avg_completion_time_hours / 24
+        total_time_spent_days = total_time_spent_hours / 24
+
+        preview_data['summary'] = {
+            'target_user': target_user.get('name', 'Unknown') if target_user else 'Unknown',
+            'total_tasks': len(tasks),
+            'completed_tasks': task_status_count.get('Completed', 0),
+            'in_progress_tasks': task_status_count.get('Ongoing', 0),  # Fixed: Ongoing status
+            'pending_tasks': task_status_count.get('Under Review', 0),  # Fixed: Under Review status
+            'overdue_tasks': len([t for t in tasks if is_task_overdue(t)]),
+            'avg_completion_time_days': avg_completion_time_days,
+            'total_time_spent_days': total_time_spent_days
+        }
+        
+        # Charts for individual report
+        preview_data['charts'] = [
+            {
+                'type': 'pie',
+                'title': 'Task Status Distribution',
+                'data': dict(task_status_count)
+            },
+            {
+                'type': 'bar_vertical',
+                'title': 'Task Priority Distribution (1 = Low, 10 = High)',
+                'data': priority_distribution
+            }
+        ]
+        
+        preview_data['detailed_data']['tasks'] = tasks[:20]  # Up to 20 tasks for detailed report
+        
+    elif report_type == ReportType.TEAM.value:
+        # Team report with member analysis
+        tasks_by_scope: Dict[str, List[Dict[str, Any]]] = {}
+        team_members_data: List[Dict[str, Any]] = []
+        team_comparison_data: List[Dict[str, Any]] = []
+        team_summaries: List[Dict[str, Any]] = []
+
+        def append_member_snapshot(member_id: str, team_label: str):
+            member_details = get_user_details(member_id)
+            if not member_details:
+                return
+
+            member_tasks = fetch_tasks_for_user(member_id, start_date, end_date, status_filter)
+            status_counts = Counter([task.get('status') or 'Unknown' for task in member_tasks])
+
+            team_members_data.append({
+                'user_id': member_id,
+                'name': member_details.get('name', 'Unknown'),
+                'team_name': team_label,
+                'total_tasks': len(member_tasks),
+                'completed': status_counts.get('Completed', 0),
+                'in_progress': status_counts.get('In Progress', 0),
+                'pending': status_counts.get('Pending', 0),
+                'overdue': len([t for t in member_tasks if is_task_overdue(t)])
+            })
+
+        if user_role == UserRole.MANAGER.value:
+            team_label = f"{requesting_user.get('name', 'Unknown')}'s Team"
+            department = requesting_user.get('department')
+            team_members = get_team_members(department, requesting_user_id) or []
+
+            member_ids = {requesting_user_id}
+            member_ids.update({member.get('user_id') for member in team_members if member.get('user_id')})
+            member_ids.discard(None)
+
+            # Get all team tasks for overall team status
+            team_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
+            tasks_by_scope[team_label] = team_tasks
+
+            # Create member comparison data instead of team comparison
+            member_comparison_data = []
+            all_team_task_statuses = []
+            
+            for member_id in member_ids:
+                member_details = get_user_details(member_id)
+                if not member_details:
+                    continue
+                
+                member_tasks = fetch_tasks_for_user(member_id, start_date, end_date, status_filter)
+                member_metrics = calculate_team_metrics(member_tasks)
+                
+                # Collect task statuses for team pie chart
+                all_team_task_statuses.extend([task.get('status', 'Unknown') for task in member_tasks])
+                
+                member_comparison_data.append({
+                    'member_name': member_details.get('name', 'Unknown'),
+                    'member_id': member_id,
+                    'total_tasks': member_metrics['total_tasks'],
+                    'completed_tasks': member_metrics['completed_tasks'], 
+                    'completion_rate': member_metrics['completion_rate'],
+                    'overdue_tasks': member_metrics['overdue_tasks'],
+                    'avg_completion_time_hours': member_metrics.get('avg_completion_time_hours', 0),
+                    'avg_completion_time_days': member_metrics.get('avg_completion_time_hours', 0) / 24,
+                    'time_spent_hours': member_metrics.get('total_time_spent_hours', 0),
+                    'time_spent_days': member_metrics.get('total_time_spent_hours', 0) / 24
+                })
+                
+                # Also add member snapshot for detailed data
+                append_member_snapshot(member_id, team_label)
+
+            # Store member comparison data for manager reports
+            team_comparison_data = member_comparison_data
+            logger.info(f"🔍 Manager team report - Created {len(member_comparison_data)} member comparisons")
+            logger.info(f"🔍 Team task status distribution: {Counter(all_team_task_statuses)}")
+            
+            # Calculate team-level metrics for summary
+            team_metrics = calculate_team_metrics(team_tasks)
+            team_summaries.append({
+                'team_id': requesting_user_id,
+                'team_name': team_label,
+                'department': department,
+                'metrics': team_metrics
+            })
+
+        elif user_role in (UserRole.DIRECTOR.value, UserRole.HR.value):
+            selected_teams = data.get('teams', [])
+            if isinstance(selected_teams, str):
+                selected_teams = [selected_teams]
+
+            if not selected_teams:
+                raise ValueError("Team selection is required")
+
+            for team_id in selected_teams:
+                manager = get_user_details(team_id)
+                if not manager or manager.get('role') != UserRole.MANAGER.value:
+                    logger.info(f"Skipping team {team_id} - not a manager or not found")
+                    continue
+
+                if user_role == UserRole.DIRECTOR.value and manager.get('department') != requesting_user.get('department'):
+                    logger.info(f"Director cannot access team {team_id} outside their department")
+                    continue
+
+                department = manager.get('department')
+                team_label = f"{manager.get('name', 'Unknown')}'s Team"
+
+                team_members = get_team_members(department, manager.get('user_id')) if department else []
+                member_ids = {member.get('user_id') for member in team_members if member.get('user_id')}
+                member_ids.add(manager.get('user_id'))
+                member_ids.discard(None)
+
+                if not member_ids:
+                    logger.info(f"No members found for team {team_label}")
+                    continue
+
+                team_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
+                tasks_by_scope[team_label] = team_tasks
+
+                metrics = calculate_team_metrics(team_tasks)
+                team_summaries.append({
+                    'team_id': manager.get('user_id'),
+                    'team_name': team_label,
+                    'department': department,
+                    'metrics': metrics
+                })
+                team_comparison_data.append({
+                    'team_name': team_label,
+                    'total_tasks': metrics['total_tasks'],
+                    'completed_tasks': metrics['completed_tasks'],
+                    'completion_rate': metrics['completion_rate'],
+                    'overdue_tasks': metrics['overdue_tasks'],
+                    'avg_completion_time_hours': metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0)),
+                    'avg_completion_time': metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0)),
+                    'time_spent_hours': metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0))
+                })
+
+                for member_id in member_ids:
+                    append_member_snapshot(member_id, team_label)
+        else:
+            raise ValueError("Unsupported role for team report")
+
+        total_completed = sum(summary['metrics']['completed_tasks'] for summary in team_summaries)
+        total_tasks = sum(len(tasks) for tasks in tasks_by_scope.values())
+        avg_completion_rate = (
+            sum(summary['metrics']['completion_rate'] for summary in team_summaries) / len(team_summaries)
+            if team_summaries else 0
+        )
+
+        completion_time_values = [
+            summary['metrics'].get('avg_completion_time_hours')
+            for summary in team_summaries
+            if summary['metrics'].get('avg_completion_time_hours') is not None
+        ]
+        avg_completion_time_hours = (
+            sum(completion_time_values) / len(completion_time_values)
+            if completion_time_values else 0
+        )
+        total_time_spent_hours = sum(
+            summary['metrics'].get('total_time_spent_hours', summary['metrics'].get('total_time_spent', 0))
+            for summary in team_summaries
+        )
+        
+        # Convert to days
+        avg_completion_time_days = avg_completion_time_hours / 24
+        total_time_spent_days = total_time_spent_hours / 24
+
+        preview_data['summary'] = {
+            'team_name': team_summaries[0]['team_name'] if len(team_summaries) == 1 else f"{len(team_summaries)} teams selected",
+            'selected_teams': [summary['team_name'] for summary in team_summaries],
+            'total_teams': len(team_summaries),
+            'total_members': len(team_members_data),
+            'total_tasks': total_tasks,
+            'total_completed': total_completed,
+            'avg_completion_rate': avg_completion_rate,
+            'avg_completion_time_days': avg_completion_time_days,
+            'total_time_spent_days': total_time_spent_days
+        }
+
+        # Different charts based on user role
+        if user_role == UserRole.MANAGER.value:
+            # Manager-specific charts focusing on individual member performance
+            
+            # Member task completion data
+            member_completion = {member['member_name']: member['completed_tasks'] for member in team_comparison_data}
+            member_total_tasks = {member['member_name']: member['total_tasks'] for member in team_comparison_data}
+            member_completion_rates = {member['member_name']: round(member['completion_rate'], 2) for member in team_comparison_data}
+            
+            # Team task status distribution using the collected statuses
+            team_status_counter = Counter(all_team_task_statuses)
+            team_status_distribution = dict(team_status_counter)
+            
+            preview_data['charts'] = [
+                {
+                    'type': 'pie',
+                    'title': 'Team Task Status Distribution', 
+                    'data': team_status_distribution
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Tasks Completed by Member',
+                    'data': member_completion
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Member Completion Rate (%)',
+                    'data': member_completion_rates
+                }
+            ]
+        else:
+            # Director/HR charts focusing on team comparisons
+            completion_by_team = {summary['team_name']: summary['metrics']['completed_tasks'] for summary in team_summaries}
+            total_tasks_by_team = {summary['team_name']: summary['metrics']['total_tasks'] for summary in team_summaries}
+            overdue_by_team = {summary['team_name']: summary['metrics']['overdue_tasks'] for summary in team_summaries}
+            completion_rate_by_team = {
+                summary['team_name']: round(summary['metrics']['completion_rate'], 2) for summary in team_summaries
+            }
+
+            pie_source = completion_by_team if sum(completion_by_team.values()) > 0 else total_tasks_by_team
+
+            preview_data['charts'] = [
+                {
+                    'type': 'pie',
+                    'title': 'Team Contribution (Completed Tasks)',
+                    'data': pie_source
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Completion Rate by Team (%)',
+                    'data': completion_rate_by_team
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Overdue Tasks by Team',
+                    'data': overdue_by_team
+                }
+            ]
+
+        preview_data['detailed_data'] = {
+            'team_members': team_members_data,
+            'team_comparison': team_comparison_data,  # For managers, this contains member comparison data
+            'member_comparison': team_comparison_data if user_role == UserRole.MANAGER.value else [],  # Explicit member comparison for managers
+            'tasks_by_scope': {scope: filter_high_priority_tasks(tasks, 8) for scope, tasks in tasks_by_scope.items()}  # Top 8 high priority tasks per team
+        }
+        
+    elif report_type == ReportType.DEPARTMENT.value:
+        # Department report with team comparisons
+        if user_role == UserRole.DIRECTOR.value:
+            department = requesting_user.get('department')
+            teams = data.get('teams', [])
+            
+            team_comparison_data = []
+            tasks_by_team = {}
+            
+            if teams:
+                # Specific teams requested
+                all_users = supabase.table('user').select('*').execute().data or []
+                
+                for team in teams:
+                    team_members = []
+                    team_lead_user = None
+                    
+                    for user in all_users:
+                        superior_id = user.get('superior')
+                        if not superior_id:
+                            continue
+                            
+                        superior_user = get_user_details(superior_id)
+                        if superior_user and superior_user.get('name') == team and user.get('department') == department:
+                            team_members.append(user)
+                            team_lead_user = superior_user
+                    
+                    unique_members = {member['user_id']: member for member in team_members if member.get('user_id')}
+                    
+                    # Only include team lead if they are a manager (not director)
+                    if team_lead_user and team_lead_user.get('user_id') and team_lead_user.get('role') == 'Manager':
+                        unique_members[team_lead_user['user_id']] = team_lead_user
+                    
+                    user_ids = list(unique_members.keys())
+                    
+                    if user_ids:
+                        team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                        tasks_by_team[team] = team_tasks
+                        
+                        metrics = calculate_team_metrics(team_tasks)
+                        avg_completion_time_hours = metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0))
+                        time_spent_hours = metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0))
+                        
+                        team_comparison_data.append({
+                            'team_name': team,
+                            'total_tasks': metrics['total_tasks'],
+                            'completed_tasks': metrics['completed_tasks'],
+                            'completion_rate': metrics['completion_rate'],
+                            'overdue_tasks': metrics['overdue_tasks'],
+                            'avg_completion_time_hours': avg_completion_time_hours,
+                            'avg_completion_time_days': avg_completion_time_hours / 24,
+                            'avg_completion_time': avg_completion_time_hours,
+                            'time_spent_hours': time_spent_hours,
+                            'time_spent_days': time_spent_hours / 24
+                        })
+            else:
+                # All teams in department
+                all_dept_members = get_team_members(department)
+                teams_dict = {}
+                
+                # Filter out directors - they don't belong to teams, only managers have teams
+                logger.info(f"🔍 Building teams for department: {department}")
+                for member in all_dept_members:
+                    # Skip directors - they manage departments, not teams
+                    if member.get('role') == UserRole.DIRECTOR.value:
+                        logger.info(f"🔍 Skipping director: {member.get('name', 'Unknown')} (role: {member.get('role')})")
+                        continue
+                        
+                    superior = member.get('superior', 'No Team')
+                    if superior not in teams_dict:
+                        teams_dict[superior] = []
+                    teams_dict[superior].append(member)
+                    logger.info(f"🔍 Added member {member.get('name', 'Unknown')} to team under {superior}")
+                
+                logger.info(f"🔍 Processing {len(teams_dict)} teams in department {department}")
+                for team_lead, members in teams_dict.items():
+                    logger.info(f"🔍 Processing team led by: {team_lead}, members: {len(members)}")
+                    unique_ids = {member['user_id'] for member in members if member.get('user_id')}
+                    
+                    if team_lead != 'No Team':
+                        team_lead_user = get_user_details(team_lead)
+                        logger.info(f"🔍 Team lead details - name: {team_lead_user.get('name') if team_lead_user else 'None'}, role: {team_lead_user.get('role') if team_lead_user else 'None'}")
+                        # Only include team lead if they are a manager (not director) and in the same department
+                        if (team_lead_user and 
+                            team_lead_user.get('department') == department and 
+                            team_lead_user.get('role') == UserRole.MANAGER.value):
+                            unique_ids.add(team_lead_user['user_id'])
+                            logger.info(f"🔍 Added manager {team_lead_user.get('name')} as team lead")
+                        elif team_lead_user and team_lead_user.get('role') == UserRole.DIRECTOR.value:
+                            logger.info(f"🔍 Skipping director {team_lead_user.get('name')} as team lead")
+                    
+                    user_ids = list(unique_ids)
+                    
+                    if user_ids:
+                        team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+                        team_lead_name = 'Unassigned'
+                        
+                        if team_lead != 'No Team':
+                            team_lead_user = get_user_details(team_lead)
+                            # Only show team name if team lead is a manager (not director)
+                            if team_lead_user and team_lead_user.get('role') == UserRole.MANAGER.value:
+                                team_lead_name = team_lead_user.get('name', team_lead)
+                                logger.info(f"🔍 Setting team name to manager: {team_lead_name}")
+                            else:
+                                # Skip this team if the lead is a director
+                                logger.info(f"🔍 Skipping team because lead is not a manager: {team_lead_user.get('role') if team_lead_user else 'Unknown'}")
+                                continue
+                        
+                        tasks_by_team[team_lead_name] = team_tasks
+                        
+                        metrics = calculate_team_metrics(team_tasks)
+                        avg_completion_time_hours = metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0))
+                        time_spent_hours = metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0))
+                        
+                        team_comparison_data.append({
+                            'team_name': team_lead_name,
+                            'total_tasks': metrics['total_tasks'],
+                            'completed_tasks': metrics['completed_tasks'],
+                            'completion_rate': metrics['completion_rate'],
+                            'overdue_tasks': metrics['overdue_tasks'],
+                            'avg_completion_time_hours': avg_completion_time_hours,
+                            'avg_completion_time_days': avg_completion_time_hours / 24,
+                            'avg_completion_time': avg_completion_time_hours,
+                            'time_spent_hours': time_spent_hours,
+                            'time_spent_days': time_spent_hours / 24
+                        })
+            
+            # Generate department charts
+            completion_rates = {
+                team['team_name']: round(team['completion_rate'], 2) for team in team_comparison_data
+            }
+            completed_workload = {
+                team['team_name']: team['completed_tasks'] for team in team_comparison_data
+            }
+            overdue_work = {
+                team['team_name']: team['overdue_tasks'] for team in team_comparison_data
+            }
+            total_tasks_map = {
+                team['team_name']: team['total_tasks'] for team in team_comparison_data
+            }
+
+            # Calculate overall department analytics
+            total_dept_tasks = sum(team['total_tasks'] for team in team_comparison_data)
+            total_dept_completed = sum(team['completed_tasks'] for team in team_comparison_data)
+            total_dept_overdue = sum(team['overdue_tasks'] for team in team_comparison_data)
+            
+            # Calculate time metrics in days
+            total_time_days = sum(team['time_spent_days'] for team in team_comparison_data)
+            
+            avg_completion_time_days = (
+                sum(team['avg_completion_time_days'] for team in team_comparison_data) / len(team_comparison_data)
+                if team_comparison_data else 0
+            )
+            
+            dept_completion_rate = (total_dept_completed / total_dept_tasks * 100) if total_dept_tasks > 0 else 0
+            dept_overdue_rate = (total_dept_overdue / total_dept_tasks * 100) if total_dept_tasks > 0 else 0
+
+            preview_data['summary'] = {
+                'department': department,
+                'scope_type': 'Department',
+                'total_teams': len(team_comparison_data),
+                'total_tasks': total_dept_tasks,
+                'completed_tasks': total_dept_completed,
+                'overdue_tasks': total_dept_overdue,
+                'completion_rate': dept_completion_rate,
+                'overdue_rate': dept_overdue_rate,
+                'total_time_spent_days': total_time_days,
+                'avg_completion_time_days': avg_completion_time_days,
+                'avg_completion_rate': (
+                    sum(team['completion_rate'] for team in team_comparison_data) / len(team_comparison_data)
+                    if team_comparison_data else 0
+                )
+            }
+
+            # Create additional analytics for department overview
+            team_workload = {
+                team['team_name']: round(team['time_spent_days'], 1) for team in team_comparison_data
+            }
+            
+            team_efficiency = {
+                team['team_name']: round(team['avg_completion_time_days'], 1) for team in team_comparison_data
+            }
+
+            # Collect all tasks from all teams for department-wide status distribution
+            all_dept_tasks = []
+            for team_tasks in tasks_by_team.values():
+                all_dept_tasks.extend(team_tasks)
+            
+            # Create task status distribution for the entire department
+            dept_status_counter = Counter([task.get('status') or 'Unknown' for task in all_dept_tasks])
+            dept_status_distribution = dict(dept_status_counter)
+
+            pie_source = completed_workload if sum(completed_workload.values()) > 0 else total_tasks_map
+
+            preview_data['charts'] = [
+                {
+                    'type': 'pie',
+                    'title': f'{department} Department - Task Status Distribution',
+                    'data': dept_status_distribution
+                },
+                {
+                    'type': 'pie',
+                    'title': f'{department} Department - Task Distribution by Team',
+                    'data': pie_source
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Team Completion Rates (%)',
+                    'data': completion_rates
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Overdue Tasks by Team',
+                    'data': overdue_work
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Team Workload (days)',
+                    'data': team_workload
+                },
+                {
+                    'type': 'bar_vertical',
+                    'title': 'Average Task Duration by Team (days)',
+                    'data': team_efficiency
+                }
+            ]
+
+            preview_data['detailed_data'] = {
+                'team_comparison': team_comparison_data,
+                'tasks_by_team': {team: filter_high_priority_tasks(tasks, 8) for team, tasks in tasks_by_team.items()}
+            }
+            
+        elif user_role == UserRole.HR.value:
+            # HR department report
+            selected_departments = data.get('departments') or []
+            if isinstance(selected_departments, str):
+                selected_departments = [selected_departments]
+                
+            dept_comparison_data = []
+            data_by_scope = {}
+            
+            for dept in selected_departments:
+                dept_members = get_team_members(dept)
+                member_ids = {member['user_id'] for member in dept_members if member.get('user_id')}
+                
+                if member_ids:
+                    dept_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
+                    data_by_scope[dept] = dept_tasks
+                    
+                    metrics = calculate_team_metrics(dept_tasks)
+                    dept_comparison_data.append({
+                        'department': dept,
+                        'total_tasks': metrics['total_tasks'],
+                        'completed_tasks': metrics['completed_tasks'],
+                        'completion_rate': metrics['completion_rate'],
+                        'overdue_tasks': metrics['overdue_tasks'],
+                        'total_time_spent_hours': metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0)),
+                        'total_time_spent': metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0)),
+                        'avg_completion_time_hours': metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0))
+                    })
+            
+            # Generate HR department charts based on number of departments
+            if len(selected_departments) > 1:
+                # Multiple departments - pie chart shows proportion of completed tasks
+                completed_tasks_by_dept = {dept['department']: dept['completed_tasks'] for dept in dept_comparison_data}
+                
+                # Comparison across departments
+                completion_rates = {
+                    dept['department']: round(dept['completion_rate'], 2) for dept in dept_comparison_data
+                }
+                overdue_percentages = {
+                    dept['department']: (
+                        round((dept['overdue_tasks'] / dept['total_tasks']) * 100, 2)
+                        if dept['total_tasks'] > 0 else 0
+                    ) for dept in dept_comparison_data
+                }
+                time_spent_by_dept = {
+                    dept['department']: round(dept['total_time_spent'], 2) for dept in dept_comparison_data
+                }
+                avg_completion_time_hours_map = {
+                    dept['department']: round(dept['avg_completion_time_hours'], 2) for dept in dept_comparison_data
+                }
+                
+                preview_data['charts'] = [
+                    {
+                        'type': 'pie',
+                        'title': 'Completed Tasks Distribution Across Departments',
+                        'data': completed_tasks_by_dept
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Department Completion Rates (%)',
+                        'data': completion_rates
+                    },
+                    {
+                        'type': 'bar_vertical', 
+                        'title': 'Department Overdue Percentages (%)',
+                        'data': overdue_percentages
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Time Spent on Tasks by Department (hrs)',
+                        'data': time_spent_by_dept
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Average Completion Time by Department (hrs)',
+                        'data': avg_completion_time_hours_map
+                    }
+                ]
+            else:
+                # Single department - compare teams within department
+                single_dept = selected_departments[0] if selected_departments else 'Unknown'
+                dept_tasks = data_by_scope.get(single_dept, [])
+                
+                # Get teams within the department for comparison
+                all_users = supabase.table('user').select('*').eq('department', single_dept).execute().data or []
+                teams_in_dept = {}
+                
+                for user in all_users:
+                    superior_id = user.get('superior')
+                    if superior_id:
+                        superior_user = get_user_details(superior_id)
+                        if superior_user and superior_user.get('role') == 'Manager':
+                            team_name = f"{superior_user.get('name', 'Unknown')}'s Team"
+                            if team_name not in teams_in_dept:
+                                teams_in_dept[team_name] = []
+                            teams_in_dept[team_name].append(user)
+                
+                # Calculate team metrics within the department
+                team_metrics = []
+                for team_name, members in teams_in_dept.items():
+                    member_ids = [member['user_id'] for member in members if member.get('user_id')]
+                    if member_ids:
+                        team_tasks = fetch_tasks_for_multiple_users(member_ids, start_date, end_date, status_filter)
+                        metrics = calculate_team_metrics(team_tasks)
+                        team_metrics.append({
+                            'team_name': team_name,
+                            'completion_rate': metrics['completion_rate'],
+                            'overdue_tasks': metrics['overdue_tasks'],
+                            'avg_completion_time_hours': metrics.get('avg_completion_time_hours', 0),
+                            'avg_completion_time': metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0)),
+                            'time_spent_hours': metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0))
+                        })
+                
+                preview_data['charts'] = [
+                    {
+                        'type': 'bar_vertical',
+                        'title': f'Team Completion Rates in {single_dept} (%)',
+                        'data': {team['team_name']: round(team['completion_rate'], 2) for team in team_metrics}
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': f'Team Overdue Tasks in {single_dept}',
+                        'data': {team['team_name']: team['overdue_tasks'] for team in team_metrics}
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': f'Team Avg Completion Time in {single_dept} (hrs)',
+                        'data': {team['team_name']: round(team['avg_completion_time_hours'], 2) for team in team_metrics}
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': f'Time Spent on Tasks in {single_dept} (hrs)',
+                        'data': {team['team_name']: round(team.get('time_spent_hours', 0), 2) for team in team_metrics}
+                    }
+                ]
+            
+            preview_data['summary'] = {
+                'scope': 'Multi-Department' if len(selected_departments) > 1 else f'Single Department ({selected_departments[0] if selected_departments else "Unknown"})',
+                'total_departments': len(dept_comparison_data),
+                'total_tasks': sum(dept['total_tasks'] for dept in dept_comparison_data),
+                'avg_completion_rate': (
+                    sum(dept['completion_rate'] for dept in dept_comparison_data) / len(dept_comparison_data)
+                    if dept_comparison_data else 0
+                ),
+                'avg_completion_time_hours': (
+                    sum(dept.get('avg_completion_time_hours', 0) for dept in dept_comparison_data) / len(dept_comparison_data)
+                    if dept_comparison_data else 0
+                ),
+                'total_time_spent_hours': sum(dept.get('total_time_spent_hours', dept.get('total_time_spent', 0)) for dept in dept_comparison_data)
+            }
+            
+            preview_data['detailed_data'] = {
+                'department_comparison': dept_comparison_data
+            }
+    
+    elif report_type == ReportType.ORGANIZATION.value and user_role == UserRole.HR.value:
+        # HR organization-wide report - focused on high-level metrics with fixed scope
+        departments = get_all_departments()
+
+        dept_metrics: List[Dict[str, Any]] = []
+        all_org_tasks: List[Dict[str, Any]] = []
+        total_employees = 0
+        total_time_logged_hours = 0.0
+        total_completed_tasks = 0
+
+        for dept in departments:
+            dept_members = get_team_members(dept)
+            user_ids = [member['user_id'] for member in dept_members if member.get('user_id')]
+
+            if not user_ids:
+                continue
+
+            dept_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
+            all_org_tasks.extend(dept_tasks)
+
+            metrics = calculate_team_metrics(dept_tasks)
+
+            time_logged_hours = sum(
+                task.get('time_spent', 0) for task in dept_tasks
+                if isinstance(task.get('time_spent', 0), (int, float))
+            )
+            if time_logged_hours == 0:
+                time_logged_hours = metrics.get('total_time_spent', 0) * 24
+
+            # Convert hours to days for organizational report
+            time_logged_days = time_logged_hours / 24
+
+            total_tasks_dept = metrics['total_tasks']
+            completed_tasks = metrics['completed_tasks']
+            overdue_percentage = (metrics['overdue_tasks'] / total_tasks_dept * 100) if total_tasks_dept > 0 else 0
+
+            employee_count = len(user_ids)
+            avg_tasks_per_employee = (total_tasks_dept / employee_count) if employee_count else 0
+            avg_time_per_employee_days = (time_logged_days / employee_count) if employee_count else 0
+            avg_time_per_task_days = (time_logged_days / total_tasks_dept) if total_tasks_dept else 0
+
+            dept_metrics.append({
+                'department': dept,
+                'total_tasks': total_tasks_dept,
+                'completed_tasks': completed_tasks,
+                'completion_rate': metrics['completion_rate'],
+                'overdue_percentage': overdue_percentage,
+                'time_logged_days': time_logged_days,  # Changed to days
+                'time_logged_hours': time_logged_hours,  # Keep hours for backward compatibility
+                'employee_count': employee_count,
+                'avg_tasks_per_employee': avg_tasks_per_employee,
+                'avg_time_per_employee_days': avg_time_per_employee_days,  # Changed to days
+                'avg_time_per_task_days': avg_time_per_task_days  # Changed to days
+            })
+
+            total_employees += employee_count
+            total_time_logged_hours += time_logged_hours
+            total_completed_tasks += completed_tasks
+
+        def group_completed_tasks(tasks: List[Dict[str, Any]], granularity: str) -> Dict[str, int]:
+            buckets: Dict[str, int] = {}
+            for task in tasks:
+                if task.get('status', '').lower() != 'completed':
+                    continue
+
+                timestamp = (
+                    task.get('completed_at')
+                    or task.get('completion_date')
+                    or task.get('updated_at')
+                )
+                if not timestamp:
+                    continue
+
+                try:
+                    completion_dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                except Exception:
+                    continue
+
+                if granularity == 'daily':
+                    key = completion_dt.strftime('%Y-%m-%d')
+                elif granularity == 'weekly':
+                    year, week, _ = completion_dt.isocalendar()
+                    key = f"{year}-W{week:02d}"
+                else:
+                    key = completion_dt.strftime('%Y-%m')
+
+                buckets[key] = buckets.get(key, 0) + 1
+
+            return dict(sorted(buckets.items()))
+
+        trend_data = group_completed_tasks(all_org_tasks, trend_granularity)
+
+        total_tasks = len(all_org_tasks)
+        # Convert to days for organizational report
+        total_time_logged_days = total_time_logged_hours / 24
+        avg_time_per_employee_days = (
+            total_time_logged_days / total_employees if total_employees else 0
+        )
+        avg_tasks_per_employee = (
+            total_tasks / total_employees if total_employees else 0
+        )
+        avg_time_per_task_days = (
+            total_time_logged_days / total_tasks if total_tasks else 0
+        )
+
+        granularity_title = {
+            'daily': 'Day',
+            'weekly': 'Week',
+            'monthly': 'Month'
+        }.get(trend_granularity, 'Month')
+
+        completed_tasks_by_department = {
+            metric['department']: metric['completed_tasks'] for metric in dept_metrics
+        }
+        completion_rate_by_department = {
+            metric['department']: round(metric['completion_rate'], 2) for metric in dept_metrics
+        }
+        overdue_percentage_by_department = {
+            metric['department']: round(metric['overdue_percentage'], 2) for metric in dept_metrics
+        }
+        time_logged_by_department = {
+            metric['department']: round(metric['time_logged_days'], 2) for metric in dept_metrics
+        }
+        workload_per_employee_by_department = {
+            metric['department']: round(metric['avg_time_per_employee_days'], 2) for metric in dept_metrics
+        }
+        time_per_task_by_department = {
+            metric['department']: round(metric['avg_time_per_task_days'], 2) for metric in dept_metrics
+        }
+
+        pie_source = completed_tasks_by_department or {metric['department']: metric['total_tasks'] for metric in dept_metrics}
+        if not pie_source:
+            pie_source = {'No Data': 1}
+
+        preview_data['summary'] = {
+            'scope_type': 'Organization',
+            'total_departments': len(departments),
+            'total_employees': total_employees,
+            'total_tasks': total_tasks,
+            'total_completed_tasks': total_completed_tasks,
+            'completed_tasks': total_completed_tasks,
+            'total_time_logged_days': total_time_logged_days,
+            'trend_granularity': trend_granularity,
+            'avg_time_per_employee_days': avg_time_per_employee_days,
+            'avg_tasks_per_employee': avg_tasks_per_employee,
+            'avg_time_per_task_days': avg_time_per_task_days,
+            'avg_completion_rate': (
+                sum(metric['completion_rate'] for metric in dept_metrics) / len(dept_metrics)
+                if dept_metrics else 0
+            )
+        }
+
+        preview_data['charts'] = [
+            {
+                'type': 'pie',
+                'title': 'Completed Tasks by Department',
+                'data': pie_source
+            },
+            {
+                'type': 'bar_vertical',
+                'title': 'Department Completion Rate (%)',
+                'data': completion_rate_by_department
+            },
+            {
+                'type': 'bar_vertical',
+                'title': 'Department Overdue Percentage (%)',
+                'data': overdue_percentage_by_department
+            },
+            {
+                'type': 'bar_vertical',
+                'title': 'Time Logged by Department (days)',
+                'data': time_logged_by_department
+            },
+            {
+                'type': 'bar_vertical',
+                'title': f'Tasks Completed per {granularity_title}',
+                'data': trend_data
+            },
+            {
+                'type': 'bar_vertical',
+                'title': 'Average Workload per Employee (days)',
+                'data': workload_per_employee_by_department
+            },
+            {
+                'type': 'bar_vertical',
+                'title': 'Average Time per Task by Department (days)',
+                'data': time_per_task_by_department
+            }
+        ]
+
+        preview_data['detailed_data'] = {
+            'department_metrics': dept_metrics,
+            'trend': trend_data,
+            'workload_analysis': {
+                'total_employees': total_employees,
+                'avg_time_per_employee_days': avg_time_per_employee_days,
+                'avg_tasks_per_employee': avg_tasks_per_employee,
+                'avg_time_per_task_days': avg_time_per_task_days
+            }
+        }
+    
+    return preview_data
+
+def generate_preview_pdf(preview_data: Dict[str, Any], requesting_user: Dict[str, Any]) -> io.BytesIO:
+    """Build a report PDF that mirrors the preview payload."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=50,
+        leftMargin=50,
+        topMargin=50,
+        bottomMargin=50
+    )
+    styles = getSampleStyleSheet()
+    elements: List[Any] = []
+
+    report_labels = {
+        ReportType.INDIVIDUAL.value: 'Individual',
+        ReportType.TEAM.value: 'Team',
+        ReportType.DEPARTMENT.value: 'Department',
+        ReportType.ORGANIZATION.value: 'Organization'
+    }
+    report_type = preview_data.get('report_type', 'report')
+    report_label = report_labels.get(report_type, 'Report')
+    title = preview_data.get('report_title') or f"{report_label} Report"
+
+    elements.extend(build_report_header(title, styles))
+    elements.append(Spacer(1, 12))
+
+    section_heading = ParagraphStyle(
+        'SectionHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=HexColor('#1e40af'),
+        fontName='Helvetica-Bold',
+        spaceAfter=6
+    )
+    subheading_style = ParagraphStyle(
+        'Subheading',
+        parent=styles['Heading3'],
+        fontSize=13,
+        textColor=HexColor('#1f2937'),
+        fontName='Helvetica-Bold',
+        spaceAfter=4
+    )
+    metadata_key_style = ParagraphStyle(
+        'MetadataKey',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=HexColor('#475569'),
+        fontName='Helvetica-Bold',
+        leading=12
+    )
+    metadata_value_style = ParagraphStyle(
+        'MetadataValue',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=HexColor('#0f172a'),
+        leading=12
+    )
+
+    def format_datetime_display(value: Optional[str]) -> str:
+        dt = parse_datetime(value)
+        if not dt:
+            return 'N/A'
+        return dt.astimezone(timezone.utc).strftime('%d %b %Y %H:%M %Z')
+
+    def format_cell_value(value: Any) -> str:
+        if value is None:
+            return '-'
+        if isinstance(value, (int, float)):
+            if abs(value) >= 100:
+                return f"{value:.0f}"
+            if abs(value) >= 10:
+                return f"{value:.1f}"
+            return f"{value:.2f}"
+        if isinstance(value, list):
+            return ', '.join(str(item) for item in value)
+        if isinstance(value, dict):
+            return json.dumps(value, default=str)
+        return str(value)
+
+    def humanize_key(key: str) -> str:
+        return key.replace('_', ' ').title()
+
+    filters = preview_data.get('filters', {}) or {}
+    summary = preview_data.get('summary', {}) or {}
+
+    metadata_rows = [
+        ('Report Type', escape(report_label)),
+        ('Generated By', escape(preview_data.get('generated_by', requesting_user.get('name', 'Unknown')))),
+        ('User Role', escape(preview_data.get('user_role', requesting_user.get('role', 'Unknown')))),
+        ('Generated At', escape(format_datetime_display(preview_data.get('generated_at'))))
+    ]
+
+    target_text = None
+    if summary.get('selected_teams'):
+        target_text = ', '.join(summary['selected_teams'])
+    target_text = target_text or summary.get('target_user') or summary.get('team_name') or summary.get('department') or summary.get('scope')
+    if target_text:
+        metadata_rows.append(('Target', escape(target_text)))
+
+    trend = summary.get('trend_granularity') or filters.get('trend_granularity')
+    if trend:
+        metadata_rows.append(('Trend Interval', escape(str(trend).title())))
+
+    filter_parts: List[str] = []
+    if filters.get('start_date') and filters.get('end_date'):
+        filter_parts.append(escape(f"{filters['start_date']} to {filters['end_date']}"))
+    elif filters.get('start_date'):
+        filter_parts.append(escape(f"From {filters['start_date']}"))
+    elif filters.get('end_date'):
+        filter_parts.append(escape(f"Until {filters['end_date']}"))
+
+    status_filter = filters.get('status_filter') or []
+    if status_filter and 'All' not in status_filter:
+        filter_parts.append(escape(f"Status: {', '.join(status_filter)}"))
+
+    if filter_parts:
+        filters_text = '<br/>'.join(filter_parts)
+        metadata_rows.append(('Applied Filters', filters_text))
+    formatted_metadata_rows = [
+        [
+            Paragraph(str(label), metadata_key_style),
+            Paragraph(value if isinstance(value, str) else str(value), metadata_value_style)
+        ]
+        for label, value in metadata_rows
+    ]
+
+    metadata_table = Table(formatted_metadata_rows, colWidths=[1.9 * inch, 3.6 * inch])
+    metadata_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), HexColor('#f8fafc')),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('TEXTCOLOR', (0, 0), (0, -1), HexColor('#475569')),
+        ('TEXTCOLOR', (1, 0), (1, -1), HexColor('#0f172a')),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+        ('WORDWRAP', (0, 0), (-1, -1), 'CJK')
+    ]))
+    elements.append(metadata_table)
+    elements.append(Spacer(1, 18))
+
+    summary_fields = [
+        ('total_tasks', 'Total Tasks', lambda v: f"{int(v)}"),
+        ('completed_tasks', 'Completed Tasks', lambda v: f"{int(v)}"),
+        ('in_progress_tasks', 'In Progress Tasks', lambda v: f"{int(v)}"),
+        ('pending_tasks', 'Pending Tasks', lambda v: f"{int(v)}"),
+        ('overdue_tasks', 'Overdue Tasks', lambda v: f"{int(v)}"),
+        ('total_members', 'Team Members', lambda v: f"{int(v)}"),
+        ('total_teams', 'Total Teams', lambda v: f"{int(v)}"),
+        ('total_departments', 'Total Departments', lambda v: f"{int(v)}"),
+        ('total_completed_tasks', 'Completed Tasks', lambda v: f"{int(v)}"),  # Added after Total Departments
+        ('total_employees', 'Total Employees', lambda v: f"{int(v)}"),
+        ('total_completed', 'Total Completed Tasks', lambda v: f"{int(v)}"),
+        ('avg_completion_rate', 'Avg Completion Rate (%)', lambda v: f"{round(v, 1)}%"),
+        ('avg_completion_time_days', 'Avg Completion Time (days)', lambda v: f"{v:.1f} days" if v else "0 days"),
+        ('total_time_spent_days', 'Total Time Spent (days)', lambda v: f"{v:.1f} days"),
+        ('avg_time_per_employee_days', 'Avg Days per Employee', lambda v: f"{v:.1f} days"),
+        ('avg_tasks_per_employee', 'Avg Tasks per Employee', lambda v: f"{v:.1f}"),
+        ('avg_time_per_task_days', 'Avg Days per Task', lambda v: f"{v:.1f} days"),
+        ('trend_granularity', 'Trend Interval', lambda v: str(v).title())
+    ]
+
+    summary_rows: List[List[str]] = []
+    seen_keys = set()
+    for key, label, formatter in summary_fields:
+        if key in seen_keys:
+            continue
+        if key not in summary:
+            continue
+        value = summary.get(key)
+        if value is None:
+            continue
+        if isinstance(value, list) and not value:
+            continue
+        seen_keys.add(key)
+        try:
+            display = formatter(value) if callable(formatter) else format_cell_value(value)
+        except Exception:
+            display = format_cell_value(value)
+        summary_rows.append([label, display])
+
+    if summary_rows:
+        elements.append(Paragraph('Summary', section_heading))
+        elements.append(Spacer(1, 8))
+        summary_table = Table(summary_rows, colWidths=[2.8 * inch, 2.7 * inch])
+        summary_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('TEXTCOLOR', (0, 1), (-1, -1), HexColor('#111827')),
+            ('LINEBEFORE', (1, 0), (1, -1), 0.3, HexColor('#e2e8f0')),
+            ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, HexColor('#e2e8f0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(summary_table)
+        elements.append(Spacer(1, 18))
+
+    charts = preview_data.get('charts') or []
+    chart_blocks_on_page = 0
+    analytics_started = False
+
+    def build_chart_drawing(chart: Dict[str, Any]) -> Optional[Drawing]:
+        chart_type = str(chart.get('type', '')).lower()
+        data = chart.get('data')
+
+        if chart_type == 'pie' and isinstance(data, dict):
+            return build_preview_pie_chart(chart.get('title', ''), data)
+        if chart_type in {'bar_vertical', 'bar'} and isinstance(data, dict):
+            return build_preview_vertical_bar_chart(chart.get('title', ''), data)
+        return None
+
+    def build_chart_rows(chart: Dict[str, Any]) -> List[List[str]]:
+        data = chart.get('data')
+        if isinstance(data, dict):
+            if all(isinstance(v, (int, float, type(None))) for v in data.values()):
+                rows = [['Label', 'Value']]
+                for key, value in data.items():
+                    rows.append([str(key), format_cell_value(value)])
+                return rows
+            if all(isinstance(v, list) for v in data.values()):
+                keys = list(data.keys())
+                primary = keys[0]
+                columns = [humanize_key(primary)] + [humanize_key(k) for k in keys[1:]]
+                rows = [columns]
+                max_len = max(len(data[k]) for k in keys)
+                for idx in range(max_len):
+                    row = []
+                    for key in keys:
+                        series = data[key]
+                        value = series[idx] if idx < len(series) else None
+                        row.append(format_cell_value(value))
+                    rows.append(row)
+                return rows
+        elif isinstance(data, list):
+            rows = [['Index', 'Value']]
+            for idx, value in enumerate(data, start=1):
+                rows.append([str(idx), format_cell_value(value)])
+            return rows
+        return [['Details'], [format_cell_value(data)]]
+
+    if charts:
+        # Only add analytics section if there are charts
+        elements.append(Spacer(1, 20))  # Space instead of page break
+        elements.append(Paragraph('Analytics', section_heading))
+        elements.append(Spacer(1, 12))
+        analytics_started = True
+        chart_blocks_on_page = 0
+
+    for chart_index, chart in enumerate(charts):
+        chart_section = []
+        chart_title = chart.get('title') or 'Chart'
+        chart_section.append(Paragraph(chart_title, subheading_style))
+        chart_section.append(Spacer(1, 4))
+        
+        drawing = build_chart_drawing(chart)
+        if drawing:
+            chart_section.append(drawing)
+        else:
+            table_rows = build_chart_rows(chart)
+            chart_table = Table(table_rows, repeatRows=1)
+            chart_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+                ('INNERGRID', (0, 0), (-1, -1), 0.25, HexColor('#e2e8f0')),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ]))
+            chart_section.append(chart_table)
+        
+        chart_section.append(Spacer(1, 12))
+        
+        # Keep each chart with its title together
+        elements.append(KeepTogether(chart_section))
+        
+        chart_blocks_on_page += 1
+        # Only add page break if we have 2 charts on page AND there are more charts coming
+        if chart_blocks_on_page >= 2 and chart_index < len(charts) - 1:
+            elements.append(PageBreak())
+            elements.append(Paragraph('Analytics (cont.)', section_heading))
+            elements.append(Spacer(1, 8))
+            chart_blocks_on_page = 0
+
+    detailed_data = preview_data.get('detailed_data') or {}
+
+    def add_records_table(title: str, records: List[Dict[str, Any]], column_labels: Optional[Dict[str, str]] = None, limit: Optional[int] = None, col_widths: Optional[List[float]] = None):
+        if not records:
+            return
+        if column_labels:
+            keys = list(column_labels.keys())
+        else:
+            keys = list(records[0].keys())
+        header = [column_labels.get(key, humanize_key(key)) if column_labels else humanize_key(key) for key in keys]
+        rows = [header]
+        sample = records if limit is None else records[:limit]
+        for record in sample:
+            row = []
+            for key in keys:
+                value = record.get(key)
+                if key.endswith('_rate') or key.endswith('_percentage'):
+                    if isinstance(value, (int, float)):
+                        row.append(f"{round(value, 1)}%")
+                    else:
+                        row.append(format_cell_value(value))
+                elif key.endswith('_hours'):
+                    if isinstance(value, (int, float)):
+                        row.append(f"{value:.1f} h")
+                    else:
+                        row.append(format_cell_value(value))
+                else:
+                    row.append(format_cell_value(value))
+            rows.append(row)
+            
+        # Keep table with its title together
+        table_section = []
+        table_section.append(Paragraph(title, subheading_style))
+        table_section.append(Spacer(1, 4))
+        
+        table = Table(rows, colWidths=col_widths, repeatRows=1)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.25, HexColor('#e2e8f0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        table_section.append(table)
+        table_section.append(Spacer(1, 14))
+        
+        elements.append(KeepTogether(table_section))
+
+    if detailed_data.get('team_members'):
+        column_map = {
+            'name': 'Name',
+            'team_name': 'Team',
+            'total_tasks': 'Total Tasks',
+            'completed': 'Completed',
+            'in_progress': 'In Progress',
+            'pending': 'Pending',
+            'overdue': 'Overdue'
+        }
+        add_records_table('Team Members', detailed_data['team_members'], column_map)
+
+    if detailed_data.get('team_comparison'):
+        column_map = {
+            'team_name': 'Team',
+            'total_tasks': 'Total Tasks',
+            'completed_tasks': 'Completed',
+            'completion_rate': 'Completion Rate (%)',
+            'overdue_tasks': 'Overdue',
+            'avg_completion_time_hours': 'Avg Completion (hrs)',
+            'time_spent_hours': 'Time Spent (hrs)'
+        }
+        add_records_table('Team Comparison', detailed_data['team_comparison'], column_map)
+
+    if detailed_data.get('department_comparison'):
+        column_map = {
+            'department': 'Department',
+            'total_tasks': 'Total Tasks',
+            'completed_tasks': 'Completed',
+            'completion_rate': 'Completion Rate (%)',
+            'overdue_tasks': 'Overdue',
+            'overdue_percentage': 'Overdue (%)',
+            'total_time_spent': 'Time Spent (hrs)'
+        }
+        add_records_table('Department Comparison', detailed_data['department_comparison'], column_map)
+
+    if detailed_data.get('department_metrics'):
+        # Department Metrics - properly transposed format for print compatibility
+        dept_section = []
+        dept_section.append(Paragraph("Department Metrics", subheading_style))
+        dept_section.append(Spacer(1, 4))
+
+        dept_metrics = detailed_data['department_metrics']
+        
+        if dept_metrics:
+            # Create transposed table with metrics as rows and departments as columns
+            departments = [dept['department'] for dept in dept_metrics]
+            
+            # Create table data with metrics as rows (left column)
+            table_data = []
+            
+            # Header row: Metric name, then department names
+            header_row = ['Metric'] + departments
+            table_data.append(header_row)
+            
+            # Data rows - each metric becomes a row
+            metrics_to_show = [
+                ('completion_rate', 'Completion Rate (%)'),
+                ('overdue_percentage', 'Overdue (%)'),
+                ('time_logged_days', 'Time Logged (days)'),
+                ('employee_count', 'Employees'),
+                ('avg_tasks_per_employee', 'Avg Tasks/Employee'),
+                ('avg_time_per_employee_days', 'Avg Days/Employee'),
+                ('avg_time_per_task_days', 'Avg Days/Task')
+            ]
+            
+            for metric_key, metric_label in metrics_to_show:
+                row = [metric_label]  # Start with metric name
+                for dept in dept_metrics:
+                    value = dept.get(metric_key, 0)
+                    # Format values appropriately
+                    if metric_key in ['completion_rate', 'overdue_percentage']:
+                        row.append(f"{value:.1f}%" if isinstance(value, (int, float)) else str(value))
+                    elif metric_key in ['time_logged_days', 'avg_time_per_employee_days', 'avg_time_per_task_days']:
+                        row.append(f"{value:.1f} h" if isinstance(value, (int, float)) else str(value))
+                    elif metric_key in ['avg_tasks_per_employee']:
+                        row.append(f"{value:.2f}" if isinstance(value, (int, float)) else str(value))
+                    else:
+                        row.append(str(value))
+                table_data.append(row)
+            
+            # Calculate column widths for transposed table - make more compact
+            num_cols = len(header_row)
+            if num_cols <= 4:
+                col_width = 1.2 * inch
+            elif num_cols <= 6:
+                col_width = 0.9 * inch
+            else:
+                col_width = 0.7 * inch
+            
+            col_widths = [1.4 * inch] + [col_width] * (num_cols - 1)
+            
+            dept_table = Table(table_data, colWidths=col_widths, repeatRows=1)
+            dept_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 8),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('BACKGROUND', (0, 0), (0, -1), HexColor('#f1f5f9')),
+                ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 1), (-1, -1), 7),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+                ('INNERGRID', (0, 0), (-1, -1), 0.25, HexColor('#e2e8f0')),
+                ('TOPPADDING', (0, 0), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            
+            dept_section.append(dept_table)
+        else:
+            dept_section.append(Paragraph("No department metrics available", styles['Normal']))
+        
+        dept_section.append(Spacer(1, 6))
+        elements.append(KeepTogether(dept_section))
+
+    if detailed_data.get('scope_comparison'):
+        add_records_table('Scope Comparison', detailed_data['scope_comparison'])
+
+    tasks_sample = detailed_data.get('tasks')
+    if tasks_sample:
+        column_map = {
+            'title': 'Task',
+            'status': 'Status',
+            'priority': 'Priority',
+            'due_date': 'Due Date',
+            'completed_date': 'Completed Date',
+            'completion_time_hours': 'Completion (hrs)'
+        }
+        add_records_table('Task Details', tasks_sample, column_map, limit=20)
+
+    tasks_by_scope = detailed_data.get('tasks_by_scope') or {}
+    for scope_name, scope_tasks in tasks_by_scope.items():
+        column_map = {
+            'title': 'Task',
+            'status': 'Status',
+            'priority': 'Priority',
+            'due_date': 'Due Date',
+            'completed_date': 'Completed Date',
+            'completion_time_hours': 'Completion (hrs)'
+        }
+        add_records_table(f"{scope_name} Tasks", scope_tasks, column_map, limit=20)
+
+    workload_analysis = detailed_data.get('workload_analysis')
+    if isinstance(workload_analysis, dict) and workload_analysis:
+        rows = []
+        for key, value in workload_analysis.items():
+            label = humanize_key(key)
+            if 'hours' in key and isinstance(value, (int, float)):
+                display = f"{value:.1f} h"
+            else:
+                display = format_cell_value(value)
+            rows.append([label, display])
+        if rows:
+            elements.append(Paragraph('Workload Analysis', subheading_style))
+            elements.append(Spacer(1, 4))
+            analysis_table = Table(rows, colWidths=[2.8 * inch, 2.7 * inch])
+            analysis_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (0, 0), (0, -1), HexColor('#1f2937')),
+                ('TEXTCOLOR', (1, 0), (1, -1), HexColor('#111827')),
+                ('BOX', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+                ('INNERGRID', (0, 0), (-1, -1), 0.25, HexColor('#e2e8f0')),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            elements.append(analysis_table)
+            elements.append(Spacer(1, 14))
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+def is_task_overdue(task: Dict[str, Any]) -> bool:
+    """Check if a task is overdue."""
+    try:
+        due_date_str = task.get('due_date')
+        if not due_date_str:
+            return False
+            
+        # Parse due date
+        due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+        current_date = datetime.now(timezone.utc)
+        
+        # Task is overdue if due date has passed and status is not completed
+        status = task.get('status', '').lower()
+        return due_date < current_date and status != 'completed'
+    except Exception:
+        return False
+
+def get_options_for_report_type(requesting_user: Dict[str, Any], report_type: str):
+    """Get specific options based on report type."""
+    try:
+        role = requesting_user.get('role')
+        department = requesting_user.get('department')
+        user_id = requesting_user.get('user_id')
+        
+        options = []
+        
+        if report_type == 'individual':
+            # Get users that this role can generate reports for
+            if role == UserRole.MANAGER.value:
+                # Manager can report on their team members + themselves
+                team_members = get_team_members(department, user_id) or []
+                # Add self
+                options.append({
+                    'value': user_id,
+                    'label': f"{requesting_user.get('name', 'Unknown')} (You)"
+                })
+                # Add team members
+                for member in team_members:
+                    if member.get('user_id') != user_id:  # Don't duplicate self
+                        options.append({
+                            'value': member.get('user_id'),
+                            'label': member.get('name', 'Unknown User')
+                        })
+                        
+            elif role == UserRole.DIRECTOR.value:
+                # Director can report on anyone in their department
+                dept_users_response = supabase.table('user').select('user_id, name, email').eq('department', department).eq('is_active', True).execute()
+                dept_users = dept_users_response.data or []
+                
+                for user in dept_users:
+                    label = user.get('name', 'Unknown User')
+                    if user.get('user_id') == user_id:
+                        label += " (You)"
+                    options.append({
+                        'value': user.get('user_id'),
+                        'label': label
+                    })
+                    
+            elif role == UserRole.HR.value:
+                # HR can report on anyone
+                all_users_response = supabase.table('user').select('user_id, name, email, department').eq('is_active', True).execute()
+                all_users = all_users_response.data or []
+                
+                for user in all_users:
+                    label = f"{user.get('name', 'Unknown User')}"
+                    if user.get('department'):
+                        label += f" ({user.get('department')})"
+                    if user.get('user_id') == user_id:
+                        label += " (You)"
+                    options.append({
+                        'value': user.get('user_id'),
+                        'label': label
+                    })
+                    
+        elif report_type == 'team':
+            # Get teams that this role can generate reports for
+            if role == UserRole.DIRECTOR.value:
+                # Director can report on manager teams in their department
+                dept_users_response = supabase.table('user').select('*').eq('department', department).eq('is_active', True).execute()
+                dept_users = dept_users_response.data or []
+                
+                # Find managers in the department who have team members
+                managers_with_teams = []
+                for user in dept_users:
+                    superior_id = user.get('superior')
+                    if superior_id:  # This user has a superior
+                        superior_user = get_user_details(superior_id)
+                        if (superior_user and 
+                            superior_user.get('role') == 'Manager' and 
+                            superior_user.get('department') == department):
+                            managers_with_teams.append(superior_user)
+                
+                # Remove duplicates and create options
+                seen_managers = set()
+                for manager in managers_with_teams:
+                    manager_id = manager.get('user_id')
+                    if manager_id and manager_id not in seen_managers:
+                        seen_managers.add(manager_id)
+                        options.append({
+                            'value': manager_id,
+                            'label': f"{manager.get('name', 'Unknown')}'s Team"
+                        })
+                        
+            elif role == UserRole.HR.value:
+                # HR can report on any manager's team (managers have teams, not directors)
+                all_users_response = supabase.table('user').select('*').eq('is_active', True).execute()
+                all_users = all_users_response.data or []
+                
+                # Get all users who have subordinates (are superiors) and are managers
+                managers_with_teams = []
+                for user in all_users:
+                    superior_id = user.get('superior')
+                    if superior_id:  # This user has a superior, so their superior might be a manager with a team
+                        superior_user = get_user_details(superior_id)
+                        if superior_user and superior_user.get('role') == 'Manager':
+                            managers_with_teams.append(superior_user)
+                
+                # Remove duplicates and create options
+                seen_managers = set()
+                for manager in managers_with_teams:
+                    manager_id = manager.get('user_id')
+                    if manager_id and manager_id not in seen_managers:
+                        seen_managers.add(manager_id)
+                        options.append({
+                            'value': manager_id,
+                            'label': f"{manager.get('name', 'Unknown')}'s Team ({manager.get('department', 'Unknown Dept')})"
+                        })
+                        
+        elif report_type == 'department':
+            # Only HR can generate department reports
+            if role == UserRole.HR.value:
+                departments = get_all_departments()
+                for dept in departments:
+                    options.append({
+                        'value': dept,
+                        'label': dept
+                    })
+        
+        return jsonify({'options': options}), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting options for report type {report_type}: {e}")
+        return jsonify({"error": "Failed to get report options"}), 500
+
+
+def get_options_for_scope_type(requesting_user: Dict[str, Any], scope_type: str):
+    """Get options for HR organization report scope types."""
+    try:
+        role = requesting_user.get('role')
+        
+        # Only HR can access organization reports
+        if role != UserRole.HR.value:
+            return jsonify({"error": "Unauthorized"}), 403
+            
+        options = []
+        
+        if scope_type == 'departments':
+            departments = get_all_departments()
+            for dept in departments:
+                options.append({
+                    'value': dept,
+                    'label': dept
+                })
+                
+        elif scope_type == 'teams':
+            # Get all teams (only managers with subordinates, not directors)
+            all_users_response = supabase.table('user').select('*').execute()
+            all_users = all_users_response.data or []
+            superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
+            
+            for superior_id in superiors:
+                superior_user = get_user_details(superior_id)
+                if superior_user and superior_user.get('role') == UserRole.MANAGER.value:
+                    # Only include managers as team leads (directors manage departments, not teams)
+                    options.append({
+                        'value': superior_id,
+                        'label': f"{superior_user.get('name', 'Unknown')}'s Team ({superior_user.get('department', 'Unknown Dept')})"
+                    })
+                    
+        elif scope_type == 'individuals':
+            # Get all users
+            all_users_response = supabase.table('user').select('user_id, name, email, department').eq('is_active', True).execute()
+            all_users = all_users_response.data or []
+            
+            for user in all_users:
+                label = f"{user.get('name', 'Unknown User')}"
+                if user.get('department'):
+                    label += f" ({user.get('department')})"
+                options.append({
+                    'value': user.get('user_id'),
+                    'label': label
+                })
+        
+        return jsonify({'options': options}), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting options for scope type {scope_type}: {e}")
+        return jsonify({"error": "Failed to get scope options"}), 500
+
+
 def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Calculate team-level metrics for director reports."""
     total_tasks = len(tasks)
@@ -1626,13 +3827,17 @@ def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
             'overdue_tasks': 0,
             'overdue_percentage': 0,
             'total_time_spent': 0,
-            'avg_completion_time': 0
+            'total_time_spent_hours': 0,
+            'avg_completion_time': 0,
+            'avg_completion_time_hours': 0,
+            'avg_active_time_hours': 0
         }
     
     completed_tasks = [t for t in tasks if t.get('status', '').lower() == 'completed']
     overdue_tasks = []
-    total_time_spent = 0
-    completion_times = []
+    total_time_spent_hours = 0.0
+    completion_times_hours: List[float] = []
+    active_times_hours: List[float] = []
     
     current_date = datetime.now(timezone.utc)
     
@@ -1640,32 +3845,23 @@ def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
         # Check for overdue tasks
         due_date = task.get('due_date')
         if due_date and task.get('status', '').lower() != 'completed':
-            try:
-                due_dt = datetime.fromisoformat(due_date.replace('Z', '+00:00'))
-                if due_dt < current_date:
-                    overdue_tasks.append(task)
-            except:
-                pass
+            due_dt = parse_datetime(due_date)
+            if due_dt and due_dt < current_date:
+                overdue_tasks.append(task)
         
-        # Calculate time spent
-        created_at = task.get('created_at')
-        updated_at = task.get('updated_at', datetime.now().isoformat())
-        
-        if created_at:
-            try:
-                created_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                updated_dt = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
-                time_spent = (updated_dt - created_dt).days
-                total_time_spent += max(time_spent, 0)
-                
-                if task.get('status', '').lower() == 'completed':
-                    completion_times.append(time_spent)
-            except:
-                pass
+        completion_hours = task.get('completion_time_hours')
+        if completion_hours is not None:
+            total_time_spent_hours += max(completion_hours, 0)
+            completion_times_hours.append(max(completion_hours, 0))
+        else:
+            in_progress = task.get('time_in_progress_hours')
+            if in_progress is not None:
+                active_times_hours.append(max(in_progress, 0))
     
     completion_rate = (len(completed_tasks) / total_tasks) * 100
     overdue_percentage = (len(overdue_tasks) / total_tasks) * 100
-    avg_completion_time = sum(completion_times) / len(completion_times) if completion_times else 0
+    avg_completion_time_hours = sum(completion_times_hours) / len(completion_times_hours) if completion_times_hours else 0
+    avg_active_time_hours = sum(active_times_hours) / len(active_times_hours) if active_times_hours else 0
     
     return {
         'total_tasks': total_tasks,
@@ -1673,8 +3869,11 @@ def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
         'completion_rate': completion_rate,
         'overdue_tasks': len(overdue_tasks),
         'overdue_percentage': overdue_percentage,
-        'total_time_spent': total_time_spent,
-        'avg_completion_time': avg_completion_time
+        'total_time_spent': total_time_spent_hours,
+        'total_time_spent_hours': total_time_spent_hours,
+        'avg_completion_time': avg_completion_time_hours,
+        'avg_completion_time_hours': avg_completion_time_hours,
+        'avg_active_time_hours': avg_active_time_hours
     }
 
 def generate_director_report(tasks_by_scope: Dict[str, List[Dict[str, Any]]],
@@ -1759,8 +3958,10 @@ def generate_director_report(tasks_by_scope: Dict[str, List[Dict[str, Any]]],
         fontName='Helvetica-Bold'
     )
 
-    elements.append(Paragraph("Performance Comparison", heading_style))
-    elements.append(Spacer(1, 15))
+    # Performance comparison section - keep together
+    comparison_section = []
+    comparison_section.append(Paragraph("Performance Comparison", heading_style))
+    comparison_section.append(Spacer(1, 15))
 
     comparison_data: List[List[str]] = [
         ['Scope', 'Total Tasks', 'Completed', 'Completion Rate', 'Overdue %', 'Avg. Duration (days)', 'Total Time (days)']
@@ -1768,14 +3969,20 @@ def generate_director_report(tasks_by_scope: Dict[str, List[Dict[str, Any]]],
 
     for scope_name, scope_tasks in tasks_by_scope.items():
         metrics = calculate_team_metrics(scope_tasks)
+        # Convert hours to days for display
+        avg_duration_hours = metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0))
+        total_time_hours = metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0))
+        avg_duration_days = avg_duration_hours / 24
+        total_time_days = total_time_hours / 24
+        
         comparison_data.append([
             scope_name,
             str(metrics['total_tasks']),
             str(metrics['completed_tasks']),
             f"{metrics['completion_rate']:.1f}%",
             f"{metrics['overdue_percentage']:.1f}%",
-            f"{metrics['avg_completion_time']:.1f}",
-            str(metrics['total_time_spent'])
+            f"{avg_duration_days:.1f}",
+            f"{total_time_days:.1f}"
         ])
 
     if len(comparison_data) == 1:
@@ -1812,7 +4019,28 @@ def generate_director_report(tasks_by_scope: Dict[str, List[Dict[str, Any]]],
             ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
         ]))
 
-    elements.append(comparison_table)
+    comparison_section.append(comparison_table)
+    comparison_section.append(Spacer(1, 20))
+    
+    elements.append(KeepTogether(comparison_section))
+    
+    # Add comparison bar chart - separate section
+    chart_section = []
+    chart_heading = Paragraph("Performance Comparison Chart", heading_style)
+    chart_section.append(chart_heading)
+    chart_section.append(Spacer(1, 8))
+    
+    # Prepare data for comparison bar chart
+    completion_rates = {}
+    for scope_name, scope_tasks in tasks_by_scope.items():
+        metrics = calculate_team_metrics(scope_tasks)
+        completion_rates[scope_name] = int(metrics['completion_rate'])
+    
+    comparison_bar_chart = generate_bar_chart(completion_rates, "Completion Rates by Team/Department")
+    chart_section.append(comparison_bar_chart)
+    chart_section.append(Spacer(1, 20))
+    
+    elements.append(KeepTogether(chart_section))
 
     doc.build(elements)
     buffer.seek(0)
@@ -1883,82 +4111,29 @@ def generate_hr_report(data_by_scope: Dict[str, List[Dict[str, Any]]],
         fontName='Helvetica-Bold'
     )
 
-    # Comparison overview
-    elements.append(Paragraph("Scope Comparison Overview", heading_style))
-    elements.append(Spacer(1, 15))
-
-    comparison_data: List[List[str]] = [
-        ['Scope', 'Total Tasks', 'Completed', 'Completion Rate', 'Overdue %', 'Avg. Duration (days)', 'Total Time (days)']
-    ]
-
-    for scope_name, tasks in data_by_scope.items():
-        metrics = calculate_team_metrics(tasks)
-        comparison_data.append([
-            scope_name,
-            str(metrics['total_tasks']),
-            str(metrics['completed_tasks']),
-            f"{metrics['completion_rate']:.1f}%",
-            f"{metrics['overdue_percentage']:.1f}%",
-            f"{metrics['avg_completion_time']:.1f}",
-            str(metrics['total_time_spent'])
-        ])
-
-    if len(comparison_data) == 1:
-        comparison_data.append(['No data available', '-', '-', '-', '-', '-', '-'])
-
-    comparison_table = Table(
-        comparison_data,
-        colWidths=[1.6 * inch, 0.9 * inch, 0.9 * inch, 1.1 * inch, 0.9 * inch, 1.2 * inch, 1.0 * inch]
-    )
-    comparison_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 9),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 1), (-1, -1), 8),
-        ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
-        ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-        ('TOPPADDING', (0, 1), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
-
-        ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
-        ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-    ]))
-
-    for row_idx in range(1, len(comparison_data)):
-        bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
-        comparison_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
-        ]))
-
-    elements.append(comparison_table)
-    elements.append(Spacer(1, 24))
-
-    # Detailed summaries per scope
-    for scope_name, tasks in data_by_scope.items():
-        elements.append(Paragraph(f"{scope_name} Summary", heading_style))
-        elements.append(Spacer(1, 10))
-
-        metrics = calculate_team_metrics(tasks)
-        summary_data = [
+    # Check if this is organization metrics data
+    if 'organization_metrics' in data_by_scope:
+        org_metrics = data_by_scope['organization_metrics']
+        dept_metrics = org_metrics['dept_metrics']
+        
+        # Organization Summary - keep together
+        overview_section = []
+        overview_section.append(Paragraph("Organization Overview", heading_style))
+        overview_section.append(Spacer(1, 15))
+        
+        overview_data = [
             ['Metric', 'Value'],
-            ['Total Tasks', str(metrics['total_tasks'])],
-            ['Completed Tasks', str(metrics['completed_tasks'])],
-            ['Completion Rate', f"{metrics['completion_rate']:.1f}%"],
-            ['Overdue Tasks', str(metrics['overdue_tasks'])],
-            ['Overdue Percentage', f"{metrics['overdue_percentage']:.1f}%"],
-            ['Total Time Spent', f"{metrics['total_time_spent']} days"],
-            ['Average Completion Time', f"{metrics['avg_completion_time']:.1f} days"]
+            ['Total Departments', str(len(dept_metrics))],
+            ['Total Employees', str(org_metrics['total_employees'])],
+            ['Total Tasks', str(org_metrics['total_tasks'])],
+            ['Avg. Workload (Days/Employee)', f"{org_metrics['avg_workload_time_per_employee']:.1f}"],
+            ['Avg. Tasks/Employee', f"{org_metrics['avg_workload_tasks_per_employee']:.1f}"],
+            ['Avg. Days/Task', f"{org_metrics.get('avg_time_per_task_days', 0):.1f}"],
+            ['Trend Interval', org_metrics.get('trend_granularity', 'Monthly').title()]
         ]
-
-        summary_table = Table(summary_data, colWidths=[2.5 * inch, 2.0 * inch])
-        summary_table.setStyle(TableStyle([
+        
+        overview_table = Table(overview_data, colWidths=[3.0 * inch, 2.0 * inch])
+        overview_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -1973,15 +4148,254 @@ def generate_hr_report(data_by_scope: Dict[str, List[Dict[str, Any]]],
             ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ]))
-
-        for row_idx in range(1, len(summary_data)):
+        
+        for row_idx in range(1, len(overview_data)):
             bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
-            summary_table.setStyle(TableStyle([
+            overview_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
             ]))
 
-        elements.append(summary_table)
-        elements.append(Spacer(1, 18))
+        overview_section.append(overview_table)
+        overview_section.append(Spacer(1, 24))
+        
+        elements.append(KeepTogether(overview_section))
+        
+        # Department Metrics - properly transposed format for print compatibility
+        dept_section = []
+        dept_section.append(Paragraph("Department Metrics", heading_style))
+        dept_section.append(Spacer(1, 6))
+
+        # Create truly transposed table: metrics as rows, departments as columns
+        # First, collect all department names (handle empty case)
+        if not dept_metrics:
+            dept_section.append(Paragraph("No department data available", styles['Normal']))
+            dept_section.append(Spacer(1, 24))
+            elements.append(KeepTogether(dept_section))
+        else:
+            dept_names = [escape(dept.get('department', 'Unknown'))[:12] for dept in dept_metrics]  # Shorter names
+            
+            # Create table with metrics as rows and departments as columns
+            dept_table_data = [
+                ['Metric'] + dept_names  # Header row
+            ]
+        
+            # Add each metric as a row
+            metrics_to_show = [
+                ('Completion Rate (%)', lambda d: f"{d.get('completion_rate', 0):.1f}%"),
+                ('Overdue (%)', lambda d: f"{d.get('overdue_percentage', 0):.1f}%"),
+                ('Employees', lambda d: str(d.get('employee_count', 0))),
+                ('Time Logged (days)', lambda d: f"{d.get('time_logged_days', 0):.1f}"),
+                ('Avg Tasks/Emp', lambda d: f"{d.get('avg_tasks_per_employee', d['total_tasks'] / d.get('employee_count', 1) if d.get('employee_count', 0) > 0 else 0):.1f}"),
+                ('Avg Days/Emp', lambda d: f"{d.get('avg_time_per_employee_days', d.get('time_logged_days', 0) / d.get('employee_count', 1) if d.get('employee_count', 0) > 0 else 0):.1f}"),
+                ('Avg Days/Task', lambda d: f"{d.get('avg_time_per_task_days', 0):.1f}")
+            ]
+            
+            for metric_name, value_func in metrics_to_show:
+                row = [metric_name]
+                for dept in dept_metrics:
+                    try:
+                        row.append(value_func(dept))
+                    except:
+                        row.append('N/A')
+                dept_table_data.append(row)
+
+            # Calculate dynamic column widths based on number of departments - more compact
+            num_depts = len(dept_names)
+            if num_depts <= 4:
+                # For 4 or fewer departments, use smaller columns
+                metric_col_width = 1.1 * inch
+                dept_col_width = (6.0 * inch - metric_col_width) / max(num_depts, 1)
+            else:
+                # For more departments, use even narrower columns
+                metric_col_width = 1.0 * inch
+                dept_col_width = min(0.7 * inch, (6.0 * inch - metric_col_width) / num_depts)
+            
+            col_widths = [metric_col_width] + [dept_col_width] * num_depts
+
+            dept_table = Table(dept_table_data, colWidths=col_widths)
+            dept_table.setStyle(TableStyle([
+                # Header row
+                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 6),
+                ('ALIGN', (0, 0), (0, 0), 'LEFT'),      # Metric column header left
+                ('ALIGN', (1, 0), (-1, 0), 'CENTER'),  # Department headers center
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 3),
+                ('TOPPADDING', (0, 0), (-1, 0), 3),
+
+                # Data rows
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 6),
+                ('ALIGN', (0, 1), (0, -1), 'LEFT'),     # Metric names left
+                ('ALIGN', (1, 1), (-1, -1), 'CENTER'), # Data values center
+                ('TOPPADDING', (0, 1), (-1, -1), 2),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 2),
+                ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+
+                # Styling
+                ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+                ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                
+                # Metric column background
+                ('BACKGROUND', (0, 1), (0, -1), HexColor('#f8fafc')),
+            ]))
+
+            # Alternating row colors for data rows
+            for row_idx in range(1, len(dept_table_data)):
+                if row_idx % 2 == 0:  # Even rows (starting from 1)
+                    dept_table.setStyle(TableStyle([
+                        ('BACKGROUND', (1, row_idx), (-1, row_idx), HexColor('#f8fafc'))
+                    ]))
+
+            dept_section.append(dept_table)
+            dept_section.append(Spacer(1, 8))
+            
+            elements.append(KeepTogether(dept_section))
+        
+        # Trend section
+        trend_data = org_metrics.get('trend') or org_metrics.get('monthly_completions') or {}
+        if trend_data:
+            trend_section = []
+            trend_label = org_metrics.get('trend_granularity', 'Monthly').title()
+            trend_section.append(Paragraph(f"{trend_label} Task Completion Trend", heading_style))
+            trend_section.append(Spacer(1, 15))
+            
+            trend_rows = [[trend_label, 'Tasks Completed']]
+            for period, count in sorted(trend_data.items()):
+                trend_rows.append([period, str(count)])
+            
+            monthly_table = Table(trend_rows, colWidths=[2.5 * inch, 2.0 * inch])
+            monthly_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('TOPPADDING', (0, 1), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+                ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            
+            for row_idx in range(1, len(trend_rows)):
+                bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+                monthly_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+                ]))
+
+            trend_section.append(monthly_table)
+            trend_section.append(Spacer(1, 18))
+            
+            elements.append(KeepTogether(trend_section))
+        
+    else:
+        # Legacy format for other report types
+        # Comparison overview
+        elements.append(Paragraph("Scope Comparison Overview", heading_style))
+        elements.append(Spacer(1, 15))
+
+        comparison_data: List[List[str]] = [
+            ['Scope', 'Total Tasks', 'Completed', 'Completion Rate', 'Overdue %', 'Avg. Duration (hrs)', 'Total Time (hrs)']
+        ]
+
+        for scope_name, tasks in data_by_scope.items():
+            metrics = calculate_team_metrics(tasks)
+            comparison_data.append([
+                scope_name,
+                str(metrics['total_tasks']),
+                str(metrics['completed_tasks']),
+                f"{metrics['completion_rate']:.1f}%",
+                f"{metrics['overdue_percentage']:.1f}%",
+                f"{metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0)):.1f}",
+                f"{metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0)):.1f}"
+            ])
+
+        if len(comparison_data) == 1:
+            comparison_data.append(['No data available', '-', '-', '-', '-', '-', '-'])
+
+        comparison_table = Table(
+            comparison_data,
+            colWidths=[1.6 * inch, 0.9 * inch, 0.9 * inch, 1.1 * inch, 0.9 * inch, 1.2 * inch, 1.0 * inch]
+        )
+        comparison_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
+
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+
+            ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+            ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+
+        for row_idx in range(1, len(comparison_data)):
+            bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+            comparison_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+            ]))
+
+        elements.append(comparison_table)
+        elements.append(Spacer(1, 24))
+
+        # Detailed summaries per scope
+        for scope_name, tasks in data_by_scope.items():
+            elements.append(Paragraph(f"{scope_name} Summary", heading_style))
+            elements.append(Spacer(1, 10))
+
+            metrics = calculate_team_metrics(tasks)
+            summary_data = [
+                ['Metric', 'Value'],
+                ['Total Tasks', str(metrics['total_tasks'])],
+                ['Completed Tasks', str(metrics['completed_tasks'])],
+                ['Completion Rate', f"{metrics['completion_rate']:.1f}%"],
+                ['Overdue Tasks', str(metrics['overdue_tasks'])],
+                ['Overdue Percentage', f"{metrics['overdue_percentage']:.1f}%"],
+                ['Total Time Spent', f"{metrics['total_time_spent']} days"],
+                ['Average Completion Time', f"{metrics['avg_completion_time']:.1f} days"]
+            ]
+
+            summary_table = Table(summary_data, colWidths=[2.5 * inch, 2.0 * inch])
+            summary_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('TOPPADDING', (0, 1), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+                ('BOX', (0, 0), (-1, -1), 1, HexColor('#e2e8f0')),
+                ('INNERGRID', (0, 0), (-1, -1), 0.5, HexColor('#e2e8f0')),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+
+            for row_idx in range(1, len(summary_data)):
+                bg_color = colors.white if row_idx % 2 == 1 else HexColor('#f8fafc')
+                summary_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
+                ]))
+
+            elements.append(summary_table)
+            elements.append(Spacer(1, 18))
 
     if not data_by_scope:
         no_data_style = ParagraphStyle(
@@ -2021,9 +4435,12 @@ def get_available_users():
 
 @app.route("/report-options", methods=["GET"])
 def get_report_options():
-    """Get available report options based on user role."""
+    """Get available report options based on user role and report type."""
     try:
         user_id = request.args.get('user_id')
+        report_type = request.args.get('report_type')
+        scope_type = request.args.get('scope_type')
+        
         if not user_id:
             return jsonify({"error": "user_id is required"}), 400
             
@@ -2034,6 +4451,18 @@ def get_report_options():
         role = user.get('role')
         department = user.get('department')
         
+        # Handle specific report type requests
+        logger.info(f"Debug: report_type={report_type}, scope_type={scope_type}")
+        if report_type:
+            logger.info(f"Calling get_options_for_report_type with user={user.get('name')} and report_type={report_type}")
+            return get_options_for_report_type(user, report_type)
+            
+        # Handle scope type requests for HR organization reports
+        if scope_type:
+            logger.info(f"Calling get_options_for_scope_type with user={user.get('name')} and scope_type={scope_type}")
+            return get_options_for_scope_type(user, scope_type)
+        
+        # Default: return available report types and general options
         options = {
             'user_role': role,
             'available_report_types': [],
@@ -2069,14 +4498,16 @@ def get_report_options():
             options['available_report_types'] = ['individual', 'team', 'department', 'organization']
             options['departments'] = get_all_departments()
             
-            # Get all teams across organization
-            all_users = supabase.table('user').select('*').execute().data
+            # Get all teams across organization (only managers, not directors)
+            all_users_response = supabase.table('user').select('*').execute()
+            all_users = all_users_response.data or []
             superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
             team_names = []
             
             for superior_id in superiors:
                 superior_user = get_user_details(superior_id)
-                if superior_user:
+                if superior_user and superior_user.get('role') == UserRole.MANAGER.value:
+                    # Only include managers as team leads (directors manage departments, not teams)
                     team_names.append(superior_user.get('name', superior_id))
             
             options['teams'] = team_names
@@ -2086,346 +4517,83 @@ def get_report_options():
     except Exception as e:
         logger.error(f"Error fetching report options: {e}")
         return jsonify({"error": "Failed to fetch report options"}), 500
+    """Get specific options based on report type."""
 
 @app.route("/generate-report", methods=["POST"])
 def generate_report():
-    """
-    Enhanced report generation supporting different roles and hierarchies.
-    """
     try:
         logger.info("=== GENERATE REPORT START ===")
         data = request.get_json()
         logger.info(f"Request data: {data}")
-        
-        # Get requesting user details
+
         requesting_user_id = data.get('requesting_user_id') or data.get('user_id')
-        logger.info(f"Requesting user ID: {requesting_user_id}")
-        
         if not requesting_user_id:
-            logger.error("No requesting_user_id provided")
-            return jsonify({"error": "requesting_user_id is required"}), 400
-            
+            return jsonify({"error": "user_id is required"}), 400
+
         requesting_user = get_user_details(requesting_user_id)
-        logger.info(f"Requesting user details: {requesting_user}")
-        
         if not requesting_user:
-            logger.error(f"User not found for ID: {requesting_user_id}")
             return jsonify({"error": "User not found"}), 404
-        
+
         report_type = data.get('report_type', 'individual')
-        logger.info(f"Report type: {report_type}")
-        
-        # Validate access
-        if not validate_report_access(requesting_user, data):
+
+        validation_data = {
+            'report_type': report_type,
+            'user_id': requesting_user_id,
+            'department': requesting_user.get('department'),
+            'teams': data.get('teams', [])
+        }
+
+        if not validate_report_access(requesting_user, validation_data):
             logger.error("Access validation failed")
             return jsonify({"error": "Unauthorized to generate this report type"}), 403
-        
-        # Common parameters
+
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         status_filter = data.get('status_filter', ['All'])
+
+        try:
+            preview_data = generate_report_preview_data(
+                requesting_user, report_type, data, start_date, end_date, status_filter
+            )
+        except ValueError as exc:
+            logger.error(f"Validation error while preparing report preview: {exc}")
+            return jsonify({"error": str(exc)}), 400
+
+        report_labels = {
+            ReportType.INDIVIDUAL.value: 'Individual',
+            ReportType.TEAM.value: 'Team',
+            ReportType.DEPARTMENT.value: 'Department',
+            ReportType.ORGANIZATION.value: 'Organization'
+        }
+        report_label = report_labels.get(report_type, 'Report')
+        preview_data['report_title'] = data.get('report_title') or f"{report_label} Performance Report"
+
+        summary = preview_data.setdefault('summary', {})
+        if report_type == ReportType.INDIVIDUAL.value and not summary.get('target_user'):
+            summary['target_user'] = requesting_user.get('name', 'Unknown')
+
+        pdf_buffer = generate_preview_pdf(preview_data, requesting_user)
+
+        summary_targets = [
+            summary.get('target_user'),
+            ', '.join(summary.get('selected_teams', [])) if summary.get('selected_teams') else None,
+            summary.get('team_name'),
+            summary.get('department'),
+            summary.get('scope'),
+            summary.get('scope_type')
+        ]
+        filename_seed = next((value for value in summary_targets if value), report_label)
+        safe_slug = sanitize_filename_component(filename_seed)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
-        user_role = requesting_user.get('role')
-        logger.info(f"Processing {report_type} report for {user_role}")
-        
-        if report_type == ReportType.INDIVIDUAL.value:
-            # Individual report
-            target_user_id = data.get('user_id', requesting_user_id)
-            
-            # Get the target user's name
-            if target_user_id == requesting_user_id:
-                user_name = requesting_user.get('name', 'Unknown User')
-            else:
-                target_user = get_user_details(target_user_id)
-                user_name = target_user.get('name', 'Unknown User') if target_user else 'Unknown User'
-            
-            logger.info(f"Generating individual report for user_id: {target_user_id}, name: {user_name}")
-            
-            tasks = fetch_tasks_for_user(target_user_id, start_date, end_date, status_filter)
-            pdf_buffer = generate_pdf_report(target_user_id, user_name, tasks, start_date, end_date, status_filter)
-            filename = f"individual_report_{user_name.replace(' ', '_')}_{timestamp}.pdf"
-            
-        elif report_type == ReportType.TEAM.value:
-            tasks_by_scope: Dict[str, List[Dict[str, Any]]] = {}
+        filename = f"{report_type}_report_{safe_slug}_{timestamp}.pdf"
 
-            if user_role == UserRole.MANAGER.value:
-                team_members = get_team_members(requesting_user.get('department'), requesting_user_id) or []
-                member_ids = {requesting_user_id}
-                member_ids.update({member['user_id'] for member in team_members if member.get('user_id')})
-
-                team_label = f"{requesting_user.get('name', 'Unknown')}'s Team"
-                team_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
-                tasks_by_scope[team_label] = team_tasks
-
-            elif user_role in (UserRole.DIRECTOR.value, UserRole.HR.value):
-                selected_teams = data.get('teams', [])
-                if isinstance(selected_teams, str):
-                    selected_teams = [selected_teams]
-
-                if not selected_teams:
-                    message = "Team selection is required for Directors" if user_role == UserRole.DIRECTOR.value else "At least one team must be selected"
-                    return jsonify({"error": message}), 400
-
-                try:
-                    all_users_response = supabase.table('user').select('*').execute()
-                    all_users = all_users_response.data or []
-                except Exception as exc:
-                    logger.error(f"Error fetching users for team report: {exc}")
-                    all_users = []
-
-                for team_name in selected_teams:
-                    team_members = []
-                    team_lead_id = None
-
-                    for user in all_users:
-                        superior_id = user.get('superior')
-                        if not superior_id:
-                            continue
-
-                        superior_user = get_user_details(superior_id)
-                        if not superior_user or superior_user.get('name') != team_name:
-                            continue
-
-                        if user_role == UserRole.DIRECTOR.value and user.get('department') != requesting_user.get('department'):
-                            continue
-
-                        team_members.append(user)
-                        team_lead_id = superior_id
-
-                    if team_lead_id:
-                        lead_user = get_user_details(team_lead_id)
-                        if lead_user and (user_role != UserRole.DIRECTOR.value or lead_user.get('department') == requesting_user.get('department')):
-                            team_members.append(lead_user)
-
-                    unique_members = {member['user_id']: member for member in team_members if member.get('user_id')}
-                    user_ids = list(unique_members.keys())
-
-                    if user_ids:
-                        team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
-                        tasks_by_scope[team_name] = team_tasks
-
-                if not tasks_by_scope:
-                    return jsonify({"error": "No team members found for the selected teams"}), 404
-
-                if user_role == UserRole.HR.value:
-                    data.setdefault('scope_type', 'teams')
-                    data.setdefault('scope_values', selected_teams)
-
-            else:
-                return jsonify({"error": "Unauthorized for team reports"}), 403
-
-            data['report_title'] = "Team Performance Report"
-            if user_role == UserRole.DIRECTOR.value:
-                data.setdefault('departments', [requesting_user.get('department')])
-
-            scope_key = next(iter(tasks_by_scope)) if tasks_by_scope else 'team'
-            raw_scope = 'comparison' if len(tasks_by_scope) > 1 else scope_key
-            safe_scope = ''.join(ch for ch in raw_scope.replace(' ', '_') if ch.isalnum() or ch in ('_', '-')).lower()
-            filename = f"team_report_{safe_scope}_{timestamp}.pdf"
-            pdf_buffer = generate_director_report(tasks_by_scope, requesting_user, data)
-            
-        elif report_type == ReportType.DEPARTMENT.value:
-            # Department report
-            if user_role == UserRole.DIRECTOR.value:
-                # Director department/team comparison report
-                department = requesting_user.get('department')
-                teams = data.get('teams', [])
-                
-                tasks_by_team = {}
-                
-                if teams:
-                    # Specific teams requested
-                    all_users_response = supabase.table('user').select('*').execute()
-                    all_users = all_users_response.data if all_users_response.data else []
-
-                    for team in teams:
-                        team_members = []
-                        team_lead_user = None
-
-                        for user in all_users:
-                            superior_id = user.get('superior')
-                            if not superior_id:
-                                continue
-
-                            superior_user = get_user_details(superior_id)
-                            if superior_user and superior_user.get('name') == team and user.get('department') == department:
-                                team_members.append(user)
-                                team_lead_user = superior_user
-
-                        unique_members = {member['user_id']: member for member in team_members if member.get('user_id')}
-
-                        if team_lead_user and team_lead_user.get('user_id'):
-                            unique_members[team_lead_user['user_id']] = team_lead_user
-
-                        user_ids = list(unique_members.keys())
-
-                        if user_ids:
-                            team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
-                            tasks_by_team[team] = team_tasks
-                else:
-                    # All teams in department
-                    all_dept_members = get_team_members(department)
-                    # Group by superior (team lead)
-                    teams_dict = {}
-                    for member in all_dept_members:
-                        superior = member.get('superior', 'No Team')
-                        if superior not in teams_dict:
-                            teams_dict[superior] = []
-                        teams_dict[superior].append(member)
-                    
-                    for team_lead, members in teams_dict.items():
-                        unique_ids = {member['user_id'] for member in members if member.get('user_id')}
-                        team_lead_user = None
-
-                        if team_lead != 'No Team':
-                            team_lead_user = get_user_details(team_lead)
-                            if team_lead_user and team_lead_user.get('department') == department and team_lead_user.get('user_id'):
-                                unique_ids.add(team_lead_user['user_id'])
-
-                        user_ids = list(unique_ids)
-
-                        if not user_ids:
-                            continue
-
-                        team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
-
-                        # Get team lead name
-                        team_lead_name = 'Unassigned'
-                        if team_lead != 'No Team':
-                            team_lead_user = get_user_details(team_lead)
-                            team_lead_name = team_lead_user.get('name', team_lead) if team_lead_user else team_lead
-
-                        tasks_by_team[team_lead_name] = team_tasks
-                
-                if not tasks_by_team:
-                    return jsonify({"error": "No team data found for the selected department"}), 404
-
-                data.setdefault('departments', [department])
-                data['report_title'] = "Department Performance Report"
-
-                scope_key = next(iter(tasks_by_team)) if tasks_by_team else department
-                raw_scope = 'comparison' if len(tasks_by_team) > 1 else scope_key
-                safe_scope = ''.join(ch for ch in raw_scope.replace(' ', '_') if ch.isalnum() or ch in ('_', '-')).lower()
-
-                pdf_buffer = generate_director_report(tasks_by_team, requesting_user, data)
-                filename = f"department_report_{safe_scope}_{timestamp}.pdf"
-                
-            elif user_role == UserRole.HR.value:
-                # HR department report with multi-department comparison support
-                selected_departments = data.get('departments') or []
-                if isinstance(selected_departments, str):
-                    selected_departments = [selected_departments]
-
-                legacy_department = data.get('department')
-                if legacy_department and legacy_department not in selected_departments:
-                    selected_departments.append(legacy_department)
-
-                if not selected_departments:
-                    return jsonify({"error": "Please select at least one department"}), 400
-
-                data_by_scope: Dict[str, List[Dict[str, Any]]] = {}
-                for dept in selected_departments:
-                    dept_members = get_team_members(dept)
-                    member_ids = {member['user_id'] for member in dept_members if member.get('user_id')}
-                    if not member_ids:
-                        logger.info(f"No members found for department {dept}")
-                        continue
-
-                    dept_tasks = fetch_tasks_for_multiple_users(list(member_ids), start_date, end_date, status_filter)
-                    data_by_scope[dept] = dept_tasks
-
-                if not data_by_scope:
-                    return jsonify({"error": "No task data found for the selected departments"}), 404
-
-                data['scope_type'] = 'departments'
-                data['scope_values'] = list(data_by_scope.keys())
-                data['report_title'] = "Department Performance Report"
-
-                scope_key = 'comparison' if len(data_by_scope) > 1 else next(iter(data_by_scope))
-                safe_scope = ''.join(ch for ch in scope_key.replace(' ', '_') if ch.isalnum() or ch in ('_', '-')).lower()
-
-                pdf_buffer = generate_hr_report(data_by_scope, requesting_user, data)
-                filename = f"hr_department_report_{safe_scope}_{timestamp}.pdf"
-            else:
-                return jsonify({"error": "Unauthorized for department reports"}), 403
-                
-        elif report_type == ReportType.ORGANIZATION.value and user_role == UserRole.HR.value:
-            # HR organization-wide report
-            scope_type = data.get('scope_type', 'departments')
-            scope_values = data.get('scope_values', [])
-            
-            data_by_scope = {}
-            
-            logger.info(f"HR organization report - scope: {scope_type}, values: {scope_values}")
-            
-            if scope_type == 'departments':
-                departments = scope_values if scope_values else get_all_departments()
-                logger.info(f"Processing departments: {departments}")
-                
-                for dept in departments:
-                    dept_members = get_team_members(dept)
-                    user_ids = [member['user_id'] for member in dept_members]
-                    dept_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
-                    data_by_scope[dept] = dept_tasks
-                    
-            elif scope_type == 'teams':
-                if scope_values:
-                    teams = scope_values
-                else:
-                    # Get all teams (all unique superiors)
-                    all_users = supabase.table('user').select('*').execute().data
-                    superiors = list(set([user.get('superior') for user in all_users if user.get('superior')]))
-                    teams = []
-                    for superior_id in superiors:
-                        superior_user = get_user_details(superior_id)
-                        if superior_user:
-                            teams.append(superior_user.get('name', superior_id))
-                
-                logger.info(f"Processing teams: {teams}")
-                
-                for team in teams:
-                    # Find team members by superior name
-                    all_users = supabase.table('user').select('*').execute().data
-                    team_members = []
-                    
-                    for user in all_users:
-                        if user.get('superior'):
-                            superior_user = get_user_details(user.get('superior'))
-                            if superior_user and superior_user.get('name') == team:
-                                team_members.append(user)
-                    
-                    user_ids = [member['user_id'] for member in team_members]
-                    team_tasks = fetch_tasks_for_multiple_users(user_ids, start_date, end_date, status_filter)
-                    data_by_scope[team] = team_tasks
-                        
-            elif scope_type == 'individuals':
-                individuals = scope_values if scope_values else []
-                logger.info(f"Processing individuals: {individuals}")
-                
-                for user_id in individuals:
-                    user = get_user_details(user_id)
-                    if user:
-                        user_tasks = fetch_tasks_for_user(user_id, start_date, end_date, status_filter)
-                        data_by_scope[user.get('name', user_id)] = user_tasks
-            
-            logger.info(f"Generated data for {len(data_by_scope)} scopes")
-            pdf_buffer = generate_hr_report(data_by_scope, requesting_user, data)
-            filename = f"organization_report_{scope_type}_{timestamp}.pdf"
-            
-        else:
-            return jsonify({"error": f"Invalid report type '{report_type}' for user role '{user_role}'"}), 400
-        
-        logger.info(f"Report generated successfully: {filename}")
-        
-        # Return PDF
         return send_file(
             pdf_buffer,
             mimetype='application/pdf',
             as_attachment=True,
             download_name=filename
         )
-        
+
     except requests.RequestException as e:
         logger.error(f"Error communicating with task service: {e}")
         return jsonify({"error": "Failed to fetch tasks from task service", "details": str(e)}), 503
@@ -2433,6 +4601,86 @@ def generate_report():
         logger.error(f"Error generating report: {e}", exc_info=True)
         return jsonify({"error": "Failed to generate report", "details": str(e)}), 500
 
+
+def clean_data_for_json(data):
+    """Clean data structure to ensure JSON serializability by removing None keys and converting None values."""
+    if isinstance(data, dict):
+        cleaned = {}
+        for key, value in data.items():
+            # Skip None keys
+            if key is None:
+                continue
+            # Convert None keys to string
+            clean_key = str(key) if key is not None else 'null'
+            # Recursively clean values
+            cleaned[clean_key] = clean_data_for_json(value)
+        return cleaned
+    elif isinstance(data, list):
+        return [clean_data_for_json(item) for item in data]
+    elif data is None:
+        return 'null'
+    else:
+        return data
+
+
+@app.route("/preview-report", methods=["POST"])
+def preview_report():
+    """
+    Generate regular report data for preview (returns JSON).
+    
+    Request body - same format as generate-report endpoint
+    
+    Returns:
+        JSON with report data and chart information
+    """
+    try:
+        logger.info("=== PREVIEW REPORT START ===")
+        data = request.get_json()
+        logger.info(f"Preview request data: {data}")
+        
+        # Get requesting user details
+        requesting_user_id = data.get('requesting_user_id') or data.get('user_id')
+        
+        if not requesting_user_id:
+            return jsonify({"error": "user_id is required"}), 400
+            
+        requesting_user = get_user_details(requesting_user_id)
+        
+        if not requesting_user:
+            return jsonify({"error": "User not found"}), 404
+        
+        report_type = data.get('report_type', 'individual')
+        
+        # Validate access
+        validation_data = {
+            'report_type': report_type,
+            'user_id': requesting_user_id,
+            'department': requesting_user.get('department'),
+            'teams': data.get('teams', [])
+        }
+        
+        if not validate_report_access(requesting_user, validation_data):
+            return jsonify({"error": "Unauthorized to generate this report type"}), 403
+        
+        # Common parameters
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        status_filter = data.get('status_filter', ['All'])
+        user_role = requesting_user.get('role')
+        
+        # Generate preview data based on report type
+        preview_data = generate_report_preview_data(
+            requesting_user, report_type, data, start_date, end_date, status_filter
+        )
+        
+        # Clean data to ensure JSON serializability
+        cleaned_data = clean_data_for_json(preview_data)
+        
+        return jsonify(cleaned_data), 200
+        
+    except Exception as e:
+        logger.error(f"Error generating report preview: {e}", exc_info=True)
+        return jsonify({"error": "Failed to generate preview", "details": str(e)}), 500
 
 @app.route("/preview-project-report", methods=["POST"])
 def preview_project_report():
@@ -2523,34 +4771,53 @@ def generate_project_report_endpoint():
 
 @app.route("/debug-users", methods=["GET"])
 def debug_users():
-    """Debug user relationships."""
+    """Debug endpoint to check user data and report permissions."""
     try:
         user_id = request.args.get('user_id')
         if not user_id:
-            return jsonify({"error": "user_id required"}), 400
+            # Return sample users if no user_id provided
+            response = supabase.table('user').select('user_id, name, role, department').limit(5).execute()
+            return jsonify({
+                "message": "Provide user_id parameter to test specific user",
+                "sample_users": response.data or [],
+                "environment": {
+                    'SUPABASE_URL': bool(SUPABASE_URL),
+                    'TASK_SERVICE_URL': TASK_SERVICE_URL,
+                    'USER_SERVICE_URL': USER_SERVICE_URL
+                }
+            }), 200
             
         user = get_user_details(user_id)
         if not user:
             return jsonify({"error": "User not found"}), 404
             
-        result = {
-            "user": user,
-            "department_members": [],
-            "subordinates": []
+        # Test validation for individual report
+        test_data = {
+            'report_type': 'individual',
+            'user_id': user_id,
+            'department': user.get('department'),
+            'teams': []
         }
         
-        # Get all users in same department
-        dept_members = get_team_members(user.get('department'))
-        result["department_members"] = dept_members
+        has_access = validate_report_access(user, test_data)
         
-        # Get direct subordinates
-        subordinates = get_team_members(user.get('department'), user_id)
-        result["subordinates"] = subordinates
+        result = {
+            "user": user,
+            "can_generate_individual_report": has_access,
+            "test_validation_data": test_data,
+            "role_enum_values": [role.value for role in UserRole],
+            "user_role_match": user.get('role') in [role.value for role in UserRole]
+        }
+        
+        # Get department members if applicable
+        if user.get('department'):
+            dept_members = get_team_members(user.get('department'))
+            result["department_members_count"] = len(dept_members) if dept_members else 0
         
         return jsonify(result), 200
         
     except Exception as e:
-        logger.error(f"Error in debug: {e}")
+        logger.error(f"Debug endpoint error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/debug-tasks", methods=["GET"])

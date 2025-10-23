@@ -63,15 +63,50 @@
             <span class="text-white text-sm font-medium">{{ getInitials(currentUserName) }}</span>
           </div>
         </div>
-        <div class="flex-1">
+        <div class="flex-1 relative">
           <textarea
+            ref="commentTextarea"
             v-model="newComment"
-            placeholder="Add a comment..."
+            placeholder="Add a comment... (type @ to mention members)"
             rows="3"
             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
             :disabled="isAddingComment"
+            @input="handleTextareaInput"
+            @keydown="handleTextareaKeydown"
+            @keydown.ctrl.enter="addComment"
+            @keydown.meta.enter="addComment"
           ></textarea>
-          <div class="mt-2 flex justify-end">
+          
+          <!-- Mention Dropdown -->
+          <div
+            v-if="showMentionDropdown && filteredMembers.length > 0"
+            class="absolute bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto"
+            :style="mentionDropdownStyle"
+          >
+            <div
+              v-for="(member, index) in filteredMembers"
+              :key="member.user_id"
+              :class="[
+                'px-3 py-2 cursor-pointer hover:bg-gray-100 flex items-center space-x-2',
+                index === selectedMemberIndex ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''
+              ]"
+              @click="selectMember(member)"
+              @mouseenter="selectedMemberIndex = index"
+            >
+              <div class="w-6 h-6 bg-gray-500 rounded-full flex items-center justify-center">
+                <span class="text-white text-xs font-medium">{{ getInitials(member.name) }}</span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-gray-900 truncate">{{ member.name }}</div>
+                <div class="text-xs text-gray-500 truncate">{{ member.role }}</div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="mt-2 flex justify-between items-center">
+            <div class="text-xs text-gray-500">
+              Type @ to mention project members
+            </div>
             <button
               @click="addComment"
               :disabled="!newComment.trim() || isAddingComment"
@@ -110,6 +145,15 @@ export default {
     const isAddingComment = ref(false)
     const newComment = ref('')
     const userCache = ref({})
+    
+    // @mention functionality variables
+    const commentTextarea = ref(null)
+    const projectMembers = ref([])
+    const showMentionDropdown = ref(false)
+    const mentionQuery = ref('')
+    const mentionStartPos = ref(0)
+    const selectedMemberIndex = ref(0)
+    const mentionDropdownStyle = ref({})
 
     const currentUserId = computed(() => authStore.user?.user_id)
     const currentUserName = computed(() => {
@@ -269,6 +313,123 @@ export default {
       return friendlyName
     }
 
+    // @mention functionality computed properties and methods
+    const filteredMembers = computed(() => {
+      if (!mentionQuery.value) return projectMembers.value
+      
+      const query = mentionQuery.value.toLowerCase()
+      return projectMembers.value.filter(member => 
+        member.name.toLowerCase().includes(query) ||
+        (member.email && member.email.toLowerCase().includes(query))
+      )
+    })
+
+    const fetchProjectMembers = async () => {
+      if (!props.projectId) return
+      
+      try {
+        const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+        const response = await fetch(`${projectServiceUrl}/projects/${props.projectId}/members`)
+        
+        if (response.ok) {
+          const result = await response.json()
+          projectMembers.value = result.members || []
+        } else {
+          console.error('Failed to fetch project members:', response.statusText)
+        }
+      } catch (error) {
+        console.error('Failed to fetch project members:', error)
+      }
+    }
+
+    const handleTextareaInput = (event) => {
+      const textarea = event.target
+      const value = textarea.value
+      const cursorPos = textarea.selectionStart
+      
+      // Find the last @ symbol before the cursor
+      const textBeforeCursor = value.substring(0, cursorPos)
+      const atIndex = textBeforeCursor.lastIndexOf('@')
+      
+      if (atIndex !== -1) {
+        // Check if the @ is at the start or preceded by whitespace
+        const charBeforeAt = atIndex === 0 ? ' ' : textBeforeCursor[atIndex - 1]
+        if (charBeforeAt === ' ' || charBeforeAt === '\n' || atIndex === 0) {
+          const queryAfterAt = textBeforeCursor.substring(atIndex + 1)
+          
+          // Check if there's no whitespace after @
+          if (!queryAfterAt.includes(' ') && !queryAfterAt.includes('\n')) {
+            mentionQuery.value = queryAfterAt
+            mentionStartPos.value = atIndex
+            showMentionDropdown.value = true
+            selectedMemberIndex.value = 0
+            
+            // Calculate dropdown position
+            calculateDropdownPosition(textarea, atIndex)
+            return
+          }
+        }
+      }
+      
+      // Hide dropdown if no valid @ mention
+      showMentionDropdown.value = false
+    }
+
+    const calculateDropdownPosition = (textarea, atIndex) => {
+      // Simple positioning - place below the textarea
+      // In a real implementation, you might want more sophisticated positioning
+      const rect = textarea.getBoundingClientRect()
+      mentionDropdownStyle.value = {
+        top: `${rect.height + 4}px`,
+        left: '0px',
+        minWidth: '200px'
+      }
+    }
+
+    const handleTextareaKeydown = (event) => {
+      if (!showMentionDropdown.value) return
+      
+      const { key } = event
+      
+      if (key === 'ArrowDown') {
+        event.preventDefault()
+        selectedMemberIndex.value = Math.min(selectedMemberIndex.value + 1, filteredMembers.value.length - 1)
+      } else if (key === 'ArrowUp') {
+        event.preventDefault()
+        selectedMemberIndex.value = Math.max(selectedMemberIndex.value - 1, 0)
+      } else if (key === 'Enter' || key === 'Tab') {
+        if (filteredMembers.value[selectedMemberIndex.value]) {
+          event.preventDefault()
+          selectMember(filteredMembers.value[selectedMemberIndex.value])
+        }
+      } else if (key === 'Escape') {
+        showMentionDropdown.value = false
+      }
+    }
+
+    const selectMember = (member) => {
+      const textarea = commentTextarea.value
+      const cursorPos = textarea.selectionStart
+      const value = newComment.value
+      
+      // Replace the @query with @membername
+      const beforeMention = value.substring(0, mentionStartPos.value)
+      const afterCursor = value.substring(cursorPos)
+      const mention = `@${member.name}`
+      
+      newComment.value = beforeMention + mention + ' ' + afterCursor
+      
+      // Hide dropdown
+      showMentionDropdown.value = false
+      
+      // Set cursor position after the mention
+      const newCursorPos = mentionStartPos.value + mention.length + 1
+      setTimeout(() => {
+        textarea.focus()
+        textarea.setSelectionRange(newCursorPos, newCursorPos)
+      }, 0)
+    }
+
     const fetchComments = async () => {
       if (!props.projectId) return
 
@@ -356,16 +517,18 @@ export default {
       }
     }
 
-    // Watch for project changes to refetch comments
+    // Watch for project changes to refetch comments and members
     watch(() => props.projectId, (newProjectId) => {
       if (newProjectId) {
         fetchComments()
+        fetchProjectMembers()
       }
     })
 
     onMounted(() => {
       if (props.projectId) {
         fetchComments()
+        fetchProjectMembers()
       }
     })
 
@@ -379,7 +542,16 @@ export default {
       formatCommentDate,
       getUserName,
       addComment,
-      fetchComments
+      fetchComments,
+      // @mention functionality
+      commentTextarea,
+      showMentionDropdown,
+      filteredMembers,
+      selectedMemberIndex,
+      mentionDropdownStyle,
+      handleTextareaInput,
+      handleTextareaKeydown,
+      selectMember
     }
   }
 }
