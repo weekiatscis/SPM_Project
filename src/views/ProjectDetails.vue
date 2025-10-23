@@ -378,6 +378,7 @@
       @open-task="handleOpenTask"
       @edit="handleTaskEdit"
       @delete="handleTaskDelete"
+      @task-updated="handleTaskUpdated"
     />
 
     <!-- Task Edit Modal -->

@@ -1319,19 +1319,28 @@ export default {
   font-weight: bold;
 }
 
-.assign-task-btn {
+:deep(.assign-task-btn) {
   height: 36px;
   padding: 0 20px;
   font-size: 14px;
   font-weight: 500;
   border-radius: 8px;
   transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2);
+  background: linear-gradient(135deg, #1890ff, #096dd9) !important;
+  border-color: #1890ff !important;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.2) !important;
 }
 
-.assign-task-btn:hover {
+:deep(.assign-task-btn:hover) {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+  background: linear-gradient(135deg, #40a9ff, #1890ff) !important;
+  border-color: #40a9ff !important;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3) !important;
+}
+
+:deep(.assign-task-btn:active) {
+  background: linear-gradient(135deg, #096dd9, #0050b3) !important;
+  border-color: #096dd9 !important;
 }
 
 .collaborator-badge {
