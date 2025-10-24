@@ -348,11 +348,23 @@ def fetch_project_report_data(project_id: str, requesting_user_id: Optional[str]
         tasks = tasks_response.json().get('tasks', [])
 
         # Enrich tasks with user names and departments
-        # Collect all unique user IDs
+        # Collect all unique user IDs (owners + collaborators)
         user_ids = set()
         for task in tasks:
             if task.get('owner_id'):
                 user_ids.add(task.get('owner_id'))
+
+            # Add collaborators to user_ids
+            collaborators = task.get('collaborators', [])
+            if isinstance(collaborators, str):
+                try:
+                    collaborators = json.loads(collaborators)
+                except:
+                    collaborators = []
+            if isinstance(collaborators, list):
+                for collab_id in collaborators:
+                    if collab_id:
+                        user_ids.add(collab_id)
 
         # Fetch user info in batch
         user_info_cache = {}
@@ -364,12 +376,32 @@ def fetch_project_report_data(project_id: str, requesting_user_id: Optional[str]
             owner_id = task.get('owner_id')
             if owner_id and owner_id in user_info_cache:
                 task['owner_name'] = user_info_cache[owner_id]['name']
-                task['assignee_name'] = user_info_cache[owner_id]['name']
                 task['owner_department'] = user_info_cache[owner_id]['department']
             else:
                 task['owner_name'] = 'Unassigned'
-                task['assignee_name'] = 'Unassigned'
                 task['owner_department'] = 'N/A'
+
+            # Build assignee_name: owner + collaborators (comma-separated)
+            assignee_names = []
+
+            # Add owner name first
+            if owner_id and owner_id in user_info_cache:
+                assignee_names.append(user_info_cache[owner_id]['name'])
+
+            # Add collaborator names (excluding owner if duplicated)
+            collaborators = task.get('collaborators', [])
+            if isinstance(collaborators, str):
+                try:
+                    collaborators = json.loads(collaborators)
+                except:
+                    collaborators = []
+
+            if isinstance(collaborators, list):
+                for collab_id in collaborators:
+                    if collab_id and collab_id != owner_id and collab_id in user_info_cache:
+                        assignee_names.append(user_info_cache[collab_id]['name'])
+
+            task['assignee_name'] = ', '.join(assignee_names) if assignee_names else 'Unassigned'
 
         # Fetch project owner info
         project_owner_id = project_data.get('created_by')
@@ -388,19 +420,43 @@ def fetch_project_report_data(project_id: str, requesting_user_id: Optional[str]
         completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
 
         # Count tasks by team member with department info
+        # Each task is counted for EVERY person working on it (owner + collaborators)
         tasks_by_member = {}
         completed_by_member = {}
         member_departments = {}
 
         for task in tasks:
-            assignee = task.get('assignee_name', task.get('owner_name', 'Unassigned'))
-            department = task.get('owner_department', 'N/A')
+            owner_id = task.get('owner_id')
+            is_completed = task.get('status', '').lower() == 'completed'
 
-            tasks_by_member[assignee] = tasks_by_member.get(assignee, 0) + 1
-            member_departments[assignee] = department
+            # Get all people working on this task (owner + collaborators)
+            assignee_ids = []
+            if owner_id:
+                assignee_ids.append(owner_id)
 
-            if task.get('status', '').lower() == 'completed':
-                completed_by_member[assignee] = completed_by_member.get(assignee, 0) + 1
+            collaborators = task.get('collaborators', [])
+            if isinstance(collaborators, str):
+                try:
+                    collaborators = json.loads(collaborators)
+                except:
+                    collaborators = []
+
+            if isinstance(collaborators, list):
+                for collab_id in collaborators:
+                    if collab_id and collab_id != owner_id:
+                        assignee_ids.append(collab_id)
+
+            # Count the task for each assignee
+            for assignee_id in assignee_ids:
+                if assignee_id in user_info_cache:
+                    member_name = user_info_cache[assignee_id]['name']
+                    member_dept = user_info_cache[assignee_id]['department']
+
+                    tasks_by_member[member_name] = tasks_by_member.get(member_name, 0) + 1
+                    member_departments[member_name] = member_dept
+
+                    if is_completed:
+                        completed_by_member[member_name] = completed_by_member.get(member_name, 0) + 1
 
         # Group tasks by status with overdue calculation
         today = datetime.now(timezone.utc).date()
@@ -1723,12 +1779,13 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
                     ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
                 ]))
 
-        elements.append(team_table)
+        # Add the team section (heading + table) to keep them together
+        team_section.append(team_table)
+        elements.append(KeepTogether(team_section))
         elements.append(Spacer(1, 20))
 
-    # My Tasks and Other Tasks sections - new page
+    # My Tasks and Other Tasks sections - add on same page, no page break
     if report_data.get('requesting_user_id') and (report_data.get('my_tasks') or report_data.get('other_tasks')):
-        elements.append(PageBreak())
 
         # Helper function to create task table
         def create_task_table(task_list, title):
@@ -1758,13 +1815,13 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
                 task_data.append([
                     task.get('title', 'Untitled')[:40],  # Truncate long titles
-                    (task.get('assignee_name') or task.get('owner_name') or 'Unassigned')[:20],
+                    (task.get('assignee_name') or task.get('owner_name') or 'Unassigned')[:50],  # Increased to show multiple assignees
                     task.get('status', 'Unknown'),
                     priority,
                     due_date
                 ])
 
-            task_table = Table(task_data, colWidths=[2.2*inch, 1.3*inch, 1*inch, 0.8*inch, 1.1*inch])
+            task_table = Table(task_data, colWidths=[2*inch, 1.8*inch, 0.9*inch, 0.7*inch, 1*inch])
             task_table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -1814,10 +1871,11 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
     # Task breakdown - new page
     elements.append(PageBreak())
+    task_breakdown_section = []
     tasks_heading = Paragraph("Task Breakdown by Status", heading_style)
     task_breakdown_section.append(tasks_heading)
     task_breakdown_section.append(Spacer(1, 8))
-    
+
     elements.append(KeepTogether(task_breakdown_section))
 
     # Iterate through task groups - each status group separately
@@ -1855,12 +1913,12 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
             task_data.append([
                 task.get('title', 'Untitled')[:40],
-                assignee,
+                assignee[:60] if len(assignee) > 60 else assignee,  # Truncate very long assignee lists
                 priority,
                 due_date
             ])
 
-        task_table = Table(task_data, colWidths=[3*inch, 1.5*inch, 1*inch, 1.1*inch])
+        task_table = Table(task_data, colWidths=[2.7*inch, 1.8*inch, 0.9*inch, 1.1*inch])
         task_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#e5e7eb')),
             ('TEXTCOLOR', (0, 0), (-1, 0), HexColor('#1e293b')),
