@@ -147,7 +147,7 @@
                 <option value="Staff">Staff</option>
                 <option value="Manager">Manager</option>
                 <option value="Director">Director</option>
-                <option value="Hr">HR</option>
+                <option value="HR">HR</option>
               </select>
             </div>
             <span v-if="errorFields.role" class="field-error">{{ errorFields.role }}</span>
@@ -433,15 +433,15 @@ export default {
     }
 
     // Handle department change
-    const onDepartmentChange = (department) => {
+    const onDepartmentChange = () => {
       // Reset superior when department changes
       form.superior = ''
       // Fetch new superiors for the selected department
-      fetchDepartmentSuperiors(department)
+      fetchDepartmentSuperiors(form.department)
     }
 
     // Handle role change
-    const onRoleChange = (role) => {
+    const onRoleChange = () => {
       // Reset superior when role changes as the available superiors might change
       form.superior = ''
       // Re-fetch superiors if department is already selected
