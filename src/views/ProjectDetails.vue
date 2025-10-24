@@ -798,8 +798,15 @@ export default {
         key: 'status',
         width: '10%',
         align: 'center',
-        sorter: (a, b) => a.status.localeCompare(b.status),
-        sortDirections: ['ascend', 'descend']
+        sorter: (a, b) => {
+          // Custom sorter: Completed should be last
+          const statusOrder = { 'Ongoing': 1, 'Under Review': 2, 'Completed': 3 }
+          const orderA = statusOrder[a.status] || 1
+          const orderB = statusOrder[b.status] || 1
+          return orderA - orderB
+        },
+        sortDirections: ['ascend', 'descend'],
+        defaultSortOrder: 'ascend' // Completed will be last with this order
       },
       {
         title: 'Priority',
