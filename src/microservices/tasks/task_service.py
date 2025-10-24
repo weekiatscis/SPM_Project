@@ -541,10 +541,10 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                 "user_id": mentioned_user_id,
                 "title": f"You were mentioned in '{task_data['title']}'",
                 "message": f"{commenter_name} mentioned you: {truncated_comment}",
-                "type": "mention",
+                "type": "task_mention",
                 "task_id": task_data["task_id"],
                 "due_date": task_data.get("due_date"),
-                "priority": task_data.get("priority", "Medium"),
+                "priority": "High",  # Mentions are high priority
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "is_read": False
             }
@@ -560,7 +560,7 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                     # Check for duplicate within last 2 minutes
                     existing_check = supabase.table("notifications").select("id").eq(
                         "user_id", mentioned_user_id
-                    ).eq("task_id", task_data["task_id"]).eq("type", "mention").gte(
+                    ).eq("task_id", task_data["task_id"]).eq("type", "task_mention").gte(
                         "created_at", (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
                     ).execute()
                     
