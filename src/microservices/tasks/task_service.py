@@ -484,10 +484,25 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
     print(f"👤 Commenter Name: {commenter_name}")
 
     try:
-        # Extract @mentions from comment text using regex
+        # Extract @mentions from comment text using a simple approach
         import re
-        mention_pattern = r'@([^\s]+)'
+        # Find all @mentions by looking for @ followed by word characters
+        # This handles @zenia, @zenia2, @john, etc.
+        mention_pattern = r'@(\w+)'
         mentioned_names = re.findall(mention_pattern, comment_text)
+        
+        # For usernames with spaces like "zenia 2", we need special handling
+        # Look for patterns like @zenia 2, @john doe, etc.
+        space_mention_pattern = r'@([a-zA-Z]+)\s+(\d+|[a-zA-Z]+)'
+        space_mentions = re.findall(space_mention_pattern, comment_text)
+        
+        # Add space mentions to the list
+        for space_mention in space_mentions:
+            if len(space_mention) == 2:
+                # Handle @zenia 2 -> "zenia 2"
+                combined_name = f"{space_mention[0]} {space_mention[1]}"
+                if combined_name not in mentioned_names:
+                    mentioned_names.append(combined_name)
         
         print(f"🔍 DEBUG: Comment text: '{comment_text}'")
         print(f"🔍 DEBUG: Regex pattern: {mention_pattern}")
