@@ -215,7 +215,31 @@
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'title'">
                 <div class="task-title-cell">
-                  {{ record.title }}
+                  <a-tooltip v-if="isParentTask(record)" title="This is a parent task">
+                    <span class="badge-icon parent-task">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    </span>
+                  </a-tooltip>
+
+                  <a-tooltip v-if="record.isSubtask" title="This is a subtask">
+                    <span class="badge-icon subtask">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    </span>
+                  </a-tooltip>
+
+                  <a-tooltip v-if="isUserCollaborator(record)" title="You are a collaborator">
+                    <span class="badge-icon collaborator">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </span>
+                  </a-tooltip>
+
+                  <span class="task-title-text">{{ record.title }}</span>
                 </div>
               </template>
               <template v-else-if="column.key === 'description'">
@@ -251,7 +275,7 @@
                 {{ record.department || 'N/A' }}
               </template>
               <template v-else-if="column.key === 'assignee'">
-                {{ record.assignee_name || record.owner_name || 'Unassigned' }}
+                {{ record.assignee_name || 'Unassigned' }}
               </template>
             </template>
           </a-table>
@@ -300,7 +324,31 @@
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'title'">
                 <div class="task-title-cell">
-                  {{ record.title }}
+                  <a-tooltip v-if="isParentTask(record)" title="This is a parent task">
+                    <span class="badge-icon parent-task">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    </span>
+                  </a-tooltip>
+
+                  <a-tooltip v-if="record.isSubtask" title="This is a subtask">
+                    <span class="badge-icon subtask">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                      </svg>
+                    </span>
+                  </a-tooltip>
+
+                  <a-tooltip v-if="isUserCollaborator(record)" title="You are a collaborator">
+                    <span class="badge-icon collaborator">
+                      <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                    </span>
+                  </a-tooltip>
+
+                  <span class="task-title-text">{{ record.title }}</span>
                 </div>
               </template>
               <template v-else-if="column.key === 'description'">
@@ -336,7 +384,7 @@
                 {{ record.department || 'N/A' }}
               </template>
               <template v-else-if="column.key === 'assignee'">
-                {{ record.assignee_name || record.owner_name || 'Unassigned' }}
+                {{ record.assignee_name || 'Unassigned' }}
               </template>
             </template>
           </a-table>
@@ -710,6 +758,22 @@ export default {
       return calculateTimeTaken(task.created_at)
     }
 
+    const isUserCollaborator = (task) => {
+      const userId = authStore.user?.user_id
+      if (!userId || !task.collaborators) return false
+
+      // Check if user is a collaborator but NOT the owner
+      if (task.owner_id === userId) return false
+
+      return Array.isArray(task.collaborators) && task.collaborators.includes(userId)
+    }
+
+    const isParentTask = (task) => {
+      // A task is a parent if it has subtasks
+      // Check if any task in the list has this task as its parent
+      return projectTasks.value.some(t => t.parent_task_id === task.id)
+    }
+
     // Table columns definition
     const taskColumns = [
       {
@@ -809,10 +873,14 @@ export default {
       if (!userId) return []
 
       return projectTasks.value.filter(task => {
+        // User is the owner
         if (task.owner_id === userId) return true
+
+        // User is a collaborator (works for both parent tasks and subtasks)
         if (task.collaborators && Array.isArray(task.collaborators)) {
-          return task.collaborators.includes(userId)
+          if (task.collaborators.includes(userId)) return true
         }
+
         return false
       })
     }
@@ -871,42 +939,93 @@ export default {
         // Get all unique owner_ids
         const ownerIds = [...new Set(filteredTasks.map(t => t.owner_id).filter(Boolean))]
 
-        // Fetch user names and departments for all owner_ids
+        // Get all unique collaborator IDs from all tasks
+        const collaboratorIds = new Set()
+        filteredTasks.forEach(t => {
+          let collaborators = t.collaborators || []
+          if (typeof collaborators === 'string') {
+            try {
+              collaborators = JSON.parse(collaborators)
+            } catch (e) {
+              collaborators = []
+            }
+          }
+          if (Array.isArray(collaborators)) {
+            collaborators.forEach(collabId => collaboratorIds.add(collabId))
+          }
+        })
+
+        // Combine all unique user IDs (owners + collaborators)
+        const allUserIds = [...new Set([...ownerIds, ...collaboratorIds])]
+
+        // Fetch user names and departments for all user IDs
         const userNameMap = {}
         const userDepartmentMap = {}
-        for (const ownerId of ownerIds) {
+        for (const userId of allUserIds) {
           try {
-            const userResponse = await fetch(`${baseUrl}/users/${ownerId}`)
+            const userResponse = await fetch(`${baseUrl}/users/${userId}`)
             if (userResponse.ok) {
               const userData = await userResponse.json()
-              userNameMap[ownerId] = userData.user?.name || 'Unknown'
-              userDepartmentMap[ownerId] = userData.user?.department || 'N/A'
+              userNameMap[userId] = userData.user?.name || 'Unknown'
+              userDepartmentMap[userId] = userData.user?.department || 'N/A'
             }
           } catch (err) {
-            console.error(`Failed to fetch user name for ${ownerId}:`, err)
-            userNameMap[ownerId] = 'Unknown'
-            userDepartmentMap[ownerId] = 'N/A'
+            console.error(`Failed to fetch user name for ${userId}:`, err)
+            userNameMap[userId] = 'Unknown'
+            userDepartmentMap[userId] = 'N/A'
           }
         }
 
-        projectTasks.value = filteredTasks.map(t => ({
-          id: t.id,
-          title: t.title,
-          dueDate: t.dueDate || null,
-          completedDate: t.completedDate || null,
-          created_at: t.created_at || null,
-          status: t.status,
-          description: t.description || 'No description available',
-          priority: t.priority || 'Medium',
-          owner_id: t.owner_id,
-          owner_name: userNameMap[t.owner_id] || 'Unassigned',
-          assignee_name: userNameMap[t.owner_id] || 'Unassigned',
-          department: userDepartmentMap[t.owner_id] || 'N/A',
-          collaborators: t.collaborators || [],
-          project: t.project || project.value.project_name,
-          parent_task_id: t.parent_task_id || null,
-          isSubtask: t.isSubtask || !!t.parent_task_id
-        }))
+        projectTasks.value = filteredTasks.map(t => {
+          // Parse collaborators if it's a JSON string
+          let collaborators = t.collaborators || []
+          if (typeof collaborators === 'string') {
+            try {
+              collaborators = JSON.parse(collaborators)
+            } catch (e) {
+              console.error('Failed to parse collaborators:', e)
+              collaborators = []
+            }
+          }
+
+          // Build assignee_name: owner + collaborators (comma-separated)
+          const assigneeNames = []
+
+          // Add owner name first
+          if (t.owner_id && userNameMap[t.owner_id]) {
+            assigneeNames.push(userNameMap[t.owner_id])
+          }
+
+          // Add collaborator names (excluding owner if they're also in collaborators)
+          if (Array.isArray(collaborators)) {
+            collaborators.forEach(collabId => {
+              if (collabId !== t.owner_id && userNameMap[collabId]) {
+                assigneeNames.push(userNameMap[collabId])
+              }
+            })
+          }
+
+          const assignee_name = assigneeNames.length > 0 ? assigneeNames.join(', ') : 'Unassigned'
+
+          return {
+            id: t.id,
+            title: t.title,
+            dueDate: t.dueDate || null,
+            completedDate: t.completedDate || null,
+            created_at: t.created_at || null,
+            status: t.status,
+            description: t.description || 'No description available',
+            priority: t.priority || 'Medium',
+            owner_id: t.owner_id,
+            owner_name: userNameMap[t.owner_id] || 'Unassigned',
+            assignee_name: assignee_name,
+            department: userDepartmentMap[t.owner_id] || 'N/A',
+            collaborators: Array.isArray(collaborators) ? collaborators : [],
+            project: t.project || project.value.project_name,
+            parent_task_id: t.parent_task_id || null,
+            isSubtask: t.isSubtask || !!t.parent_task_id
+          }
+        })
       } catch (err) {
         console.error('Failed to load project tasks:', err)
         projectTasks.value = []
@@ -1522,6 +1641,8 @@ export default {
       getFilteredMyTasks,
       getFilteredOtherTasks,
       getTaskTimeTaken,
+      isUserCollaborator,
+      isParentTask,
       taskColumns,
       handleEdit,
       handleDelete,
@@ -2056,13 +2177,68 @@ export default {
 }
 
 .task-title-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   color: #111827;
   cursor: pointer;
 }
 
-.task-title-cell:hover {
+.task-title-cell:hover .task-title-text {
   color: #667eea;
+}
+
+.task-title-text {
+  transition: color 0.2s ease;
+}
+
+/* Badge Icons */
+.badge-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.badge-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.badge-icon.subtask {
+  background: rgba(88, 86, 214, 0.1);
+  color: #5856d6;
+}
+
+.badge-icon.subtask:hover {
+  background: rgba(88, 86, 214, 0.2);
+  transform: scale(1.1);
+}
+
+.badge-icon.collaborator {
+  background: rgba(175, 82, 222, 0.1);
+  color: #af52de;
+}
+
+.badge-icon.collaborator:hover {
+  background: rgba(175, 82, 222, 0.2);
+  transform: scale(1.1);
+}
+
+.badge-icon.parent-task {
+  background: rgba(249, 115, 22, 0.1);
+  color: #f97316;
+}
+
+.badge-icon.parent-task:hover {
+  background: rgba(249, 115, 22, 0.2);
+  transform: scale(1.1);
 }
 
 .task-description-cell {
