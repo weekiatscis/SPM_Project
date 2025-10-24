@@ -489,6 +489,10 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
         mention_pattern = r'@([^\s]+)'
         mentioned_names = re.findall(mention_pattern, comment_text)
         
+        print(f"🔍 DEBUG: Comment text: '{comment_text}'")
+        print(f"🔍 DEBUG: Regex pattern: {mention_pattern}")
+        print(f"🔍 DEBUG: Found mentions: {mentioned_names}")
+        
         if not mentioned_names:
             print("ℹ️  No mentions found in comment")
             return
@@ -503,10 +507,14 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
         
         # Create a mapping of names to user IDs (case-insensitive)
         name_to_user_id = {}
+        print(f"🔍 DEBUG: All users in database:")
         for user in all_users_response.data:
             user_name = user.get('name', '').strip()
             if user_name:
                 name_to_user_id[user_name.lower()] = user['user_id']
+                print(f"   - User: '{user_name}' (ID: {user['user_id']})")
+        
+        print(f"🔍 DEBUG: Name mapping: {name_to_user_id}")
         
         # Find user IDs for mentioned names
         mentioned_user_ids = []
@@ -518,6 +526,7 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                 print(f"✅ Matched mention '@{mentioned_name}' to user ID: {user_id}")
             else:
                 print(f"⚠️  Could not find user for mention '@{mentioned_name}'")
+                print(f"🔍 DEBUG: Available names: {list(name_to_user_id.keys())}")
         
         if not mentioned_user_ids:
             print("ℹ️  No valid user IDs found for mentions")

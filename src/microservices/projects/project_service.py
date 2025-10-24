@@ -480,6 +480,7 @@ def create_project():
                         "message": f"You have created a new project: '{created_project['project_name']}'",
                         "type": "project_created",
                         "task_id": None,
+                        "project_id": created_project.get("project_id"),  # Add project_id for navigation
                         "due_date": created_project.get("due_date"),
                         "priority": "Medium",
                         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -493,6 +494,7 @@ def create_project():
                         "message": f"You have been assigned to a new project: '{created_project['project_name']}'",
                         "type": "project_assigned",
                         "task_id": None,
+                        "project_id": created_project.get("project_id"),  # Add project_id for navigation
                         "due_date": created_project.get("due_date"),
                         "priority": "Medium",
                         "created_at": datetime.now(timezone.utc).isoformat(),
