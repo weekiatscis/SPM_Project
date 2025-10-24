@@ -226,6 +226,77 @@
             </div>
           </div>
         </a-form-item>
+
+        <!-- Notification Preferences Section -->
+        <div v-if="form.due_date" class="notification-preferences-section">
+          <a-divider orientation="left">
+            <span class="divider-text">Notification Preferences</span>
+          </a-divider>
+
+          <!-- Notification Channels -->
+          <a-form-item label="Send notifications via:">
+            <div class="notification-channels">
+              <a-checkbox v-model:checked="form.inAppEnabled" class="channel-checkbox">
+                In-App Notifications
+              </a-checkbox>
+              <a-checkbox v-model:checked="form.emailEnabled" class="channel-checkbox">
+                Email Notifications
+              </a-checkbox>
+            </div>
+            <div v-if="!form.inAppEnabled && !form.emailEnabled" class="warning-text">
+              ⚠️ You won't receive any notifications for this project
+            </div>
+          </a-form-item>
+
+          <!-- Reminder Schedule -->
+          <a-form-item label="Reminder Schedule">
+            <div class="reminder-schedule">
+              <div class="schedule-header">
+                <span class="schedule-label">When to receive reminders:</span>
+                <a-button 
+                  type="link" 
+                  size="small" 
+                  @click="toggleReminderCustomization"
+                  class="customize-btn"
+                >
+                  {{ showReminderCustomization ? 'Use Default' : 'Customize' }}
+                </a-button>
+              </div>
+
+              <div v-if="!showReminderCustomization" class="default-schedule">
+                You'll be reminded 7, 3, and 1 day(s) before the due date
+              </div>
+
+              <div v-else class="custom-schedule">
+                <div class="schedule-description">
+                  Select when you want to receive reminders (up to 5, max 10 days before):
+                </div>
+                <div class="reminder-days-grid">
+                  <a-button
+                    v-for="day in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]"
+                    :key="day"
+                    type="button"
+                    @click="toggleReminderDay(day)"
+                    :disabled="!canAddMoreReminders && !form.reminderDays.includes(day)"
+                    class="reminder-day-btn"
+                    :class="{
+                      'selected': form.reminderDays.includes(day),
+                      'disabled': !canAddMoreReminders && !form.reminderDays.includes(day)
+                    }"
+                  >
+                    {{ day }}d
+                  </a-button>
+                </div>
+                <div class="selected-days">
+                  Selected: {{ form.reminderDays.length > 0 ? form.reminderDays.sort((a, b) => b - a).join(', ') + ' day(s) before' : 'None' }}
+                </div>
+                <div v-if="form.reminderDays.length === 0" class="no-reminders-warning">
+                  ⚠️ No reminders selected. You won't receive any notifications.
+                </div>
+              </div>
+            </div>
+          </a-form-item>
+        </div>
       </a-form>
     </div>
 
@@ -309,7 +380,10 @@ export default {
       project_description: '',
       due_date: '',
       created_by: '',
-      collaborators: []
+      collaborators: [],
+      reminderDays: [7, 3, 1],  // Default reminder days
+      emailEnabled: true,  // Default: email notifications enabled
+      inAppEnabled: true  // Default: in-app notifications enabled
     })
 
     const errors = ref({
@@ -329,6 +403,9 @@ export default {
     const userSearchQuery = ref('')
     const isLoadingUsers = ref(false)
     const departments = ref([])
+    
+    // Notification preferences
+    const showReminderCustomization = ref(false)
 
     // Owner selection state
     const selectedOwnerId = ref('')
@@ -474,6 +551,28 @@ export default {
       }
     }
 
+    // Notification preferences methods
+    const toggleReminderCustomization = () => {
+      showReminderCustomization.value = !showReminderCustomization.value
+      if (!showReminderCustomization.value) {
+        // Reset to default
+        form.value.reminderDays = [7, 3, 1]
+      }
+    }
+
+    const toggleReminderDay = (day) => {
+      const index = form.value.reminderDays.indexOf(day)
+      if (index > -1) {
+        form.value.reminderDays.splice(index, 1)
+      } else {
+        form.value.reminderDays.push(day)
+      }
+    }
+
+    const canAddMoreReminders = computed(() => {
+      return form.value.reminderDays.length < 5
+    })
+
     // Check for duplicate project names
     const checkDuplicateProjectName = async (projectName) => {
       if (!projectName || !projectName.trim()) {
@@ -608,7 +707,10 @@ export default {
           project_name: newProject.project_name || '',
           project_description: newProject.project_description || '',
           due_date: newProject.due_date || '',
-          created_by: newProject.created_by || ''
+          created_by: newProject.created_by || '',
+          reminderDays: [7, 3, 1],
+          emailEnabled: true,
+          inAppEnabled: true
         }
       } else {
         // Reset form for new project
@@ -616,7 +718,10 @@ export default {
           project_name: '',
           project_description: '',
           due_date: '',
-          created_by: ''
+          created_by: '',
+          reminderDays: [7, 3, 1],
+          emailEnabled: true,
+          inAppEnabled: true
         }
         // Reset errors
         errors.value = {
@@ -685,7 +790,10 @@ export default {
             due_date: form.value.due_date,
             created_by: newOwnerId, // Use selected owner
             user_id: currentUserId.value, // Add user_id for authorization
-            collaborators: updatedCollaborators // Include updated collaborators
+            collaborators: updatedCollaborators, // Include updated collaborators
+            reminder_days: form.value.reminderDays,
+            email_enabled: form.value.emailEnabled,
+            in_app_enabled: form.value.inAppEnabled
           }
 
           const response = await fetch(`${updateProjectUrl}/projects/${props.project.project_id}`, {
@@ -735,7 +843,10 @@ export default {
           due_date: form.value.due_date,
           created_by: currentUserId.value, // Use current user's ID
           owner_id: currentUserId.value, // Also set owner_id to current user
-          collaborators: selectedCollaborators.value.map(u => u.user_id) // Add collaborator user IDs
+          collaborators: selectedCollaborators.value.map(u => u.user_id), // Add collaborator user IDs
+          reminder_days: form.value.reminderDays,
+          email_enabled: form.value.emailEnabled,
+          in_app_enabled: form.value.inAppEnabled
         }
 
         console.log('DEBUG: Sending request to:', `${createProjectUrl}/projects`)
@@ -762,7 +873,10 @@ export default {
           project_description: '',
           due_date: '',
           created_by: '',
-          collaborators: []
+          collaborators: [],
+          reminderDays: [7, 3, 1],
+          emailEnabled: true,
+          inAppEnabled: true
         }
 
         // Reset collaborators
@@ -833,6 +947,11 @@ export default {
       isUserSelected,
       toggleCollaborator,
       removeCollaborator,
+      // Notification preferences
+      showReminderCustomization,
+      toggleReminderCustomization,
+      toggleReminderDay,
+      canAddMoreReminders,
       // Duplicate check-related
       isDuplicateName,
       isCheckingDuplicate,
@@ -1294,5 +1413,124 @@ export default {
 
 .users-list::-webkit-scrollbar-thumb:hover {
   background: #C77FDE;
+}
+
+/* Notification Preferences Styles */
+.notification-preferences-section {
+  margin-top: 24px;
+  padding: 16px;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px solid #f0f0f0;
+}
+
+.divider-text {
+  font-weight: 600;
+  color: #262626;
+  font-size: 14px;
+}
+
+.notification-channels {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.channel-checkbox {
+  font-weight: 500;
+}
+
+.warning-text {
+  font-size: 12px;
+  color: #ff4d4f;
+  margin-top: 8px;
+}
+
+.reminder-schedule {
+  background: white;
+  padding: 16px;
+  border-radius: 6px;
+  border: 1px solid #e8e8e8;
+}
+
+.schedule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.schedule-label {
+  font-weight: 500;
+  color: #262626;
+}
+
+.customize-btn {
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+}
+
+.default-schedule {
+  font-size: 13px;
+  color: #595959;
+  padding: 8px 12px;
+  background: #f6f6f6;
+  border-radius: 4px;
+}
+
+.custom-schedule {
+  margin-top: 8px;
+}
+
+.schedule-description {
+  font-size: 12px;
+  color: #8c8c8c;
+  margin-bottom: 12px;
+}
+
+.reminder-days-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.reminder-day-btn {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid #d9d9d9;
+  background: white;
+  color: #595959;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.reminder-day-btn:hover:not(.disabled) {
+  border-color: #1890ff;
+  color: #1890ff;
+}
+
+.reminder-day-btn.selected {
+  background: #1890ff;
+  border-color: #1890ff;
+  color: white;
+}
+
+.reminder-day-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.selected-days {
+  font-size: 12px;
+  color: #595959;
+  margin-bottom: 8px;
+}
+
+.no-reminders-warning {
+  font-size: 12px;
+  color: #ff4d4f;
 }
 </style>
