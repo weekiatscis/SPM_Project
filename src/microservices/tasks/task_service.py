@@ -551,11 +551,24 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
         mentioned_user_ids = list(set(mentioned_user_ids))
         print(f"👥 Sending mention notifications to {len(mentioned_user_ids)} user(s)")
         
+        # Get task stakeholders to avoid duplicate notifications
+        try:
+            from task_service import get_task_stakeholders
+            stakeholders = get_task_stakeholders(task_data)
+            print(f"🔍 DEBUG: Task stakeholders: {stakeholders}")
+        except:
+            stakeholders = []
+        
         notifications_created = 0
         for mentioned_user_id in mentioned_user_ids:
             # Skip if user mentioned themselves
             if mentioned_user_id == commenter_id:
                 print(f"⏭️  Skipping self-mention for user {mentioned_user_id}")
+                continue
+            
+            # Skip if the mentioned user is already a stakeholder (they'll get regular comment notification)
+            if mentioned_user_id in stakeholders:
+                print(f"⏭️  Skipping mention notification for user {mentioned_user_id} (they're already a stakeholder)")
                 continue
             
             # Truncate comment for notification
@@ -625,8 +638,10 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                     traceback.print_exc()
             
             # Send email if enabled
+            print(f"🔍 DEBUG: Email check - prefs: {prefs}, EMAIL_SERVICE_AVAILABLE: {EMAIL_SERVICE_AVAILABLE}")
             if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
                 user_email = get_user_email(mentioned_user_id)
+                print(f"🔍 DEBUG: User email for {mentioned_user_id}: {user_email}")
                 if user_email:
                     try:
                         print(f"📧 Sending mention email to {user_email}...")
@@ -643,6 +658,12 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                         print(f"✅ Mention email sent to {user_email}")
                     except Exception as e:
                         print(f"❌ Failed to send mention email: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    print(f"⚠️  No email found for mentioned user {mentioned_user_id}")
+            else:
+                print(f"⏭️  Email notifications disabled for mentioned user {mentioned_user_id} (prefs: {prefs.get('email_enabled')}, service: {EMAIL_SERVICE_AVAILABLE})")
         
         print(f"\n{'='*80}")
         print(f"📊 SUMMARY: Created {notifications_created} mention notification(s)")
