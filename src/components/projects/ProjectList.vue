@@ -74,6 +74,19 @@
         <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <span>Ongoing Projects</span>
+            <a-input
+              v-model:value="ongoingSearchQuery"
+              placeholder="Search projects..."
+              size="small"
+              style="width: 200px;"
+              allow-clear
+            >
+              <template #prefix>
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px; opacity: 0.5;">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </template>
+            </a-input>
             <a-select
               v-model:value="sortBy"
               size="small"
@@ -132,6 +145,19 @@
         <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <span>My Projects</span>
+            <a-input
+              v-model:value="myProjectsSearchQuery"
+              placeholder="Search projects..."
+              size="small"
+              style="width: 200px;"
+              allow-clear
+            >
+              <template #prefix>
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px; opacity: 0.5;">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </template>
+            </a-input>
             <a-select
               v-model:value="sortBy"
               size="small"
@@ -190,6 +216,19 @@
         <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <span>Collaborating</span>
+            <a-input
+              v-model:value="collaboratingSearchQuery"
+              placeholder="Search projects..."
+              size="small"
+              style="width: 200px;"
+              allow-clear
+            >
+              <template #prefix>
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px; opacity: 0.5;">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </template>
+            </a-input>
             <a-select
               v-model:value="sortBy"
               size="small"
@@ -244,6 +283,19 @@
         <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
           <div style="display: flex; align-items: center; gap: 12px;">
             <span>Completed Projects</span>
+            <a-input
+              v-model:value="completedSearchQuery"
+              placeholder="Search projects..."
+              size="small"
+              style="width: 200px;"
+              allow-clear
+            >
+              <template #prefix>
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width: 14px; height: 14px; opacity: 0.5;">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </template>
+            </a-input>
             <a-select
               v-model:value="sortBy"
               size="small"
@@ -497,6 +549,12 @@ export default {
     const sortBy = ref('due_date')
     const authStore = useAuthStore()
 
+    // Search queries for each tab
+    const ongoingSearchQuery = ref('')
+    const myProjectsSearchQuery = ref('')
+    const collaboratingSearchQuery = ref('')
+    const completedSearchQuery = ref('')
+
     // Tab state for switching between sections
     const activeTab = ref('all')
 
@@ -603,40 +661,80 @@ export default {
 
     // Ongoing projects (exclude completed projects)
     const allProjects = computed(() => {
-      const ongoing = projects.value.filter(p => p.status !== 'Completed')
+      let ongoing = projects.value.filter(p => p.status !== 'Completed')
+
+      // Apply search filter
+      if (ongoingSearchQuery.value) {
+        const query = ongoingSearchQuery.value.toLowerCase().trim()
+        ongoing = ongoing.filter(p =>
+          p.project_name.toLowerCase().includes(query) ||
+          (p.project_description && p.project_description.toLowerCase().includes(query))
+        )
+      }
+
       return applySorting(ongoing)
     })
 
     // Owned projects (where user is the creator, excluding completed)
     const ownedProjects = computed(() => {
       const currentUserId = authStore.user?.user_id
-      const owned = projects.value.filter(p =>
+      let owned = projects.value.filter(p =>
         p.created_by_id === currentUserId &&
         p.status !== 'Completed'
       )
+
+      // Apply search filter
+      if (myProjectsSearchQuery.value) {
+        const query = myProjectsSearchQuery.value.toLowerCase().trim()
+        owned = owned.filter(p =>
+          p.project_name.toLowerCase().includes(query) ||
+          (p.project_description && p.project_description.toLowerCase().includes(query))
+        )
+      }
+
       return applySorting(owned)
     })
 
     // Collaborating projects (where user is in collaborators array but not the creator, excluding completed)
     const collaboratingProjects = computed(() => {
       const currentUserId = authStore.user?.user_id
-      const collaborating = projects.value.filter(p =>
+      let collaborating = projects.value.filter(p =>
         p.created_by_id !== currentUserId &&
         p.collaborators &&
         p.collaborators.includes(currentUserId) &&
         p.status !== 'Completed'
       )
+
+      // Apply search filter
+      if (collaboratingSearchQuery.value) {
+        const query = collaboratingSearchQuery.value.toLowerCase().trim()
+        collaborating = collaborating.filter(p =>
+          p.project_name.toLowerCase().includes(query) ||
+          (p.project_description && p.project_description.toLowerCase().includes(query))
+        )
+      }
+
       return applySorting(collaborating)
     })
 
     // Completed projects (where user is the creator OR collaborator, and status is Completed)
     const completedProjects = computed(() => {
       const currentUserId = authStore.user?.user_id
-      const completed = projects.value.filter(p => {
+      let completed = projects.value.filter(p => {
         const isOwner = p.created_by_id === currentUserId
         const isCollaborator = p.collaborators && p.collaborators.includes(currentUserId)
         return (isOwner || isCollaborator) && p.status === 'Completed'
       })
+
+      // Apply search filter
+      if (completedSearchQuery.value) {
+        const query = completedSearchQuery.value.toLowerCase().trim()
+        completed = completed.filter(p =>
+          p.project_name.toLowerCase().includes(query) ||
+          (p.project_description && p.project_description.toLowerCase().includes(query))
+        )
+      }
+
       return applySorting(completed)
     })
 
@@ -1009,6 +1107,11 @@ export default {
       handleProjectClick,
       handleOpenModal, // Expose to handle button click
       currentUserId, // Expose current user ID
+      // Search queries for each tab
+      ongoingSearchQuery,
+      myProjectsSearchQuery,
+      collaboratingSearchQuery,
+      completedSearchQuery,
       // Task assignment related
       allAvailableTasks,
       isLoadingTasks,

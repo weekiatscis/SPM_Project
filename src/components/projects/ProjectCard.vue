@@ -84,9 +84,13 @@
               Created: {{ formatDate(project.created_at) }}
             </a-typography-text>
           </div>
-          <a-tag v-if="isCollaborator()" class="collaborator-badge" size="small">
-            Collaborator
-          </a-tag>
+          <a-tooltip v-if="isCollaborator()" title="You are a collaborator">
+            <span class="collaborator-icon-badge">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+              </svg>
+            </span>
+          </a-tooltip>
         </div>
       </div>
     </div>
@@ -295,14 +299,26 @@ export default {
   font-weight: 600 !important;
 }
 
-.collaborator-badge {
-  background: #FEF3C7 !important;
-  color: #D97706 !important;
-  border: 1px solid #FDE68A !important;
-  border-radius: 12px !important;
-  padding: 2px 10px !important;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  margin: 0 !important;
+.collaborator-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(175, 82, 222, 0.1);
+  color: #af52de;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  cursor: pointer;
+}
+
+.collaborator-icon-badge svg {
+  width: 14px;
+  height: 14px;
+}
+
+.collaborator-icon-badge:hover {
+  background: rgba(175, 82, 222, 0.2);
+  transform: scale(1.1);
 }
 </style>

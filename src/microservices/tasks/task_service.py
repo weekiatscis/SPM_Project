@@ -2155,6 +2155,26 @@ def update_task(task_id: str):
         # Get updated task
         updated_task = map_db_row_to_api(response.data[0])
 
+        # BUSINESS LOGIC: When a parent task is assigned to a project, update all subtasks too
+        if "project_id" in update_data:
+            new_project_id = update_data["project_id"]
+
+            # Check if this task is a parent task (has subtasks)
+            # Find all subtasks that have this task as their parent
+            subtasks_response = supabase.table("task").select("task_id").eq("parent_task_id", task_id).execute()
+
+            if subtasks_response.data and len(subtasks_response.data) > 0:
+                subtask_ids = [subtask["task_id"] for subtask in subtasks_response.data]
+                print(f"📋 Parent task {task_id} assigned to project {new_project_id}. Updating {len(subtask_ids)} subtask(s)...")
+
+                # Update all subtasks with the same project_id
+                for subtask_id in subtask_ids:
+                    try:
+                        supabase.table("task").update({"project_id": new_project_id}).eq("task_id", subtask_id).execute()
+                        print(f"✅ Updated subtask {subtask_id} with project_id {new_project_id}")
+                    except Exception as subtask_error:
+                        print(f"❌ Failed to update subtask {subtask_id}: {str(subtask_error)}")
+
         # Update reminder preferences if provided
         if reminder_days_update and "due_date" in update_data:
             save_reminder_preferences(task_id, reminder_days_update)
