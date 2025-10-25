@@ -30,8 +30,21 @@
 
     <!-- Right side: Notifications + Profile -->
     <div class="topbar-right">
-      <!-- Notifications -->
-      <NotificationDropdown />
+      <!-- Notifications Bell Icon -->
+      <a-badge :count="unreadCount" size="small" :offset="[-2, 2]">
+        <a-button
+          type="text"
+          shape="circle"
+          size="large"
+          @click="toggleNotificationPanel"
+          :class="{ 'bell-active': isNotificationPanelOpen }"
+          class="notification-bell-button"
+        >
+          <template #icon>
+            <BellIcon :class="{ 'animate-pulse': hasUnread }" />
+          </template>
+        </a-button>
+      </a-badge>
 
       <!-- User Profile Dropdown -->
       <a-dropdown :trigger="['click']" placement="bottomRight" class="profile-dropdown">
@@ -81,7 +94,9 @@ import {
 } from '@ant-design/icons-vue'
 import { MenuIcon, SearchIcon, BellIcon } from '../components/icons/index.js'
 import { useAuthStore } from '../stores/auth.js'
-import NotificationDropdown from '../components/notifications/NotificationDropdown.vue'
+import { useNotificationStore } from '../stores/notifications.js'
+import { useNotificationPanel } from '../composables/useNotificationPanel.js'
+import { storeToRefs } from 'pinia'
 
 
 export default {
@@ -101,17 +116,26 @@ export default {
     UserOutlined,
     SettingOutlined,
     LogoutOutlined,
-    DownOutlined,
-    NotificationDropdown
+    DownOutlined
   },
   emits: ['toggle-mobile-sidebar', 'toggle-sidebar'],
   setup() {
     const router = useRouter()
     const authStore = useAuthStore()
+    const notificationStore = useNotificationStore()
+    const { isNotificationPanelOpen, togglePanel } = useNotificationPanel()
     const searchQuery = ref('')
-    
+
     // Get user data directly from auth store
     const user = computed(() => authStore.user)
+
+    // Get notification data for badge
+    const { unreadCount } = storeToRefs(notificationStore)
+    const hasUnread = computed(() => unreadCount.value > 0)
+
+    const toggleNotificationPanel = () => {
+      togglePanel()
+    }
 
     // Responsive check
     const isMobile = ref(window.innerWidth < 768)
@@ -160,6 +184,10 @@ export default {
       searchQuery,
       user,
       isMobile,
+      unreadCount,
+      hasUnread,
+      isNotificationPanelOpen,
+      toggleNotificationPanel,
       handleSearch,
       handleMenuClick,
       logout,
@@ -263,6 +291,39 @@ export default {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Notification Bell Button */
+.notification-bell-button {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 12px !important;
+  transition: all 0.3s ease !important;
+  border: 1px solid transparent !important;
+}
+
+.notification-bell-button:hover {
+  background: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+}
+
+.notification-bell-button.bell-active {
+  background: #e6f7ff !important;
+  border-color: #1890ff !important;
+  color: #1890ff !important;
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* Profile Button */
