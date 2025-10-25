@@ -18,7 +18,9 @@ except Exception:
 EMAIL_SERVICE_AVAILABLE = False
 try:
     import sys
+    # Add both possible paths for email service (Docker and local development)
     sys.path.append(os.path.join(os.path.dirname(__file__), '../notifications'))
+    sys.path.append(os.path.join(os.path.dirname(__file__), 'notifications'))
     from email_service import send_notification_email
     EMAIL_SERVICE_AVAILABLE = True
     print("✅ Email service loaded successfully")
@@ -369,12 +371,10 @@ def notify_project_comment_mentions(project_data: dict, comment_text: str, comme
             if mentioned_user_id == commenter_id:
                 print(f"⏭️  Skipping notification for user {mentioned_user_id} (they made the comment)")
                 continue
-            
-            # Skip if the mentioned user is already a stakeholder (they'll get regular comment notification)
-            if mentioned_user_id in stakeholders:
-                print(f"⏭️  Skipping mention notification for user {mentioned_user_id} (they're already a stakeholder)")
-                continue
-            
+
+            # Note: We do NOT skip stakeholders - they should get both comment AND mention notifications
+            # This matches the task mention behavior
+
             # Truncate comment for notification if too long
             truncated_comment = comment_text[:100] + "..." if len(comment_text) > 100 else comment_text
             
