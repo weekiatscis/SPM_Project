@@ -44,31 +44,22 @@
           </a-button>
         </div>
 
-        <!-- Debug Info -->
-        <div class="debug-info">
-          <div>Total notifications: {{ notifications?.length || 0 }}</div>
-          <div>Recent notifications: {{ recentNotifications?.length || 0 }}</div>
-          <div>Unread count: {{ unreadCount || 0 }}</div>
-          <div>Has unread: {{ hasUnread }}</div>
-          <div>Is loading: {{ isLoading }}</div>
-        </div>
-
         <!-- Notifications List -->
         <div class="notifications-list-container">
           <a-spin :spinning="isLoading">
-            <div v-if="recentNotifications?.length === 0" class="empty-state">
+            <div v-if="displayedNotifications?.length === 0" class="empty-state">
               <div class="empty-icon">
                 <BellIcon size="lg" color="gray" />
               </div>
-              <p>No recent notifications</p>
-              <p class="empty-subtext">({{ notifications?.length || 0 }} total found)</p>
+              <p v-if="!showAllNotifications">No unread notifications</p>
+              <p v-else>No notifications</p>
               <a-button type="link" size="small" @click="refreshNotifications">
                 Click to refresh
               </a-button>
             </div>
 
             <div
-              v-for="notification in recentNotifications"
+              v-for="notification in displayedNotifications"
               :key="notification.id"
               class="notification-item"
               :class="{ 'unread': !notification.is_read }"
@@ -118,8 +109,8 @@
 
         <!-- Panel Footer -->
         <div class="panel-footer">
-          <a-button type="text" size="small" @click="viewAllNotifications" block>
-            View all notifications
+          <a-button type="text" size="small" @click="toggleNotificationView" block>
+            {{ showAllNotifications ? 'View unread notifications' : 'View all notifications' }}
           </a-button>
         </div>
       </div>
@@ -165,6 +156,7 @@ export default {
     const isTaskDetailModalOpen = ref(false)
     const selectedTask = ref(null)
     const isLoadingTask = ref(false)
+    const showAllNotifications = ref(false) // Toggle between unread-only and all notifications
 
     const user = computed(() => authStore.user)
 
@@ -194,6 +186,17 @@ export default {
     })
 
     const hasUnread = computed(() => unreadCount.value > 0)
+
+    // Filtered notifications based on toggle state
+    const displayedNotifications = computed(() => {
+      if (showAllNotifications.value) {
+        // Show all recent notifications (max 50)
+        return recentNotifications.value
+      } else {
+        // Show only unread notifications
+        return recentNotifications.value.filter(notif => !notif.is_read)
+      }
+    })
 
     // Debug watchers
     watch(notifications, (newNotifications) => {
@@ -326,9 +329,8 @@ export default {
       }
     }
 
-    const viewAllNotifications = () => {
-      console.log('Navigate to all notifications')
-      // TODO: Navigate to full notifications page
+    const toggleNotificationView = () => {
+      showAllNotifications.value = !showAllNotifications.value
     }
 
     // Initialize notifications
@@ -351,6 +353,8 @@ export default {
       isLoading,
       unreadCount,
       recentNotifications,
+      displayedNotifications,
+      showAllNotifications,
       hasUnread,
       isMarkingAllRead,
       isRefreshing,
@@ -366,17 +370,17 @@ export default {
       handleEditTask,
       markAllAsRead,
       refreshNotifications,
-      viewAllNotifications
+      toggleNotificationView
     }
   }
 }
 </script>
 
 <style scoped>
-/* Panel Overlay - covers the right side */
+/* Panel Overlay - covers the right side below topbar */
 .notification-panel-overlay {
   position: fixed;
-  top: 0;
+  top: 64px;
   right: 0;
   bottom: 0;
   width: 420px;
@@ -389,10 +393,11 @@ export default {
   width: 100%;
   height: 100%;
   background: white;
-  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+  box-shadow: -8px 0 16px -4px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
   border-left: 1px solid #e5e7eb;
+  border-top: none;
 }
 
 /* Panel Header */
@@ -465,17 +470,6 @@ export default {
 
 .mark-read-btn {
   margin-left: auto;
-}
-
-/* Debug Info */
-.debug-info {
-  padding: 12px 24px;
-  background: #f9fafb;
-  font-size: 11px;
-  color: #6b7280;
-  border-bottom: 1px solid #e5e7eb;
-  flex-shrink: 0;
-  line-height: 1.6;
 }
 
 /* Notifications List Container */
@@ -747,12 +741,6 @@ export default {
 
 :global(.dark) .panel-actions {
   background: #111827;
-  border-bottom-color: #374151;
-}
-
-:global(.dark) .debug-info {
-  background: #111827;
-  color: #9ca3af;
   border-bottom-color: #374151;
 }
 
