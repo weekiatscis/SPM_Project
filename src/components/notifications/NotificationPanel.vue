@@ -4,9 +4,29 @@
       <div class="notification-panel">
         <!-- Panel Header -->
         <div class="panel-header">
-          <div class="header-title">
-            <h3>Notifications</h3>
-            <span class="notification-count">{{ unreadCount || 0 }} unread (Total: {{ notifications?.length || 0 }})</span>
+          <div class="header-left">
+            <button
+              @click="refreshNotifications"
+              :disabled="isRefreshing"
+              class="refresh-button"
+              title="Refresh notifications"
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                :class="{ 'spinning': isRefreshing }"
+              >
+                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+              </svg>
+            </button>
+            <div class="header-title">
+              <h3>Notifications</h3>
+              <span class="notification-count">{{ unreadCount || 0 }} unread</span>
+            </div>
           </div>
           <button @click="closePanel" class="close-button" title="Close panel">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -18,20 +38,6 @@
 
         <!-- Action Buttons -->
         <div class="panel-actions">
-          <a-button
-            type="text"
-            size="small"
-            @click="refreshNotifications"
-            :loading="isRefreshing"
-            class="action-btn"
-          >
-            <template #icon>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-              </svg>
-            </template>
-            Refresh
-          </a-button>
           <a-button
             v-if="unreadCount > 0"
             type="text"
@@ -49,7 +55,7 @@
           <a-spin :spinning="isLoading">
             <div v-if="displayedNotifications?.length === 0" class="empty-state">
               <div class="empty-icon">
-                <BellIcon size="lg" color="gray" />
+                <img src="/Notificationgif.gif" alt="No notifications" class="notification-empty-gif" />
               </div>
               <p v-if="!showAllNotifications">No unread notifications</p>
               <p v-else>No notifications</p>
@@ -406,9 +412,55 @@ export default {
   border-bottom: 1px solid #e5e7eb;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
   flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.refresh-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  color: #3b82f6;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.refresh-button:hover {
+  background-color: #dbeafe;
+  color: #2563eb;
+}
+
+.refresh-button:active {
+  transform: scale(0.95);
+}
+
+.refresh-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-button svg.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .header-title h3 {
@@ -506,9 +558,16 @@ export default {
 
 .empty-icon {
   margin-bottom: 16px;
-  opacity: 0.4;
   display: flex;
   justify-content: center;
+  align-items: center;
+}
+
+.notification-empty-gif {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  opacity: 0.7;
 }
 
 .empty-state p {
