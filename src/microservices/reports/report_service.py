@@ -1725,6 +1725,9 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         requesting_user_name = report_data.get('requesting_user_name')
         team_data = [['Team Member', 'Department', 'Total Tasks', 'Completed', 'Completion Rate']]
 
+        # Define a style for wrapping text in cells
+        cell_style = ParagraphStyle('CellStyle', fontSize=9, leading=11, fontName='Helvetica')
+
         for member in report_data['team_performance']:
             member_name = member['member']
             # Add (me) if this is the requesting user
@@ -1732,8 +1735,8 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
                 member_name = f"{member_name} (me)"
 
             team_data.append([
-                member_name,
-                member.get('department', 'N/A'),
+                Paragraph(member_name, cell_style),
+                Paragraph(member.get('department', 'N/A'), cell_style),
                 str(member['total']),
                 str(member['completed']),
                 f"{member['rate']}%"
@@ -1795,6 +1798,9 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
             section_heading = Paragraph(title, heading_style)
             task_data = [['Task Title', 'Assignee', 'Status', 'Priority', 'Due Date']]
 
+            # Style for wrapping text in cells
+            task_cell_style = ParagraphStyle('TaskCellStyle', fontSize=8, leading=10, fontName='Helvetica')
+
             for task in task_list:
                 priority = task.get('priority', 'N/A')
                 if priority != 'N/A':
@@ -1813,9 +1819,12 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
                     except:
                         due_date = 'N/A'
 
+                task_title = task.get('title', 'Untitled')
+                assignee = task.get('assignee_name') or task.get('owner_name') or 'Unassigned'
+
                 task_data.append([
-                    task.get('title', 'Untitled')[:40],  # Truncate long titles
-                    (task.get('assignee_name') or task.get('owner_name') or 'Unassigned')[:50],  # Increased to show multiple assignees
+                    Paragraph(task_title, task_cell_style),  # Wrap for text wrapping
+                    Paragraph(assignee, task_cell_style),  # Wrap for text wrapping
                     task.get('status', 'Unknown'),
                     priority,
                     due_date
@@ -1892,6 +1901,10 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
 
         # Tasks table
         task_data = [['Task Title', 'Assignee', 'Priority', 'Due Date']]
+
+        # Style for wrapping text in cells
+        breakdown_cell_style = ParagraphStyle('BreakdownCellStyle', fontSize=8, leading=10, fontName='Helvetica')
+
         for task in tasks:
             assignee = task.get('assignee_name') or task.get('owner_name') or 'Unassigned'
             priority = task.get('priority', 'N/A')
@@ -1911,9 +1924,11 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
                 except:
                     pass
 
+            task_title = task.get('title', 'Untitled')
+
             task_data.append([
-                task.get('title', 'Untitled')[:40],
-                assignee[:60] if len(assignee) > 60 else assignee,  # Truncate very long assignee lists
+                Paragraph(task_title, breakdown_cell_style),  # Wrap for text wrapping
+                Paragraph(assignee, breakdown_cell_style),  # Wrap for text wrapping
                 priority,
                 due_date
             ])

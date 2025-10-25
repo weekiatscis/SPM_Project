@@ -208,7 +208,8 @@
             :pagination="false"
             :rowKey="record => record.id"
             :customRow="(record) => ({
-              onClick: () => handleTaskClick(record)
+              onClick: () => handleTaskClick(record),
+              class: isTaskOverdue(record) ? 'overdue-task-row' : ''
             })"
             class="tasks-table"
           >
@@ -275,7 +276,7 @@
                 {{ record.department || 'N/A' }}
               </template>
               <template v-else-if="column.key === 'assignee'">
-                {{ record.assignee_name || 'Unassigned' }}
+                {{ formatAssigneeNames(record.assignee_name) }}
               </template>
             </template>
           </a-table>
@@ -317,7 +318,8 @@
             :pagination="false"
             :rowKey="record => record.id"
             :customRow="(record) => ({
-              onClick: () => handleTaskClick(record)
+              onClick: () => handleTaskClick(record),
+              class: isTaskOverdue(record) ? 'overdue-task-row' : ''
             })"
             class="tasks-table"
           >
@@ -384,7 +386,7 @@
                 {{ record.department || 'N/A' }}
               </template>
               <template v-else-if="column.key === 'assignee'">
-                {{ record.assignee_name || 'Unassigned' }}
+                {{ formatAssigneeNames(record.assignee_name) }}
               </template>
             </template>
           </a-table>
@@ -774,6 +776,34 @@ export default {
       return projectTasks.value.some(t => t.parent_task_id === task.id)
     }
 
+    const isTaskOverdue = (task) => {
+      // A task is overdue if it's not completed and the due date has passed
+      if (task.status === 'Completed' || !task.dueDate) return false
+
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      const dueDate = new Date(task.dueDate)
+      dueDate.setHours(0, 0, 0, 0)
+
+      return dueDate < today
+    }
+
+    const formatAssigneeNames = (assigneeName) => {
+      // Format assignee names to show max 2 names + count
+      if (!assigneeName || assigneeName === 'Unassigned') return 'Unassigned'
+
+      const names = assigneeName.split(', ').map(name => name.trim())
+
+      if (names.length <= 2) {
+        return assigneeName
+      }
+
+      const firstTwoNames = names.slice(0, 2).join(', ')
+      const remainingCount = names.length - 2
+      return `${firstTwoNames} +${remainingCount} more`
+    }
+
     // Table columns definition
     const taskColumns = [
       {
@@ -798,8 +828,15 @@ export default {
         key: 'status',
         width: '10%',
         align: 'center',
-        sorter: (a, b) => a.status.localeCompare(b.status),
-        sortDirections: ['ascend', 'descend']
+        sorter: (a, b) => {
+          // Custom sorter: Completed should be last
+          const statusOrder = { 'Ongoing': 1, 'Under Review': 2, 'Completed': 3 }
+          const orderA = statusOrder[a.status] || 1
+          const orderB = statusOrder[b.status] || 1
+          return orderA - orderB
+        },
+        sortDirections: ['ascend', 'descend'],
+        defaultSortOrder: 'ascend' // Completed will be last with this order
       },
       {
         title: 'Priority',
@@ -1643,6 +1680,8 @@ export default {
       getTaskTimeTaken,
       isUserCollaborator,
       isParentTask,
+      isTaskOverdue,
+      formatAssigneeNames,
       taskColumns,
       handleEdit,
       handleDelete,
@@ -2174,6 +2213,36 @@ export default {
 
 .tasks-table :deep(.ant-table-tbody > tr:hover) {
   background-color: #f9fafb;
+}
+
+/* Overdue task styling - red border and background */
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row) {
+  border: 2px solid #ef4444 !important;
+  border-left: 4px solid #dc2626 !important;
+  background-color: #fecaca !important;
+}
+
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row:hover) {
+  background-color: #fca5a5 !important;
+  border-color: #dc2626 !important;
+}
+
+/* Override ALL cell backgrounds in overdue row to red (including sorted column) */
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row > td) {
+  background-color: #fecaca !important;
+}
+
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row:hover > td) {
+  background-color: #fca5a5 !important;
+}
+
+/* Override sorted column greyish background for overdue rows */
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row > td.ant-table-column-sort) {
+  background-color: #fecaca !important;
+}
+
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row:hover > td.ant-table-column-sort) {
+  background-color: #fca5a5 !important;
 }
 
 .task-title-cell {
