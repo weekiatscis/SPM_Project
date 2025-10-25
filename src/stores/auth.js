@@ -7,6 +7,7 @@ const API_BASE_URL = 'http://localhost:8086'
 export const useAuthStore = defineStore('auth', () => {
   const user = ref(null)
   const sessionToken = ref(localStorage.getItem('sessionToken'))
+  const sessionId = ref(localStorage.getItem('sessionId'))
   const sessionTimeout = ref(null)
   const warningTimeout = ref(null)
   const showWarning = ref(false)
@@ -16,6 +17,25 @@ export const useAuthStore = defineStore('auth', () => {
   // Session timeout management (15 minutes)
   const SESSION_DURATION = 3 * 60 * 1000 // 15 minutes in milliseconds
   const WARNING_TIME = 1 * 60 * 1000 // 13 minutes (2 minutes before expiration)
+  
+  // Singapore timezone helper
+  const getSingaporeTime = () => {
+    return new Date().toLocaleString('en-SG', {
+      timeZone: 'Asia/Singapore',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+  }
+
+  // Generate a unique session ID
+  const generateSessionId = () => {
+    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+  }
   
   // Audit logging helper
   const logAuditEvent = async (eventType, eventDescription, metadata = {}) => {
@@ -31,7 +51,13 @@ export const useAuthStore = defineStore('auth', () => {
         body: JSON.stringify({
           event_type: eventType,
           event_description: eventDescription,
-          metadata: metadata
+          session_id: sessionId.value,
+          timestamp: getSingaporeTime(),
+          metadata: {
+            ...metadata,
+            timezone: 'Asia/Singapore',
+            client_time: getSingaporeTime()
+          }
         }),
       })
     } catch (error) {
@@ -40,6 +66,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const showSessionWarning = () => {
+    // Only show warning if session is still valid
+    if (!isAuthenticated.value) {
+      return
+    }
+    
     showWarning.value = true
     logAuditEvent(
       'session_warning_shown',
@@ -73,6 +104,16 @@ export const useAuthStore = defineStore('auth', () => {
 
   const handleAutoLogout = async () => {
     const wasWarningIgnored = showWarning.value
+
+    // Clear all timers immediately to prevent race conditions
+    if (sessionTimeout.value) {
+      clearTimeout(sessionTimeout.value)
+      sessionTimeout.value = null
+    }
+    if (warningTimeout.value) {
+      clearTimeout(warningTimeout.value)
+      warningTimeout.value = null
+    }
 
     // Log audit event before logout (while session is still valid)
     await logAuditEvent(
@@ -120,10 +161,13 @@ export const useAuthStore = defineStore('auth', () => {
         throw new Error(data.error || 'Login failed')
       }
       
-      // Store user and session token
+      // Store user, session token, and session ID
       user.value = data.user
       sessionToken.value = data.session_token
+      // Generate session ID if backend doesn't provide one
+      sessionId.value = data.session_id || data.sessionId || generateSessionId()
       localStorage.setItem('sessionToken', data.session_token)
+      localStorage.setItem('sessionId', sessionId.value)
       
       // Start session timer
       startSessionTimer()
@@ -137,8 +181,8 @@ export const useAuthStore = defineStore('auth', () => {
   
   const logout = async (isManual = true) => {
     try {
-      // Log manual logout
-      if (isManual && sessionToken.value) {
+      // Log manual logout only if we have a valid session
+      if (isManual && sessionToken.value && user.value) {
         await logAuditEvent(
           'session_logout_manual',
           'User manually logged out',
@@ -146,6 +190,7 @@ export const useAuthStore = defineStore('auth', () => {
         )
       }
 
+      // Only attempt server logout if we have a valid session token
       if (sessionToken.value) {
         await fetch(`${API_BASE_URL}/auth/logout`, {
           method: 'POST',
@@ -157,12 +202,7 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (error) {
       console.error('Logout error:', error)
     } finally {
-      // Clear local state
-      user.value = null
-      sessionToken.value = null
-      localStorage.removeItem('sessionToken')
-
-      // Clear all timers
+      // Clear all timers first to prevent race conditions
       if (sessionTimeout.value) {
         clearTimeout(sessionTimeout.value)
         sessionTimeout.value = null
@@ -171,6 +211,13 @@ export const useAuthStore = defineStore('auth', () => {
         clearTimeout(warningTimeout.value)
         warningTimeout.value = null
       }
+
+      // Clear local state
+      user.value = null
+      sessionToken.value = null
+      sessionId.value = null
+      localStorage.removeItem('sessionToken')
+      localStorage.removeItem('sessionId')
 
       // Hide warning modal
       showWarning.value = false
@@ -197,6 +244,10 @@ export const useAuthStore = defineStore('auth', () => {
       if (response.ok) {
         const data = await response.json()
         user.value = data.user
+        if (data.session_id || data.sessionId) {
+          sessionId.value = data.session_id || data.sessionId
+          localStorage.setItem('sessionId', sessionId.value)
+        }
         resetSessionTimer()
         return true
       } else {
@@ -213,6 +264,12 @@ export const useAuthStore = defineStore('auth', () => {
   
   const initializeAuth = async () => {
     if (sessionToken.value) {
+      // Generate session ID if we don't have one
+      if (!sessionId.value) {
+        sessionId.value = generateSessionId()
+        localStorage.setItem('sessionId', sessionId.value)
+      }
+      
       const isValid = await validateSession()
       if (isValid) {
         startSessionTimer()
@@ -257,6 +314,7 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     user,
     sessionToken,
+    sessionId,
     isAuthenticated,
     showWarning,
     login,
