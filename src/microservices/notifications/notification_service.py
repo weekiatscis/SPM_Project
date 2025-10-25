@@ -362,11 +362,251 @@ def check_due_date_reminders():
     except Exception as e:
         print(f"Error checking due date reminders: {e}")
 
+def check_overdue_tasks():
+    """
+    Check for overdue tasks and send daily summary notifications.
+    Sends ONE notification per user per day with count of overdue tasks.
+    """
+    try:
+        today = datetime.now(timezone.utc).date()
+        print(f"\n{'='*60}")
+        print(f"🔍 Checking for overdue tasks (Date: {today})")
+        print(f"{'='*60}")
+
+        # Get ALL tasks that are overdue (due_date < today AND not completed)
+        response = supabase.table("task").select("*").lt(
+            "due_date", today.isoformat()
+        ).neq("status", "Completed").execute()
+
+        overdue_tasks = response.data or []
+        print(f"📊 Found {len(overdue_tasks)} total overdue task(s)")
+
+        if not overdue_tasks:
+            print("✅ No overdue tasks - nothing to do")
+            return
+
+        # Group overdue tasks by owner
+        user_tasks = {}
+        for task in overdue_tasks:
+            owner_id = task.get("owner_id")
+            if owner_id:
+                if owner_id not in user_tasks:
+                    user_tasks[owner_id] = []
+                user_tasks[owner_id].append(task)
+
+        print(f"👥 Grouped into {len(user_tasks)} user(s)")
+
+        # Send notification to each user
+        for user_id, tasks in user_tasks.items():
+            count = len(tasks)
+            print(f"\n--- Processing user {user_id} ({count} overdue task(s)) ---")
+
+            # Check if already notified today
+            existing = supabase.table("notifications").select("id").eq(
+                "user_id", user_id
+            ).eq("type", "overdue_tasks").gte(
+                "created_at", today.isoformat()
+            ).execute()
+
+            if existing.data:
+                print(f"⏭️  Already sent overdue notification today - skipping")
+                continue
+
+            # Create notification
+            task_word = "task" if count == 1 else "tasks"
+            notification_data = {
+                "user_id": user_id,
+                "title": f"⚠️ {count} Overdue {task_word.title()}",
+                "message": f"You have {count} {task_word} past their due date",
+                "type": "overdue_tasks",
+                "task_id": None,
+                "due_date": None,
+                "priority": "High"
+            }
+
+            # Save to database
+            stored = create_notification(notification_data)
+            if stored:
+                print(f"✅ In-app notification created (ID: {stored['id']})")
+
+                # Send real-time
+                try:
+                    send_realtime_notification(user_id, stored)
+                    print(f"📡 Real-time notification sent")
+                except Exception as e:
+                    print(f"⚠️  Real-time send failed: {e}")
+
+            # Send email
+            try:
+                user_response = supabase.table("user").select("email, name").eq(
+                    "user_id", user_id
+                ).execute()
+
+                if user_response.data:
+                    email = user_response.data[0].get("email")
+                    name = user_response.data[0].get("name", "there")
+
+                    if email:
+                        print(f"📧 Sending email to {email}...")
+                        # Build task list
+                        task_list = "\n".join([
+                            f"• {t.get('title', 'Untitled')} (Due: {t.get('due_date', 'N/A')})"
+                            for t in tasks[:5]  # Show first 5
+                        ])
+                        if count > 5:
+                            task_list += f"\n...and {count - 5} more"
+
+                        # Send email (will use generic template for now)
+                        from email_service import send_notification_email
+                        send_notification_email(
+                            user_email=email,
+                            notification_type="overdue_tasks",
+                            task_title=f"{count} Overdue {task_word.title()}",
+                            message=f"Hi {name},\n\nYou have {count} {task_word} past their due date:\n\n{task_list}",
+                            priority="High"
+                        )
+                        print(f"✅ Email sent to {email}")
+            except Exception as e:
+                print(f"❌ Email failed: {e}")
+
+        print(f"\n{'='*60}")
+        print(f"✅ Overdue task check complete")
+        print(f"{'='*60}\n")
+
+    except Exception as e:
+        print(f"❌ ERROR in check_overdue_tasks: {e}")
+        import traceback
+        traceback.print_exc()
+
+def check_overdue_projects():
+    """
+    Check for overdue projects and send daily summary notifications.
+    Sends ONE notification per user per day with count of overdue projects.
+    """
+    try:
+        today = datetime.now(timezone.utc).date()
+        print(f"\n{'='*60}")
+        print(f"🔍 Checking for overdue projects (Date: {today})")
+        print(f"{'='*60}")
+
+        # Get ALL projects that are overdue
+        response = supabase.table("project").select("*").lt(
+            "due_date", today.isoformat()
+        ).neq("status", "Completed").execute()
+
+        overdue_projects = response.data or []
+        print(f"📊 Found {len(overdue_projects)} total overdue project(s)")
+
+        if not overdue_projects:
+            print("✅ No overdue projects - nothing to do")
+            return
+
+        # Group by stakeholders (creator + collaborators)
+        user_projects = {}
+        for project in overdue_projects:
+            # Get all stakeholders
+            stakeholders = [project.get("created_by")]
+            collabs = project.get("collaborators", [])
+            if collabs:
+                stakeholders.extend(collabs)
+            stakeholders = list(set(filter(None, stakeholders)))
+
+            for user_id in stakeholders:
+                if user_id not in user_projects:
+                    user_projects[user_id] = []
+                user_projects[user_id].append(project)
+
+        print(f"👥 Grouped into {len(user_projects)} user(s)")
+
+        # Send notification to each user
+        for user_id, projects in user_projects.items():
+            count = len(projects)
+            print(f"\n--- Processing user {user_id} ({count} overdue project(s)) ---")
+
+            # Check if already notified today
+            existing = supabase.table("notifications").select("id").eq(
+                "user_id", user_id
+            ).eq("type", "overdue_projects").gte(
+                "created_at", today.isoformat()
+            ).execute()
+
+            if existing.data:
+                print(f"⏭️  Already sent overdue notification today - skipping")
+                continue
+
+            # Create notification
+            project_word = "project" if count == 1 else "projects"
+            notification_data = {
+                "user_id": user_id,
+                "title": f"⚠️ {count} Overdue {project_word.title()}",
+                "message": f"You have {count} {project_word} past their due date",
+                "type": "overdue_projects",
+                "task_id": None,
+                "due_date": None,
+                "priority": "High"
+            }
+
+            # Save to database
+            stored = create_notification(notification_data)
+            if stored:
+                print(f"✅ In-app notification created (ID: {stored['id']})")
+
+                # Send real-time
+                try:
+                    send_realtime_notification(user_id, stored)
+                    print(f"📡 Real-time notification sent")
+                except Exception as e:
+                    print(f"⚠️  Real-time send failed: {e}")
+
+            # Send email
+            try:
+                user_response = supabase.table("user").select("email, name").eq(
+                    "user_id", user_id
+                ).execute()
+
+                if user_response.data:
+                    email = user_response.data[0].get("email")
+                    name = user_response.data[0].get("name", "there")
+
+                    if email:
+                        print(f"📧 Sending email to {email}...")
+                        # Build project list
+                        project_list = "\n".join([
+                            f"• {p.get('project_name', 'Untitled')} (Due: {p.get('due_date', 'N/A')})"
+                            for p in projects[:5]  # Show first 5
+                        ])
+                        if count > 5:
+                            project_list += f"\n...and {count - 5} more"
+
+                        # Send email
+                        from email_service import send_notification_email
+                        send_notification_email(
+                            user_email=email,
+                            notification_type="overdue_projects",
+                            task_title=f"{count} Overdue {project_word.title()}",
+                            message=f"Hi {name},\n\nYou have {count} {project_word} past their due date:\n\n{project_list}",
+                            priority="High"
+                        )
+                        print(f"✅ Email sent to {email}")
+            except Exception as e:
+                print(f"❌ Email failed: {e}")
+
+        print(f"\n{'='*60}")
+        print(f"✅ Overdue project check complete")
+        print(f"{'='*60}\n")
+
+    except Exception as e:
+        print(f"❌ ERROR in check_overdue_projects: {e}")
+        import traceback
+        traceback.print_exc()
+
 def reminder_scheduler():
     """Background thread to check for reminders every hour"""
     while True:
         check_due_date_reminders()
         check_project_due_date_reminders()
+        check_overdue_tasks()
+        check_overdue_projects()
         time.sleep(3600)  # Check every hour
 
 # Start background scheduler
