@@ -551,24 +551,11 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
         mentioned_user_ids = list(set(mentioned_user_ids))
         print(f"👥 Sending mention notifications to {len(mentioned_user_ids)} user(s)")
         
-        # Get task stakeholders to avoid duplicate notifications
-        try:
-            from task_service import get_task_stakeholders
-            stakeholders = get_task_stakeholders(task_data)
-            print(f"🔍 DEBUG: Task stakeholders: {stakeholders}")
-        except:
-            stakeholders = []
-        
         notifications_created = 0
         for mentioned_user_id in mentioned_user_ids:
             # Skip if user mentioned themselves
             if mentioned_user_id == commenter_id:
                 print(f"⏭️  Skipping self-mention for user {mentioned_user_id}")
-                continue
-            
-            # Skip if the mentioned user is already a stakeholder (they'll get regular comment notification)
-            if mentioned_user_id in stakeholders:
-                print(f"⏭️  Skipping mention notification for user {mentioned_user_id} (they're already a stakeholder)")
                 continue
             
             # Truncate comment for notification

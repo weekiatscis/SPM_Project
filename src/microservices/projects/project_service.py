@@ -326,12 +326,28 @@ def notify_project_comment_mentions(project_data: dict, comment_text: str, comme
             print("ℹ️  No valid user IDs found for mentions")
             return
         
+        # Get project stakeholders to avoid duplicate notifications
+        try:
+            # Get project creator and collaborators
+            stakeholders = [project_data.get("created_by")]
+            if project_data.get("collaborators"):
+                stakeholders.extend(project_data["collaborators"])
+            stakeholders = [s for s in stakeholders if s]  # Remove None values
+            print(f"🔍 DEBUG: Project stakeholders: {stakeholders}")
+        except:
+            stakeholders = []
+        
         # Send notifications to mentioned users
         notifications_created = 0
         for mentioned_user_id in mentioned_user_ids:
             # Skip if the mentioned user is the commenter
             if mentioned_user_id == commenter_id:
                 print(f"⏭️  Skipping notification for user {mentioned_user_id} (they made the comment)")
+                continue
+            
+            # Skip if the mentioned user is already a stakeholder (they'll get regular comment notification)
+            if mentioned_user_id in stakeholders:
+                print(f"⏭️  Skipping mention notification for user {mentioned_user_id} (they're already a stakeholder)")
                 continue
             
             # Truncate comment for notification if too long
@@ -395,6 +411,32 @@ def notify_project_comment_mentions(project_data: dict, comment_text: str, comme
                         print(f"   Real-time project mention notification response: {notif_response.status_code}")
                     except Exception as e:
                         print(f"⚠️  Failed to send real-time project mention notification: {e}")
+                
+                # Send email notification for project mentions
+                if EMAIL_SERVICE_AVAILABLE:
+                    user_email = get_user_email(mentioned_user_id)
+                    if user_email:
+                        try:
+                            print(f"📧 Sending project mention email to {user_email}...")
+                            send_notification_email(
+                                user_email=user_email,
+                                notification_type="project_mention",
+                                project_name=project_data.get("project_name", "Untitled Project"),
+                                project_id=project_data.get("project_id"),
+                                comment_text=truncated_comment,
+                                commenter_name=commenter_name,
+                                due_date=project_data.get("due_date")
+                            )
+                            print(f"✅ Project mention email sent to {user_email}")
+                        except Exception as e:
+                            print(f"❌ Failed to send project mention email: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    else:
+                        print(f"⚠️  No email found for mentioned user {mentioned_user_id}")
+                else:
+                    print(f"⏭️  Email service not available for project mention")
+                
                 else:
                     print(f"❌ ERROR: Supabase insert returned no data!")
                     print(f"   Response: {response}")
