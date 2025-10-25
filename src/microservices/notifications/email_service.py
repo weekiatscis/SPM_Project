@@ -686,7 +686,7 @@ def send_password_reset_email(
         .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }
         .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
         .reset-card { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #007aff; }
-        .button { display: inline-block; padding: 12px 24px; background: #007aff; color: white; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
+        .button { display: inline-block; padding: 12px 24px; background: #007aff; color: white !important; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
         .button:hover { background: #0051d5; }
         .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; }
         .warning { background: #fff3cd; padding: 12px; border-radius: 6px; border-left: 3px solid #ffc107; margin: 15px 0; }
