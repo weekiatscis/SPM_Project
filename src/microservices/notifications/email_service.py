@@ -391,6 +391,49 @@ def create_email_template(notification_type: str, data: dict) -> str:
         </html>
         """
 
+    elif notification_type.startswith("project_reminder_"):
+        days = notification_type.split("_")[2]
+        project_name = data.get("project_name", task_title)
+        project_id = data.get("project_id", "")
+        project_link = f"{FRONTEND_URL}/projects/{project_id}" if project_id else FRONTEND_URL
+        subject = f"⏰ Project Reminder: {project_name}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1 style="margin: 0;">⏰ Project Reminder</h1>
+                </div>
+                <div class="content">
+                    <p>Hi there,</p>
+                    <p>This is a friendly reminder about your upcoming project:</p>
+
+                    <div class="task-card">
+                        <h2 style="margin-top: 0; color: #333;">{project_name}</h2>
+                        <p><strong>Due Date:</strong> {due_date}</p>
+                        <p style="color: #666; margin-top: 15px;">This project is due in <strong>{days} day(s)</strong>. Make sure to complete it on time!</p>
+                    </div>
+
+                    <center>
+                        <a href="{project_link}" class="button">View Project Details</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> Click the button above to view full project details and update its status.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this because you have email notifications enabled for this project.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
     else:
         # Generic notification - but only if we have a valid message
         message = data.get("message", "")

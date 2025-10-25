@@ -646,7 +646,7 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                         print(f"📧 Sending mention email to {user_email}...")
                         send_notification_email(
                             user_email=user_email,
-                            notification_type="mention",
+                            notification_type="task_mention",
                             task_title=task_data["title"],
                             comment_text=truncated_comment,
                             commenter_name=commenter_name,

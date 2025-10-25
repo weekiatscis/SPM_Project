@@ -200,10 +200,28 @@ def notify_project_comment(project_data: dict, comment_text: str, commenter_id: 
                 "is_read": False
             }
 
+            # Get notification preferences for this user and project
+            email_enabled = True
+            in_app_enabled = True
+            try:
+                prefs_response = supabase.table("project_notification_preferences").select(
+                    "email_enabled, in_app_enabled"
+                ).eq("user_id", stakeholder_id).eq("project_id", project_data.get("project_id")).execute()
+
+                if prefs_response.data and len(prefs_response.data) > 0:
+                    email_enabled = prefs_response.data[0].get("email_enabled", True)
+                    in_app_enabled = prefs_response.data[0].get("in_app_enabled", True)
+                    print(f"📋 Notification preferences for user {stakeholder_id}: email={email_enabled}, in_app={in_app_enabled}")
+                else:
+                    print(f"📋 No preferences found for user {stakeholder_id}, using defaults (both enabled)")
+            except Exception as e:
+                print(f"Error fetching notification preferences: {e}")
+                # Default to enabled if there's an error
+
             # Check for existing notification to prevent duplicates (check within last 2 minutes)
             try:
                 existing_check = supabase.table("notifications").select("id").eq("user_id", stakeholder_id).eq("type", "project_comment").gte("created_at", (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()).execute()
-                
+
                 if existing_check.data and len(existing_check.data) > 0:
                     print(f"⏭️  Duplicate project comment notification detected for user {stakeholder_id}, skipping...")
                     continue
@@ -211,33 +229,36 @@ def notify_project_comment(project_data: dict, comment_text: str, commenter_id: 
                 print(f"Error checking existing notifications: {e}")
                 # Continue anyway to avoid blocking notifications
 
-            # Store in-app notification (project comments don't have individual notification preferences)
-            response = supabase.table("notifications").insert(notification_data).execute()
-            if response.data:
-                print(f"✅ Sent project comment notification to stakeholder {stakeholder_id}")
+            # Store in-app notification if enabled
+            if in_app_enabled:
+                response = supabase.table("notifications").insert(notification_data).execute()
+                if response.data:
+                    print(f"✅ Sent project comment notification to stakeholder {stakeholder_id}")
 
-                # Send real-time notification via WebSocket (without creating duplicate database entry)
-                try:
-                    notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                    realtime_data = {
-                        "user_id": stakeholder_id,
-                        "title": notification_data["title"],
-                        "message": notification_data["message"],
-                        "type": notification_data["type"],
-                        "project_id": notification_data.get("project_id"),
-                        "created_at": notification_data["created_at"]
-                    }
-                    requests.post(
-                        f"{notification_service_url}/notifications/realtime",
-                        json=realtime_data,
-                        timeout=5,
-                        headers={'Content-Type': 'application/json'}
-                    )
-                except Exception as e:
-                    print(f"Failed to send real-time notification: {e}")
+                    # Send real-time notification via WebSocket (without creating duplicate database entry)
+                    try:
+                        notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                        realtime_data = {
+                            "user_id": stakeholder_id,
+                            "title": notification_data["title"],
+                            "message": notification_data["message"],
+                            "type": notification_data["type"],
+                            "project_id": notification_data.get("project_id"),
+                            "created_at": notification_data["created_at"]
+                        }
+                        requests.post(
+                            f"{notification_service_url}/notifications/realtime",
+                            json=realtime_data,
+                            timeout=5,
+                            headers={'Content-Type': 'application/json'}
+                        )
+                    except Exception as e:
+                        print(f"Failed to send real-time notification: {e}")
+            else:
+                print(f"⏭️  In-app notifications disabled for user {stakeholder_id}, skipping...")
 
-            # Send email notification (always enabled for project comments)
-            if EMAIL_SERVICE_AVAILABLE:
+            # Send email notification if enabled
+            if email_enabled and EMAIL_SERVICE_AVAILABLE:
                 user_email = get_user_email(stakeholder_id)
                 if user_email:
                     try:
@@ -255,6 +276,10 @@ def notify_project_comment(project_data: dict, comment_text: str, commenter_id: 
                         print(f"❌ Failed to send email to stakeholder: {e}")
                 else:
                     print(f"⚠️  No email found for stakeholder {stakeholder_id}")
+            elif not email_enabled:
+                print(f"⏭️  Email notifications disabled for user {stakeholder_id}, skipping...")
+            elif not EMAIL_SERVICE_AVAILABLE:
+                print(f"⏭️  Email service not available")
 
     except Exception as e:
         print(f"Failed to notify stakeholders about project comment: {e}")
@@ -368,10 +393,28 @@ def notify_project_comment_mentions(project_data: dict, comment_text: str, comme
             
             print(f"📝 Creating project mention notification for user {mentioned_user_id}")
             
+            # Get notification preferences for this user and project
+            email_enabled = True
+            in_app_enabled = True
+            try:
+                prefs_response = supabase.table("project_notification_preferences").select(
+                    "email_enabled, in_app_enabled"
+                ).eq("user_id", mentioned_user_id).eq("project_id", project_data.get("project_id")).execute()
+
+                if prefs_response.data and len(prefs_response.data) > 0:
+                    email_enabled = prefs_response.data[0].get("email_enabled", True)
+                    in_app_enabled = prefs_response.data[0].get("in_app_enabled", True)
+                    print(f"📋 Notification preferences for user {mentioned_user_id}: email={email_enabled}, in_app={in_app_enabled}")
+                else:
+                    print(f"📋 No preferences found for user {mentioned_user_id}, using defaults (both enabled)")
+            except Exception as e:
+                print(f"Error fetching notification preferences: {e}")
+                # Default to enabled if there's an error
+
             # Check for existing notification to prevent duplicates (check within last 2 minutes)
             try:
                 existing_check = supabase.table("notifications").select("id").eq("user_id", mentioned_user_id).eq("project_id", project_data.get("project_id")).eq("type", "project_mention").gte("created_at", (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()).execute()
-                
+
                 if existing_check.data and len(existing_check.data) > 0:
                     print(f"⏭️  Duplicate project mention notification detected for user {mentioned_user_id}, skipping...")
                     continue
@@ -379,72 +422,73 @@ def notify_project_comment_mentions(project_data: dict, comment_text: str, comme
                 print(f"Error checking existing notifications: {e}")
                 # Continue anyway to avoid blocking notifications
 
-            # Store in-app notification
-            try:
-                print(f"💾 Inserting project mention notification into database for user {mentioned_user_id}...")
-                response = supabase.table("notifications").insert(notification_data).execute()
+            # Store in-app notification if enabled
+            if in_app_enabled:
+                try:
+                    print(f"💾 Inserting project mention notification into database for user {mentioned_user_id}...")
+                    response = supabase.table("notifications").insert(notification_data).execute()
 
-                if response.data:
-                    notifications_created += 1
-                    print(f"✅ SUCCESS: Project mention notification inserted! ID: {response.data[0].get('id')}")
-                    print(f"   Notification title: {notification_data['title']}")
-                    print(f"   For user: {mentioned_user_id}")
+                    if response.data:
+                        notifications_created += 1
+                        print(f"✅ SUCCESS: Project mention notification inserted! ID: {response.data[0].get('id')}")
+                        print(f"   Notification title: {notification_data['title']}")
+                        print(f"   For user: {mentioned_user_id}")
 
-                    # Send real-time notification via WebSocket (if notification service is available)
-                    try:
-                        notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                        print(f"📡 Sending real-time project mention notification via WebSocket")
-                        realtime_data = {
-                            "user_id": mentioned_user_id,
-                            "title": notification_data["title"],
-                            "message": notification_data["message"],
-                            "type": notification_data["type"],
-                            "project_id": notification_data.get("project_id"),
-                            "created_at": notification_data["created_at"]
-                        }
-                        notif_response = requests.post(
-                            f"{notification_service_url}/notifications/realtime",
-                            json=realtime_data,
-                            timeout=5,
-                            headers={'Content-Type': 'application/json'}
-                        )
-                        print(f"   Real-time project mention notification response: {notif_response.status_code}")
-                    except Exception as e:
-                        print(f"⚠️  Failed to send real-time project mention notification: {e}")
-                
-                # Send email notification for project mentions
-                if EMAIL_SERVICE_AVAILABLE:
-                    user_email = get_user_email(mentioned_user_id)
-                    if user_email:
+                        # Send real-time notification via WebSocket (if notification service is available)
                         try:
-                            print(f"📧 Sending project mention email to {user_email}...")
-                            send_notification_email(
-                                user_email=user_email,
-                                notification_type="project_mention",
-                                project_name=project_data.get("project_name", "Untitled Project"),
-                                project_id=project_data.get("project_id"),
-                                comment_text=truncated_comment,
-                                commenter_name=commenter_name,
-                                due_date=project_data.get("due_date")
+                            notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                            print(f"📡 Sending real-time project mention notification via WebSocket")
+                            realtime_data = {
+                                "user_id": mentioned_user_id,
+                                "title": notification_data["title"],
+                                "message": notification_data["message"],
+                                "type": notification_data["type"],
+                                "project_id": notification_data.get("project_id"),
+                                "created_at": notification_data["created_at"]
+                            }
+                            notif_response = requests.post(
+                                f"{notification_service_url}/notifications/realtime",
+                                json=realtime_data,
+                                timeout=5,
+                                headers={'Content-Type': 'application/json'}
                             )
-                            print(f"✅ Project mention email sent to {user_email}")
+                            print(f"   Real-time project mention notification response: {notif_response.status_code}")
                         except Exception as e:
-                            print(f"❌ Failed to send project mention email: {e}")
-                            import traceback
-                            traceback.print_exc()
-                    else:
-                        print(f"⚠️  No email found for mentioned user {mentioned_user_id}")
-                else:
-                    print(f"⏭️  Email service not available for project mention")
-                
-                if not response.data:
-                    print(f"❌ ERROR: Supabase insert returned no data!")
-                    print(f"   Response: {response}")
+                            print(f"⚠️  Failed to send real-time project mention notification: {e}")
 
-            except Exception as insert_error:
-                print(f"❌ EXCEPTION during project mention notification database insert: {insert_error}")
-                import traceback
-                traceback.print_exc()
+                except Exception as insert_error:
+                    print(f"❌ EXCEPTION during project mention notification database insert: {insert_error}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"⏭️  In-app notifications disabled for user {mentioned_user_id}, skipping...")
+
+            # Send email notification for project mentions if enabled
+            if email_enabled and EMAIL_SERVICE_AVAILABLE:
+                user_email = get_user_email(mentioned_user_id)
+                if user_email:
+                    try:
+                        print(f"📧 Sending project mention email to {user_email}...")
+                        send_notification_email(
+                            user_email=user_email,
+                            notification_type="project_mention",
+                            project_name=project_data.get("project_name", "Untitled Project"),
+                            project_id=project_data.get("project_id"),
+                            comment_text=truncated_comment,
+                            commenter_name=commenter_name,
+                            due_date=project_data.get("due_date")
+                        )
+                        print(f"✅ Project mention email sent to {user_email}")
+                    except Exception as e:
+                        print(f"❌ Failed to send project mention email: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    print(f"⚠️  No email found for mentioned user {mentioned_user_id}")
+            elif not email_enabled:
+                print(f"⏭️  Email notifications disabled for user {mentioned_user_id}, skipping...")
+            elif not EMAIL_SERVICE_AVAILABLE:
+                print(f"⏭️  Email service not available for project mention")
 
         print(f"\n{'='*80}")
         print(f"📊 SUMMARY: Created {notifications_created} project mention notification(s)")
