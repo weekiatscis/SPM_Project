@@ -21,7 +21,7 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/auth/*": {"origins": "*", "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"]}}, supports_credentials=True)
 
 # Constants
 MAX_FAILED_ATTEMPTS = 5
@@ -90,31 +90,37 @@ def reset_failed_attempts(user_id: str):
     }).eq("user_id", user_id).execute()
 
 
-def create_session(user_id: str) -> str:
-    """Create a new session for the user"""
+def create_session(user_id: str) -> Dict[str, str]:
+    """Create a new session for the user and return session info"""
     session_token = generate_session_token()
     expires_at = datetime.now(timezone.utc) + SESSION_TIMEOUT
-    
+
     # Clean up any existing sessions for this user (optional - allow multiple sessions)
     # supabase.table("user_sessions").delete().eq("user_id", user_id).execute()
-    
+
     # Create new session
-    supabase.table("user_sessions").insert({
+    response = supabase.table("user_sessions").insert({
         "user_id": user_id,
         "session_token": session_token,
         "expires_at": expires_at.isoformat(),
         "last_activity": datetime.now(timezone.utc).isoformat()
     }).execute()
-    
-    return session_token
+
+    # Return both session_token and session_id
+    session_id = response.data[0]['session_id'] if response.data else None
+
+    return {
+        "session_token": session_token,
+        "session_id": session_id
+    }
 
 
 def validate_session(session_token: str) -> Optional[Dict[str, Any]]:
     """Validate session token and return user data if valid"""
     try:
-        # Get session data
+        # Get session data including session_id
         session_response = supabase.table("user_sessions").select(
-            "user_id, expires_at, last_activity"
+            "session_id, user_id, expires_at, last_activity"
         ).eq("session_token", session_token).execute()
         
         if not session_response.data:
@@ -141,10 +147,13 @@ def validate_session(session_token: str) -> Optional[Dict[str, Any]]:
         
         # Get user data
         user_response = supabase.table("user").select("*").eq("user_id", session_data['user_id']).execute()
-        
+
         if user_response.data:
-            return user_response.data[0]
-            
+            user_data = user_response.data[0]
+            # Add session_id to user data for audit logging
+            user_data['session_id'] = session_data['session_id']
+            return user_data
+
         return None
         
     except Exception as e:
@@ -190,10 +199,10 @@ def login():
         
         # Successful login - reset failed attempts
         reset_failed_attempts(user_data['user_id'])
-        
+
         # Create session
-        session_token = create_session(user_data['user_id'])
-        
+        session_info = create_session(user_data['user_id'])
+
         # Return user data (excluding sensitive information)
         user_info = {
             "user_id": user_data['user_id'],
@@ -201,13 +210,14 @@ def login():
             "name": user_data['name'],
             "role": user_data.get('role'),
             "department": user_data.get('department'),
-            "superior": user_data.get('superior')
+            "superior": user_data.get('superior'),
+            "session_id": session_info['session_id']
         }
-        
+
         return jsonify({
             "message": "Login successful",
             "user": user_info,
-            "session_token": session_token
+            "session_token": session_info['session_token']
         }), 200
         
     except Exception as e:
@@ -257,14 +267,64 @@ def validate_session_endpoint():
             "name": user_data['name'],
             "role": user_data.get('role'),
             "department": user_data.get('department'),
-            "superior": user_data.get('superior')
+            "superior": user_data.get('superior'),
+            "session_id": user_data.get('session_id')
         }
-        
+
         return jsonify({"user": user_info}), 200
         
     except Exception as e:
         print(f"Session validation error: {e}")
         return jsonify({"error": "An error occurred during session validation"}), 500
+
+
+@app.route("/auth/audit-log", methods=["POST"])
+def audit_log():
+    """Log audit events for session management and security"""
+    try:
+        session_token = request.headers.get('Authorization')
+
+        if not session_token or not session_token.startswith('Bearer '):
+            return jsonify({"error": "No valid session token provided"}), 401
+
+        session_token = session_token[7:]  # Remove 'Bearer ' prefix
+
+        # Validate session and get user
+        user_data = validate_session(session_token)
+
+        if not user_data:
+            return jsonify({"error": "Invalid or expired session"}), 401
+
+        # Get request data
+        data = request.get_json()
+
+        if not data or not data.get('event_type'):
+            return jsonify({"error": "event_type is required"}), 400
+
+        event_type = data['event_type']
+        event_description = data.get('event_description', '')
+        metadata = data.get('metadata', {})
+
+        # Get client information
+        ip_address = request.remote_addr
+        user_agent = request.headers.get('User-Agent', '')
+
+        # Insert audit log with session_id
+        supabase.table("audit_logs").insert({
+            "user_id": user_data['user_id'],
+            "session_id": user_data.get('session_id'),  # Now using session_id instead of session_token
+            "event_type": event_type,
+            "event_description": event_description,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+            "metadata": metadata
+        }).execute()
+
+        return jsonify({"message": "Audit log created successfully"}), 201
+
+    except Exception as e:
+        print(f"Audit log error: {e}")
+        return jsonify({"error": "An error occurred while creating audit log"}), 500
 
 
 @app.route("/health", methods=["GET"])

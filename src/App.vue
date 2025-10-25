@@ -1,5 +1,8 @@
 <template>
     <a-config-provider>
+      <!-- Session Warning Modal - Global -->
+      <SessionWarningModal />
+
       <!-- Show auth pages (login/signup) without any layout -->
       <div v-if="isLoginPage">
         <router-view v-slot="{ Component }">
@@ -141,19 +144,21 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import CustomSidebar from './layout/CustomSidebar.vue'
 import Topbar from './layout/Topbar.vue'
 import NotificationPanel from './components/notifications/NotificationPanel.vue'
 import { useNotificationPanel } from './composables/useNotificationPanel.js'
+import SessionWarningModal from './components/session/SessionWarningModal.vue'
 
 export default {
   name: 'App',
   components: {
     CustomSidebar,
     Topbar,
-    NotificationPanel
+    NotificationPanel,
+    SessionWarningModal
   },
   setup() {
     const route = useRoute()
