@@ -244,7 +244,10 @@ def create_email_template(notification_type: str, data: dict) -> str:
         """
 
     elif notification_type == "project_created":
-        subject = f"📁 New Project Created: {task_title}"
+        project_name = data.get("project_name", "Untitled Project")
+        project_id = data.get("project_id", "")
+        project_link = f"{FRONTEND_URL}/projects?projectId={project_id}" if project_id else FRONTEND_URL
+        subject = f"📁 New Project Created: {project_name}"
 
         html_content = f"""
         <!DOCTYPE html>
@@ -260,13 +263,12 @@ def create_email_template(notification_type: str, data: dict) -> str:
                     <p>You have successfully created a new project:</p>
 
                     <div class="task-card">
-                        <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
+                        <h2 style="margin-top: 0; color: #333;">{project_name}</h2>
                         {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
-                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
                     </div>
 
                     <center>
-                        <a href="{task_link}" class="button">View Project Details</a>
+                        <a href="{project_link}" class="button">View Project Details</a>
                     </center>
 
                     <p style="color: #666; font-size: 14px; margin-top: 30px;">
@@ -283,7 +285,10 @@ def create_email_template(notification_type: str, data: dict) -> str:
         """
 
     elif notification_type == "project_assigned":
-        subject = f"📁 New Project Assigned: {task_title}"
+        project_name = data.get("project_name", "Untitled Project")
+        project_id = data.get("project_id", "")
+        project_link = f"{FRONTEND_URL}/projects?projectId={project_id}" if project_id else FRONTEND_URL
+        subject = f"📁 New Project Assigned: {project_name}"
 
         html_content = f"""
         <!DOCTYPE html>
@@ -299,13 +304,12 @@ def create_email_template(notification_type: str, data: dict) -> str:
                     <p>You have been assigned to a new project:</p>
 
                     <div class="task-card">
-                        <h2 style="margin-top: 0; color: #333;">{task_title}</h2>
+                        <h2 style="margin-top: 0; color: #333;">{project_name}</h2>
                         {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
-                        <p><strong>Priority:</strong> <span class="priority-badge">{priority}</span></p>
                     </div>
 
                     <center>
-                        <a href="{task_link}" class="button">View Project Details</a>
+                        <a href="{project_link}" class="button">View Project Details</a>
                     </center>
 
                     <p style="color: #666; font-size: 14px; margin-top: 30px;">
