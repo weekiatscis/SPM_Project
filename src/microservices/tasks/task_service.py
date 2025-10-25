@@ -551,6 +551,14 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
         mentioned_user_ids = list(set(mentioned_user_ids))
         print(f"👥 Sending mention notifications to {len(mentioned_user_ids)} user(s)")
         
+        # Get task stakeholders to avoid duplicate real-time notifications
+        try:
+            from task_service import get_task_stakeholders
+            stakeholders = get_task_stakeholders(task_data)
+            print(f"🔍 DEBUG: Task stakeholders: {stakeholders}")
+        except:
+            stakeholders = []
+        
         notifications_created = 0
         for mentioned_user_id in mentioned_user_ids:
             # Skip if user mentioned themselves
@@ -598,26 +606,30 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                         notifications_created += 1
                         print(f"✅ Mention notification created! ID: {response.data[0].get('id')}")
                         
-                        # Send real-time notification
-                        try:
-                            notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                            realtime_data = {
-                                "user_id": mentioned_user_id,
-                                "title": notification_data["title"],
-                                "message": notification_data["message"],
-                                "type": notification_data["type"],
-                                "task_id": notification_data.get("task_id"),
-                                "created_at": notification_data["created_at"]
-                            }
-                            notif_response = requests.post(
-                                f"{notification_service_url}/notifications/realtime",
-                                json=realtime_data,
-                                timeout=5,
-                                headers={'Content-Type': 'application/json'}
-                            )
-                            print(f"   Real-time mention notification sent: {notif_response.status_code}")
-                        except Exception as e:
-                            print(f"⚠️  Failed to send real-time notification: {e}")
+                        # Send real-time notification only for non-stakeholders
+                        # Stakeholders will get real-time notification from regular comment notification
+                        if mentioned_user_id not in stakeholders:
+                            try:
+                                notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                                realtime_data = {
+                                    "user_id": mentioned_user_id,
+                                    "title": notification_data["title"],
+                                    "message": notification_data["message"],
+                                    "type": notification_data["type"],
+                                    "task_id": notification_data.get("task_id"),
+                                    "created_at": notification_data["created_at"]
+                                }
+                                notif_response = requests.post(
+                                    f"{notification_service_url}/notifications/realtime",
+                                    json=realtime_data,
+                                    timeout=5,
+                                    headers={'Content-Type': 'application/json'}
+                                )
+                                print(f"   Real-time mention notification sent: {notif_response.status_code}")
+                            except Exception as e:
+                                print(f"⚠️  Failed to send real-time notification: {e}")
+                        else:
+                            print(f"⏭️  Skipping real-time mention notification for stakeholder {mentioned_user_id}")
                 
                 except Exception as insert_error:
                     print(f"❌ Error creating mention notification: {insert_error}")

@@ -321,6 +321,76 @@ def create_email_template(notification_type: str, data: dict) -> str:
         </html>
         """
 
+    elif notification_type == "task_mention":
+        comment_text = data.get("comment_text", "")
+        commenter_name = data.get("commenter_name", "Someone")
+        subject = f"👤 You were mentioned in a task: {task_title}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>You were mentioned in a task!</h1>
+                </div>
+                <div class="content">
+                    <p><strong>{commenter_name}</strong> mentioned you in a comment on the task <strong>"{task_title}"</strong>.</p>
+                    <div class="comment-box">
+                        <p><strong>Comment:</strong></p>
+                        <p>"{comment_text}"</p>
+                    </div>
+                    <div class="task-info">
+                        <p><strong>Task:</strong> {task_title}</p>
+                        <p><strong>Priority:</strong> <span style="color: {priority_color};">{priority_label}</span></p>
+                        {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
+                    </div>
+                    <div class="action">
+                        <a href="{task_link}" class="button">View Task</a>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    elif notification_type == "project_mention":
+        comment_text = data.get("comment_text", "")
+        commenter_name = data.get("commenter_name", "Someone")
+        project_name = data.get("project_name", "Untitled Project")
+        project_id = data.get("project_id", "")
+        project_link = f"{FRONTEND_URL}/projects/{project_id}" if project_id else FRONTEND_URL
+        subject = f"👤 You were mentioned in a project: {project_name}"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{base_style}</head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>You were mentioned in a project!</h1>
+                </div>
+                <div class="content">
+                    <p><strong>{commenter_name}</strong> mentioned you in a comment on the project <strong>"{project_name}"</strong>.</p>
+                    <div class="comment-box">
+                        <p><strong>Comment:</strong></p>
+                        <p>"{comment_text}"</p>
+                    </div>
+                    <div class="task-info">
+                        <p><strong>Project:</strong> {project_name}</p>
+                        {f'<p><strong>Due Date:</strong> {due_date}</p>' if due_date else ''}
+                    </div>
+                    <div class="action">
+                        <a href="{project_link}" class="button">View Project</a>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
     else:
         # Generic notification - but only if we have a valid message
         message = data.get("message", "")
