@@ -11,6 +11,7 @@ import threading
 import time
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import eventlet
+from email_service import send_notification_email
 
 # Environment variables
 SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
@@ -158,6 +159,132 @@ def mark_notification_read(notification_id: str, user_id: str) -> bool:
         return False
 
 # Due date reminder logic
+def check_project_due_date_reminders():
+    """Check for projects that need reminders and send notifications"""
+    try:
+        now = datetime.now(timezone.utc)
+        today = now.date()
+
+        # Get all projects with due dates
+        response = supabase.table("project").select("*").not_.is_("due_date", "null").execute()
+        projects = response.data or []
+
+        for project in projects:
+            # Get custom reminder preferences for this project
+            try:
+                prefs_response = supabase.table("project_reminder_preferences").select("reminder_days").eq("project_id", project["project_id"]).execute()
+                if prefs_response.data and len(prefs_response.data) > 0:
+                    reminder_days = prefs_response.data[0].get("reminder_days", [7, 3, 1])
+                else:
+                    reminder_days = [7, 3, 1]  # Default
+            except Exception as e:
+                print(f"Failed to fetch reminder preferences for project {project['project_id']}: {e}")
+                reminder_days = [7, 3, 1]  # Default
+
+            # Calculate days until due
+            try:
+                due_date_str = project["due_date"]
+                if isinstance(due_date_str, str):
+                    due_date = datetime.strptime(due_date_str[:10], "%Y-%m-%d").date()
+                else:
+                    due_date = due_date_str
+
+                days_until_due = (due_date - today).days
+
+                # Get all stakeholders (creator + collaborators)
+                stakeholder_ids = [project["created_by"]]
+                collaborators = project.get("collaborators", [])
+                if collaborators:
+                    stakeholder_ids.extend(collaborators)
+                stakeholder_ids = list(set(filter(None, stakeholder_ids)))  # Remove duplicates and None
+
+                # Check if we should send a reminder today
+                for days in reminder_days:
+                    if days_until_due == days:
+                        # Send notification to all stakeholders
+                        for user_id in stakeholder_ids:
+                            # Check if we already sent this reminder to this user
+                            existing_notification = supabase.table("notifications").select("id").eq(
+                                "user_id", user_id
+                            ).eq("task_id", project["project_id"]).eq(
+                                "type", f"project_reminder_{days}_days"
+                            ).gte("created_at", today.isoformat()).execute()
+
+                            if not existing_notification.data:
+                                # Get notification preferences for this user
+                                prefs_response = supabase.table("project_notification_preferences").select(
+                                    "email_enabled, in_app_enabled"
+                                ).eq("user_id", user_id).eq("project_id", project["project_id"]).execute()
+
+                                email_enabled = True
+                                in_app_enabled = True
+                                if prefs_response.data and len(prefs_response.data) > 0:
+                                    email_enabled = prefs_response.data[0].get("email_enabled", True)
+                                    in_app_enabled = prefs_response.data[0].get("in_app_enabled", True)
+
+                                # Create notification
+                                notification_data = {
+                                    "user_id": user_id,
+                                    "title": f"Project Due in {days} Day{'s' if days > 1 else ''}",
+                                    "message": f"Project '{project['project_name']}' is due on {due_date.strftime('%B %d, %Y')}",
+                                    "type": f"project_reminder_{days}_days",
+                                    "task_id": project["project_id"],  # Using task_id field for project_id
+                                    "due_date": project["due_date"]
+                                }
+
+                                # Store in database if in-app enabled
+                                if in_app_enabled:
+                                    stored_notification = create_notification(notification_data)
+
+                                    if stored_notification:
+                                        # Send real-time notification via WebSocket
+                                        send_realtime_notification(user_id, stored_notification)
+
+                                        # Publish to RabbitMQ for real-time delivery
+                                        rabbitmq.publish_notification(
+                                            f"project.reminder.{days}_days",
+                                            {
+                                                "notification_id": stored_notification["id"],
+                                                "user_id": user_id,
+                                                "project_id": project["project_id"],
+                                                "title": notification_data["title"],
+                                                "message": notification_data["message"],
+                                                "type": notification_data["type"],
+                                                "created_at": stored_notification["created_at"]
+                                            }
+                                        )
+
+                                        print(f"Sent {days}-day in-app reminder for project {project['project_id']} to user {user_id}")
+
+                                # Send email if enabled
+                                if email_enabled:
+                                    try:
+                                        # Get user email
+                                        user_response = supabase.table("user").select("email").eq("user_id", user_id).execute()
+                                        if user_response.data and len(user_response.data) > 0:
+                                            user_email = user_response.data[0].get("email")
+                                            if user_email:
+                                                send_notification_email(
+                                                    user_email=user_email,
+                                                    notification_type=f"project_reminder_{days}_days",
+                                                    task_title=project["project_name"],
+                                                    comment_text="",
+                                                    commenter_name="",
+                                                    task_id=project["project_id"],
+                                                    due_date=project.get("due_date"),
+                                                    priority="",
+                                                    project_name=project["project_name"],
+                                                    project_id=project["project_id"]
+                                                )
+                                                print(f"Sent {days}-day email reminder for project {project['project_id']} to {user_email}")
+                                    except Exception as email_error:
+                                        print(f"Failed to send email reminder: {email_error}")
+            except Exception as e:
+                print(f"Error processing project {project.get('project_id', 'unknown')}: {e}")
+
+    except Exception as e:
+        print(f"Error checking project due date reminders: {e}")
+
 def check_due_date_reminders():
     """Check for tasks that need reminders and send notifications"""
     try:
@@ -239,6 +366,7 @@ def reminder_scheduler():
     """Background thread to check for reminders every hour"""
     while True:
         check_due_date_reminders()
+        check_project_due_date_reminders()
         time.sleep(3600)  # Check every hour
 
 # Start background scheduler

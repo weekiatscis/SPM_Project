@@ -484,10 +484,29 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
     print(f"👤 Commenter Name: {commenter_name}")
 
     try:
-        # Extract @mentions from comment text using regex
+        # Extract @mentions from comment text using a simple approach
         import re
-        mention_pattern = r'@([^\s]+)'
+        # Find all @mentions by looking for @ followed by word characters
+        # This handles @zenia, @zenia2, @john, etc.
+        mention_pattern = r'@(\w+)'
         mentioned_names = re.findall(mention_pattern, comment_text)
+        
+        # For usernames with spaces like "zenia 2", we need special handling
+        # Look for patterns like @zenia 2, @john doe, etc.
+        space_mention_pattern = r'@([a-zA-Z]+)\s+(\d+|[a-zA-Z]+)'
+        space_mentions = re.findall(space_mention_pattern, comment_text)
+        
+        # Add space mentions to the list
+        for space_mention in space_mentions:
+            if len(space_mention) == 2:
+                # Handle @zenia 2 -> "zenia 2"
+                combined_name = f"{space_mention[0]} {space_mention[1]}"
+                if combined_name not in mentioned_names:
+                    mentioned_names.append(combined_name)
+        
+        print(f"🔍 DEBUG: Comment text: '{comment_text}'")
+        print(f"🔍 DEBUG: Regex pattern: {mention_pattern}")
+        print(f"🔍 DEBUG: Found mentions: {mentioned_names}")
         
         if not mentioned_names:
             print("ℹ️  No mentions found in comment")
@@ -503,10 +522,14 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
         
         # Create a mapping of names to user IDs (case-insensitive)
         name_to_user_id = {}
+        print(f"🔍 DEBUG: All users in database:")
         for user in all_users_response.data:
             user_name = user.get('name', '').strip()
             if user_name:
                 name_to_user_id[user_name.lower()] = user['user_id']
+                print(f"   - User: '{user_name}' (ID: {user['user_id']})")
+        
+        print(f"🔍 DEBUG: Name mapping: {name_to_user_id}")
         
         # Find user IDs for mentioned names
         mentioned_user_ids = []
@@ -518,6 +541,7 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                 print(f"✅ Matched mention '@{mentioned_name}' to user ID: {user_id}")
             else:
                 print(f"⚠️  Could not find user for mention '@{mentioned_name}'")
+                print(f"🔍 DEBUG: Available names: {list(name_to_user_id.keys())}")
         
         if not mentioned_user_ids:
             print("ℹ️  No valid user IDs found for mentions")
@@ -526,6 +550,14 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
         # Remove duplicates
         mentioned_user_ids = list(set(mentioned_user_ids))
         print(f"👥 Sending mention notifications to {len(mentioned_user_ids)} user(s)")
+        
+        # Get task stakeholders to avoid duplicate real-time notifications
+        try:
+            from task_service import get_task_stakeholders
+            stakeholders = get_task_stakeholders(task_data)
+            print(f"🔍 DEBUG: Task stakeholders: {stakeholders}")
+        except:
+            stakeholders = []
         
         notifications_created = 0
         for mentioned_user_id in mentioned_user_ids:
@@ -541,10 +573,10 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                 "user_id": mentioned_user_id,
                 "title": f"You were mentioned in '{task_data['title']}'",
                 "message": f"{commenter_name} mentioned you: {truncated_comment}",
-                "type": "mention",
+                "type": "task_mention",
                 "task_id": task_data["task_id"],
                 "due_date": task_data.get("due_date"),
-                "priority": task_data.get("priority", "Medium"),
+                "priority": "High",  # Mentions are high priority
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "is_read": False
             }
@@ -560,7 +592,7 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                     # Check for duplicate within last 2 minutes
                     existing_check = supabase.table("notifications").select("id").eq(
                         "user_id", mentioned_user_id
-                    ).eq("task_id", task_data["task_id"]).eq("type", "mention").gte(
+                    ).eq("task_id", task_data["task_id"]).eq("type", "task_mention").gte(
                         "created_at", (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
                     ).execute()
                     
@@ -574,26 +606,30 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                         notifications_created += 1
                         print(f"✅ Mention notification created! ID: {response.data[0].get('id')}")
                         
-                        # Send real-time notification
-                        try:
-                            notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
-                            realtime_data = {
-                                "user_id": mentioned_user_id,
-                                "title": notification_data["title"],
-                                "message": notification_data["message"],
-                                "type": notification_data["type"],
-                                "task_id": notification_data.get("task_id"),
-                                "created_at": notification_data["created_at"]
-                            }
-                            notif_response = requests.post(
-                                f"{notification_service_url}/notifications/realtime",
-                                json=realtime_data,
-                                timeout=5,
-                                headers={'Content-Type': 'application/json'}
-                            )
-                            print(f"   Real-time mention notification sent: {notif_response.status_code}")
-                        except Exception as e:
-                            print(f"⚠️  Failed to send real-time notification: {e}")
+                        # Send real-time notification only for non-stakeholders
+                        # Stakeholders will get real-time notification from regular comment notification
+                        if mentioned_user_id not in stakeholders:
+                            try:
+                                notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8084")
+                                realtime_data = {
+                                    "user_id": mentioned_user_id,
+                                    "title": notification_data["title"],
+                                    "message": notification_data["message"],
+                                    "type": notification_data["type"],
+                                    "task_id": notification_data.get("task_id"),
+                                    "created_at": notification_data["created_at"]
+                                }
+                                notif_response = requests.post(
+                                    f"{notification_service_url}/notifications/realtime",
+                                    json=realtime_data,
+                                    timeout=5,
+                                    headers={'Content-Type': 'application/json'}
+                                )
+                                print(f"   Real-time mention notification sent: {notif_response.status_code}")
+                            except Exception as e:
+                                print(f"⚠️  Failed to send real-time notification: {e}")
+                        else:
+                            print(f"⏭️  Skipping real-time mention notification for stakeholder {mentioned_user_id}")
                 
                 except Exception as insert_error:
                     print(f"❌ Error creating mention notification: {insert_error}")
@@ -601,14 +637,16 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                     traceback.print_exc()
             
             # Send email if enabled
+            print(f"🔍 DEBUG: Email check - prefs: {prefs}, EMAIL_SERVICE_AVAILABLE: {EMAIL_SERVICE_AVAILABLE}")
             if prefs.get("email_enabled", True) and EMAIL_SERVICE_AVAILABLE:
                 user_email = get_user_email(mentioned_user_id)
+                print(f"🔍 DEBUG: User email for {mentioned_user_id}: {user_email}")
                 if user_email:
                     try:
                         print(f"📧 Sending mention email to {user_email}...")
                         send_notification_email(
                             user_email=user_email,
-                            notification_type="mention",
+                            notification_type="task_mention",
                             task_title=task_data["title"],
                             comment_text=truncated_comment,
                             commenter_name=commenter_name,
@@ -619,6 +657,12 @@ def notify_comment_mentions(task_data: dict, comment_text: str, commenter_id: st
                         print(f"✅ Mention email sent to {user_email}")
                     except Exception as e:
                         print(f"❌ Failed to send mention email: {e}")
+                        import traceback
+                        traceback.print_exc()
+                else:
+                    print(f"⚠️  No email found for mentioned user {mentioned_user_id}")
+            else:
+                print(f"⏭️  Email notifications disabled for mentioned user {mentioned_user_id} (prefs: {prefs.get('email_enabled')}, service: {EMAIL_SERVICE_AVAILABLE})")
         
         print(f"\n{'='*80}")
         print(f"📊 SUMMARY: Created {notifications_created} mention notification(s)")
