@@ -437,7 +437,7 @@ def notify_project_comment_mentions(project_data: dict, comment_text: str, comme
                 else:
                     print(f"⏭️  Email service not available for project mention")
                 
-                else:
+                if not response.data:
                     print(f"❌ ERROR: Supabase insert returned no data!")
                     print(f"   Response: {response}")
 
