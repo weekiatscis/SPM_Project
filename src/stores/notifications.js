@@ -26,8 +26,15 @@ export const useNotificationStore = defineStore('notifications', () => {
 
       if (response.ok) {
         const data = await response.json()
+        // Deduplicate notifications by ID
+        const notificationMap = new Map()
+        ;(data.notifications || []).forEach(n => {
+          if (!notificationMap.has(n.id)) {
+            notificationMap.set(n.id, n)
+          }
+        })
         // Sort by created_at DESC (latest first)
-        const sortedNotifications = (data.notifications || []).sort((a, b) => {
+        const sortedNotifications = Array.from(notificationMap.values()).sort((a, b) => {
           return new Date(b.created_at) - new Date(a.created_at)
         })
         notifications.value = sortedNotifications
@@ -40,7 +47,14 @@ export const useNotificationStore = defineStore('notifications', () => {
           const fallbackResponse = await fetch(`${taskServiceUrl}/notifications/debug/${userId}`)
           if (fallbackResponse.ok) {
             const fallbackData = await fallbackResponse.json()
-            const sortedNotifications = (fallbackData.notifications || []).sort((a, b) => {
+            // Deduplicate notifications by ID
+            const notificationMap = new Map()
+            ;(fallbackData.notifications || []).forEach(n => {
+              if (!notificationMap.has(n.id)) {
+                notificationMap.set(n.id, n)
+              }
+            })
+            const sortedNotifications = Array.from(notificationMap.values()).sort((a, b) => {
               return new Date(b.created_at) - new Date(a.created_at)
             })
             notifications.value = sortedNotifications
@@ -127,6 +141,30 @@ export const useNotificationStore = defineStore('notifications', () => {
   }
 
   const addNotification = (notification) => {
+    // Check if notification already exists (deduplicate)
+    const exists = notifications.value.some(n => {
+      // Check by ID if available
+      if (notification.id && n.id === notification.id) {
+        return true
+      }
+      // Check by content similarity (same user, task, type, and created within 5 seconds)
+      if (n.user_id === notification.user_id &&
+          n.task_id === notification.task_id &&
+          n.type === notification.type &&
+          n.title === notification.title) {
+        const timeDiff = Math.abs(new Date(n.created_at) - new Date(notification.created_at))
+        if (timeDiff < 5000) { // Within 5 seconds
+          return true
+        }
+      }
+      return false
+    })
+
+    if (exists) {
+      console.log('Duplicate notification detected, skipping:', notification.title)
+      return
+    }
+
     // Add new notification to the beginning and re-sort to ensure correct order
     notifications.value.unshift(notification)
     notifications.value.sort((a, b) => {

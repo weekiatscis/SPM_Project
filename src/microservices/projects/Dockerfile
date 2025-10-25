@@ -12,6 +12,10 @@ RUN pip install -r requirements.txt
 
 COPY src/microservices/projects/ .
 
+# Copy email service for notifications
+RUN mkdir -p notifications
+COPY src/microservices/notifications/email_service.py ./notifications/
+
 # Expose port for project service
 EXPOSE 8082
 

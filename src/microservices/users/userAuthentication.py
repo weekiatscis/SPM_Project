@@ -64,10 +64,10 @@ def is_account_locked(user_data: Dict[str, Any]) -> bool:
 def increment_failed_attempts(user_id: str, current_attempts: int):
     """Increment failed login attempts and lock account if necessary"""
     new_attempts = current_attempts + 1
-    
+
     if new_attempts >= MAX_FAILED_ATTEMPTS:
         # Lock the account
-        lock_until = datetime.timezone.utc() + ACCOUNT_LOCK_DURATION
+        lock_until = datetime.now(timezone.utc) + ACCOUNT_LOCK_DURATION
         supabase.table("user").update({
             "failed_attempts": new_attempts,
             "is_locked": True,

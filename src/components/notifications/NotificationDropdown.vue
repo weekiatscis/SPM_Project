@@ -276,7 +276,7 @@
 
         // Navigate to project details page
         try {
-          router.push(`/projects?projectId=${notification.project_id}`)
+          router.push(`/projects/${notification.project_id}`)
           console.log('Navigating to project:', notification.project_id)
         } catch (error) {
           console.error('Error navigating to project:', error)
