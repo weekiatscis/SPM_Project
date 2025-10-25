@@ -37,9 +37,18 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
   
+  console.log('Router navigation:', to.path, 'Auth status:', authStore.isAuthenticated)
+  
   // Try to initialize auth if we have a session token but aren't authenticated
   if (!authStore.isAuthenticated && localStorage.getItem('sessionToken')) {
-    await authStore.initializeAuth()
+    try {
+      await authStore.initializeAuth()
+    } catch (error) {
+      console.error('Auth initialization failed:', error)
+      // Clear invalid session data
+      localStorage.removeItem('sessionToken')
+      localStorage.removeItem('sessionId')
+    }
   }
   
   // Handle root path redirect based on authentication status
