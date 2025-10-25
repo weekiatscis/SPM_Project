@@ -408,6 +408,9 @@ def forgot_password():
 
         # Check rate limiting
         rate_limit_response = supabase.table("password_reset_rate_limit").select("*").eq("user_id", user_id).execute()
+        
+        rate_limit_exceeded = False
+        should_send_email = True
 
         if rate_limit_response.data:
             rate_limit_data = rate_limit_response.data[0]
@@ -417,10 +420,9 @@ def forgot_password():
             # Check if rate limit window has passed
             if datetime.now(timezone.utc) - first_request < RESET_RATE_LIMIT_WINDOW:
                 if request_count >= MAX_RESET_REQUESTS:
-                    return jsonify({
-                        "error": "Too many password reset requests. Please wait 3 minutes before trying again."
-                    }), 429
-
+                    rate_limit_exceeded = True
+                    should_send_email = False
+                    
                 # Increment request count
                 supabase.table("password_reset_rate_limit").update({
                     "request_count": request_count + 1,
@@ -460,25 +462,47 @@ def forgot_password():
             "user_agent": user_agent
         }).execute()
 
-        # Send reset email using notification service
-        try:
-            import sys
-            sys.path.append(os.path.join(os.path.dirname(__file__), '../notifications'))
-            from email_service import send_password_reset_email
+        # Send reset email using notification service via HTTP (only if not rate limited)
+        if should_send_email:
+            try:
+                import requests
+                
+                frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+                reset_link = f"{frontend_url}/reset-password?token={reset_token}"
+                
+                # Call notification service to send password reset email
+                notification_service_url = os.getenv("NOTIFICATION_SERVICE_URL", "http://notification-service:8084")
+                
+                print(f"Attempting to send password reset email to: {email}")
+                
+                email_payload = {
+                    "user_email": email,
+                    "user_name": user_data.get('name', 'User'),
+                    "reset_link": reset_link,
+                    "expiry_minutes": 15
+                }
+                
+                response = requests.post(
+                    f"{notification_service_url}/send-password-reset-email",
+                    json=email_payload,
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    print(f"Password reset email sent successfully to: {email}")
+                else:
+                    print(f"Failed to send password reset email. Status: {response.status_code}, Response: {response.text}")
+                    
+            except Exception as e:
+                print(f"Failed to send reset email: {e}")
+                # Continue anyway - don't expose email sending issues to user
 
-            frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-            reset_link = f"{frontend_url}/reset-password?token={reset_token}"
-
-            send_password_reset_email(
-                user_email=email,
-                user_name=user_data.get('name', 'User'),
-                reset_link=reset_link,
-                expiry_minutes=15
-            )
-        except Exception as e:
-            print(f"Failed to send reset email: {e}")
-            # Continue anyway - don't expose email sending issues to user
-
+        # Return appropriate response based on rate limit status
+        if rate_limit_exceeded:
+            return jsonify({
+                "error": "Too many password reset requests. Please wait 3 minutes before trying again."
+            }), 429
+        
         return jsonify({
             "message": "If an account with that email exists, a password reset link has been sent"
         }), 200
