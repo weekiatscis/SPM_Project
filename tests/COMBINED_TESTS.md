@@ -1,7 +1,3 @@
-# Combined Tests Documentation
-
-This document merges the key information from `tests/TESTING_CHANGES.md` and `tests/README.md` and focuses on the current test implementation and how to run the tests for the SPM Project.
-
 ## Purpose and high-level design
 - The test suite combines unit and integration tests for each microservice into a single file per service under `tests/`.
 - Goal: make tests easier to find, maintain, and run; improve CI feedback speed while keeping combined coverage (~80% target when unit + integration run).
@@ -24,6 +20,7 @@ This document merges the key information from `tests/TESTING_CHANGES.md` and `te
   - `USER_SERVICE_URL` (default: http://localhost:8081)
   - `AUTH_SERVICE_URL` (default: http://localhost:8086)
   - `NOTIFICATION_SERVICE_URL` (default: http://localhost:8084)
+  - `REPORT_SERVICE_URL` (default: http://localhost:8090)
 
 ## How tests are run (current commands)
 - Run all tests:
@@ -91,15 +88,6 @@ This document merges the key information from `tests/TESTING_CHANGES.md` and `te
   - `docker compose logs <service> --tail=500`
 - Healthchecks in compose use wget spider endpoints — on slow machines allow more startup time.
 
-## Recommendations and small improvements (low-risk)
-- Keep unit tests fast by increasing use of mocks for external services.
-- Consider test fixtures for shared data across services to reduce duplication.
-- Add a small wrapper script `scripts/run_integration_tests.sh` that:
-  - brings up compose
-  - waits for healthchecks (poll endpoints)
-  - runs `pytest -k "Integration"`
-  - collects failing service logs automatically
-- Continue to keep secrets out of the repository (`.env` contains sensitive keys); CI should inject them via secrets.
 
 ## One-page quick reference
 - Install test deps:
@@ -114,7 +102,3 @@ This document merges the key information from `tests/TESTING_CHANGES.md` and `te
   - `pytest tests/ -v --cov=src/microservices --cov-report=html`
 
 ---
-
-If you want, I can further:
-- Add this file to the repo (done).
-- Create the helper script `scripts/run_integration_tests.sh` to automate the steps described below.
