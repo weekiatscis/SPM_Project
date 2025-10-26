@@ -6,22 +6,26 @@ import ProjectDetails from '../views/ProjectDetails.vue'
 import Auth from '../views/Auth.vue'
 import ProfileSettings from '../views/ProfileSettings.vue'
 import Dashboard from '../views/Dashboard.vue'
+import ForgotPassword from '../views/ForgotPassword.vue'
+import ResetPassword from '../views/ResetPassword.vue'
 
 const routes = [
   { path: '/', redirect: '/home' },
   { path: '/login', name: 'Login', component: Auth, meta: { requiresGuest: true } },
   { path: '/signup', name: 'Signup', component: Auth, meta: { requiresGuest: true } },
+  { path: '/forgot-password', name: 'ForgotPassword', component: ForgotPassword, meta: { requiresGuest: true } },
+  { path: '/reset-password', name: 'ResetPassword', component: ResetPassword, meta: { requiresGuest: true } },
   { path: '/home', name: 'Home', component: Home, meta: { requiresAuth: true } },
   { path: '/projects', name: 'Projects', component: Projects, meta: { requiresAuth: true } },
   { path: '/projects/:id', name: 'ProjectDetails', component: ProjectDetails, meta: { requiresAuth: true } },
   { path: '/profile', name: 'ProfileSettings', component: ProfileSettings, meta: { requiresAuth: true } },
-  { 
-    path: '/dashboard', 
-    name: 'Dashboard', 
-    component: Dashboard, 
-    meta: { 
+  {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: Dashboard,
+    meta: {
       requiresAuth: true
-    } 
+    }
   }
 ]
 
@@ -33,9 +37,18 @@ const router = createRouter({
 router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
   
+  console.log('Router navigation:', to.path, 'Auth status:', authStore.isAuthenticated)
+  
   // Try to initialize auth if we have a session token but aren't authenticated
   if (!authStore.isAuthenticated && localStorage.getItem('sessionToken')) {
-    await authStore.initializeAuth()
+    try {
+      await authStore.initializeAuth()
+    } catch (error) {
+      console.error('Auth initialization failed:', error)
+      // Clear invalid session data
+      localStorage.removeItem('sessionToken')
+      localStorage.removeItem('sessionId')
+    }
   }
   
   // Handle root path redirect based on authentication status

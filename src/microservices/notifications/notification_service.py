@@ -865,6 +865,40 @@ def test_notifications(user_id: str):
         return jsonify({"error": f"Failed to create test notification: {str(e)}"}), 500
 
 
+@app.route("/send-password-reset-email", methods=["POST"])
+def send_password_reset_email_endpoint():
+    """Send password reset email via HTTP endpoint"""
+    try:
+        data = request.get_json()
+        
+        if not data or not data.get('user_email'):
+            return jsonify({"error": "user_email is required"}), 400
+        
+        user_email = data['user_email']
+        user_name = data.get('user_name', 'User')
+        reset_link = data.get('reset_link', '')
+        expiry_minutes = data.get('expiry_minutes', 15)
+        
+        # Import and call the email service function
+        from email_service import send_password_reset_email
+        
+        result = send_password_reset_email(
+            user_email=user_email,
+            user_name=user_name,
+            reset_link=reset_link,
+            expiry_minutes=expiry_minutes
+        )
+        
+        if result:
+            return jsonify({"message": "Password reset email sent successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to send password reset email"}), 500
+            
+    except Exception as e:
+        print(f"Password reset email endpoint error: {e}")
+        return jsonify({"error": f"Failed to send password reset email: {str(e)}"}), 500
+
+
 @app.route("/health", methods=["GET"])
 def health_check():
     """Simple health check endpoint for Docker and CI/CD"""

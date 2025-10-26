@@ -658,6 +658,98 @@ def send_notification_email(
     return send_email(user_email, subject, html_content)
 
 
+def send_password_reset_email(
+    user_email: str,
+    user_name: str,
+    reset_link: str,
+    expiry_minutes: int = 15
+) -> bool:
+    """
+    Send password reset email
+
+    Args:
+        user_email: Recipient email address
+        user_name: User's name
+        reset_link: Password reset link with token
+        expiry_minutes: Link expiry time in minutes
+
+    Returns:
+        bool: True if email sent successfully, False otherwise
+    """
+
+    subject = "🔐 Password Reset Request - Taskio"
+
+    base_style = """
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
+        .reset-card { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #007aff; }
+        .button { display: inline-block; padding: 12px 24px; background: #007aff; color: white !important; text-decoration: none; border-radius: 6px; font-weight: bold; margin: 20px 0; }
+        .button:hover { background: #0051d5; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; }
+        .warning { background: #fff3cd; padding: 12px; border-radius: 6px; border-left: 3px solid #ffc107; margin: 15px 0; }
+        .code-box { background: #f5f5f5; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; word-break: break-all; margin: 10px 0; }
+    </style>
+    """
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>{base_style}</head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1 style="margin: 0;">🔐 Password Reset Request</h1>
+            </div>
+            <div class="content">
+                <p>Hi {user_name},</p>
+                <p>We received a request to reset your password for your Taskio account.</p>
+
+                <div class="reset-card">
+                    <h2 style="margin-top: 0; color: #333;">Reset Your Password</h2>
+                    <p>Click the button below to create a new password. This link will expire in <strong>{expiry_minutes} minutes</strong>.</p>
+
+                    <center>
+                        <a href="{reset_link}" class="button">Reset Password</a>
+                    </center>
+
+                    <p style="font-size: 13px; color: #666; margin-top: 20px;">
+                        Or copy and paste this link into your browser:
+                    </p>
+                    <div class="code-box">
+                        {reset_link}
+                    </div>
+                </div>
+
+                <div class="warning">
+                    <p style="margin: 0; font-size: 13px; color: #856404;">
+                        ⚠️ <strong>Security Notice:</strong> If you didn't request this password reset, please ignore this email. Your password will remain unchanged.
+                    </p>
+                </div>
+
+                <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                    For security reasons:
+                </p>
+                <ul style="color: #666; font-size: 13px;">
+                    <li>This link can only be used once</li>
+                    <li>The link expires in {expiry_minutes} minutes</li>
+                    <li>You'll need to log in with your new password after resetting</li>
+                </ul>
+            </div>
+            <div class="footer">
+                <p>This email was sent because a password reset was requested for your account.</p>
+                <p>Taskio • Helping you stay productive and secure</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    return send_email(user_email, subject, html_content)
+
+
 if __name__ == "__main__":
     # Test email sending
     print("=" * 60)

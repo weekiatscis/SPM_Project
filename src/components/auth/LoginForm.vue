@@ -68,7 +68,14 @@
           </svg>
           <span>{{ errorMessage }}</span>
         </div>
-        
+
+        <!-- Forgot Password Link -->
+        <div class="forgot-password-link">
+          <router-link to="/forgot-password" class="forgot-link">
+            Forgot Password?
+          </router-link>
+        </div>
+
         <!-- Submit Button -->
         <button
           type="submit"
@@ -335,6 +342,25 @@ export default {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
+}
+
+/* Forgot Password Link */
+.forgot-password-link {
+  text-align: right;
+  margin-bottom: 20px;
+}
+
+.forgot-link {
+  font-size: 13px;
+  color: #007aff;
+  text-decoration: none;
+  font-weight: 550;
+  transition: color 0.2s ease;
+}
+
+.forgot-link:hover {
+  color: #0051d5;
+  text-decoration: underline;
 }
 
 /* Submit Button */
