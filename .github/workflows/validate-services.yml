@@ -6,6 +6,7 @@ on:
       - main
       - develop
       - testingchange  # Add your test branch
+      - session-management
   pull_request:
     branches:
       - main
