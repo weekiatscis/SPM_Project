@@ -4,9 +4,8 @@ on:
   push:
     branches:
       - main
-      - ranentest
       - develop
-      - testingupdate  # Add your test branch
+      - testingchange  # Add your test branch
   pull_request:
     branches:
       - main
