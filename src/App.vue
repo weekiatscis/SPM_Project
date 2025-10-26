@@ -32,83 +32,100 @@
         </a-drawer>
         
         <!-- Main Layout -->
-        <a-layout :style="{ marginLeft: isSidebarCollapsed ? '64px' : '256px', transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }" class="hidden md:flex">
+        <a-layout
+          :style="{
+            marginLeft: isSidebarCollapsed ? '64px' : '256px',
+            marginRight: isNotificationPanelOpen ? '420px' : '0',
+            transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+          }"
+          class="hidden md:flex"
+        >
           <!-- Header -->
-          <a-layout-header :style="{ 
-            padding: '0 24px', 
-            background: 'rgba(255, 255, 255, 0.7)', 
+          <a-layout-header :style="{
+            padding: '0 24px',
+            background: 'rgba(255, 255, 255, 0.7)',
             backdropFilter: 'blur(10px)',
             WebkitBackdropFilter: 'blur(10px)',
-            display: 'flex', 
+            display: 'flex',
             alignItems: 'center',
             borderBottom: '1px solid rgba(240, 240, 240, 0.3)',
-            height: '64px'
+            height: '64px',
+            position: 'fixed',
+            top: 0,
+            left: isSidebarCollapsed ? '64px' : '256px',
+            right: 0,
+            zIndex: 999,
+            transition: 'left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
           }">
-            <Topbar 
+            <Topbar
               :is-sidebar-collapsed="isSidebarCollapsed"
               @toggle-sidebar="toggleSidebar"
-              @toggle-mobile-sidebar="toggleMobileSidebar" 
+              @toggle-mobile-sidebar="toggleMobileSidebar"
             />
           </a-layout-header>
-          
+
           <!-- Content -->
-          <a-layout-content class="gradient-content" :style="{ 
-            margin: '0 0 0', 
+          <a-layout-content class="gradient-content" :style="{
+            margin: '64px 0 0 0',
             overflow: 'auto',
             borderRadius: '8px',
             minHeight: 'calc(100vh - 112px)',
-            padding: '0px'
+            padding: '0px',
+            transition: 'margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
           }">
             <!-- Breadcrumb -->
             <!-- <a-breadcrumb :style="{ margin: '16px 24px' }">
               <a-breadcrumb-item>Home</a-breadcrumb-item>
               <a-breadcrumb-item>{{ currentPageTitle }}</a-breadcrumb-item>
             </a-breadcrumb> -->
-            
+
             <!-- Page Content -->
-            <div :style="{ 
-              background: 'transparent', 
-              padding: '8px', 
+            <div :style="{
+              background: 'transparent',
+              padding: '8px',
               minHeight: '280px',
             }">
               <router-view />
             </div>
           </a-layout-content>
-          
+
           <!-- Footer -->
           <a-layout-footer :style="{ textAlign: 'center', background: 'transparent', padding: '12px 24px' }">
           </a-layout-footer>
         </a-layout>
 
+        <!-- Notification Panel (slides in from right) -->
+        <NotificationPanel />
+
         <!-- Mobile Layout -->
         <a-layout class="md:hidden" style="min-height: 100vh;">
           <!-- Mobile Header -->
-          <a-layout-header :style="{ 
-            padding: '0 16px', 
-            background: 'rgba(255, 255, 255, 0.7)', 
+          <a-layout-header :style="{
+            padding: '0 16px',
+            background: 'rgba(255, 255, 255, 0.7)',
             backdropFilter: 'blur(10px)',
             WebkitBackdropFilter: 'blur(10px)',
-            display: 'flex', 
+            display: 'flex',
             alignItems: 'center',
             borderBottom: '1px solid rgba(240, 240, 240, 0.3)',
             height: '64px'
           }">
-            <Topbar 
+            <Topbar
               :is-sidebar-collapsed="false"
               @toggle-sidebar="toggleSidebar"
-              @toggle-mobile-sidebar="toggleMobileSidebar" 
+              @toggle-mobile-sidebar="toggleMobileSidebar"
             />
           </a-layout-header>
-          
+
           <!-- Mobile Content -->
-          <a-layout-content :style="{ 
+          <a-layout-content :style="{
             padding: '16px',
             overflow: 'auto',
             background: 'transparent'
           }">
-            <div :style="{ 
-              background: 'transparent', 
-              padding: '24px', 
+            <div :style="{
+              background: 'transparent',
+              padding: '24px',
               borderRadius: '8px',
               minHeight: 'calc(100vh - 96px)'
             }">
@@ -116,6 +133,9 @@
             </div>
           </a-layout-content>
         </a-layout>
+
+        <!-- Notification Panel for Mobile (full-width) -->
+        <NotificationPanel />
       </a-layout>
     </a-config-provider>
 </template>
@@ -125,16 +145,20 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import CustomSidebar from './layout/CustomSidebar.vue'
 import Topbar from './layout/Topbar.vue'
+import NotificationPanel from './components/notifications/NotificationPanel.vue'
+import { useNotificationPanel } from './composables/useNotificationPanel.js'
 
 export default {
   name: 'App',
   components: {
     CustomSidebar,
-    Topbar
+    Topbar,
+    NotificationPanel
   },
   setup() {
     const route = useRoute()
-    
+    const { isNotificationPanelOpen } = useNotificationPanel()
+
     const isSidebarCollapsed = ref(false)
     const isMobileSidebarOpen = ref(false)
 
@@ -184,6 +208,7 @@ export default {
       isMobileSidebarOpen,
       isLoginPage,
       currentPageTitle,
+      isNotificationPanelOpen,
       toggleSidebar,
       toggleMobileSidebar,
       closeMobileSidebar,

@@ -48,7 +48,7 @@
           <!-- Action Buttons Row -->
           <div class="button-groups">
             <div class="action-buttons-group">
-              <a-button @click="handleCreateTask" class="action-btn primary-action">
+              <a-button v-if="project.status !== 'Completed'" @click="handleCreateTask" class="action-btn primary-action">
                 <template #icon>
                   <PlusOutlined />
                 </template>
@@ -80,9 +80,13 @@
                       <EditOutlined class="menu-icon-edit" />
                       <span style="margin-left: 8px;">Edit Project</span>
                     </a-menu-item>
-                    <a-menu-item key="complete" @click="handleMarkAsCompleted" :disabled="project.status === 'Completed'" class="menu-item-complete">
+                    <a-menu-item v-if="project.status !== 'Completed'" key="complete" @click="handleMarkAsCompleted" class="menu-item-complete">
                       <CheckCircleOutlined class="menu-icon-complete" />
                       <span style="margin-left: 8px;">Mark as Completed</span>
+                    </a-menu-item>
+                    <a-menu-item v-if="project.status === 'Completed'" key="active" @click="handleMarkAsActive" class="menu-item-active">
+                      <CheckCircleOutlined class="menu-icon-active" />
+                      <span style="margin-left: 8px;">Mark as Active</span>
                     </a-menu-item>
                     <a-menu-divider />
                     <a-menu-item key="delete" @click="handleDelete" danger>
@@ -208,7 +212,8 @@
             :pagination="false"
             :rowKey="record => record.id"
             :customRow="(record) => ({
-              onClick: () => handleTaskClick(record)
+              onClick: () => handleTaskClick(record),
+              class: isTaskOverdue(record) ? 'overdue-task-row' : ''
             })"
             class="tasks-table"
           >
@@ -275,7 +280,7 @@
                 {{ record.department || 'N/A' }}
               </template>
               <template v-else-if="column.key === 'assignee'">
-                {{ record.assignee_name || 'Unassigned' }}
+                {{ formatAssigneeNames(record.assignee_name) }}
               </template>
             </template>
           </a-table>
@@ -317,7 +322,8 @@
             :pagination="false"
             :rowKey="record => record.id"
             :customRow="(record) => ({
-              onClick: () => handleTaskClick(record)
+              onClick: () => handleTaskClick(record),
+              class: isTaskOverdue(record) ? 'overdue-task-row' : ''
             })"
             class="tasks-table"
           >
@@ -384,7 +390,7 @@
                 {{ record.department || 'N/A' }}
               </template>
               <template v-else-if="column.key === 'assignee'">
-                {{ record.assignee_name || 'Unassigned' }}
+                {{ formatAssigneeNames(record.assignee_name) }}
               </template>
             </template>
           </a-table>
@@ -774,6 +780,34 @@ export default {
       return projectTasks.value.some(t => t.parent_task_id === task.id)
     }
 
+    const isTaskOverdue = (task) => {
+      // A task is overdue if it's not completed and the due date has passed
+      if (task.status === 'Completed' || !task.dueDate) return false
+
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      const dueDate = new Date(task.dueDate)
+      dueDate.setHours(0, 0, 0, 0)
+
+      return dueDate < today
+    }
+
+    const formatAssigneeNames = (assigneeName) => {
+      // Format assignee names to show max 2 names + count
+      if (!assigneeName || assigneeName === 'Unassigned') return 'Unassigned'
+
+      const names = assigneeName.split(', ').map(name => name.trim())
+
+      if (names.length <= 2) {
+        return assigneeName
+      }
+
+      const firstTwoNames = names.slice(0, 2).join(', ')
+      const remainingCount = names.length - 2
+      return `${firstTwoNames} +${remainingCount} more`
+    }
+
     // Table columns definition
     const taskColumns = [
       {
@@ -798,8 +832,15 @@ export default {
         key: 'status',
         width: '10%',
         align: 'center',
-        sorter: (a, b) => a.status.localeCompare(b.status),
-        sortDirections: ['ascend', 'descend']
+        sorter: (a, b) => {
+          // Custom sorter: Completed should be last
+          const statusOrder = { 'Ongoing': 1, 'Under Review': 2, 'Completed': 3 }
+          const orderA = statusOrder[a.status] || 1
+          const orderB = statusOrder[b.status] || 1
+          return orderA - orderB
+        },
+        sortDirections: ['ascend', 'descend'],
+        defaultSortOrder: 'ascend' // Completed will be last with this order
       },
       {
         title: 'Priority',
@@ -1593,6 +1634,77 @@ export default {
       }
     }
 
+    const handleMarkAsActive = async () => {
+      if (project.value.status !== 'Completed') {
+        notification.info({
+          message: 'Project Not Completed',
+          description: 'This project is not marked as completed.',
+          placement: 'topRight',
+          duration: 3
+        })
+        return
+      }
+
+      try {
+        const userId = authStore.user?.user_id
+
+        if (!userId) {
+          throw new Error('User not authenticated')
+        }
+
+        // Mark the project as Active
+        const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+        const response = await fetch(`${projectServiceUrl}/projects/${project.value.project_id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            project_name: project.value.project_name,
+            project_description: project.value.project_description,
+            due_date: project.value.due_date,
+            created_by: project.value.created_by_id,
+            user_id: userId,
+            collaborators: project.value.collaborators || [],
+            status: 'Active'
+          })
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          throw new Error(errorData.error || `HTTP ${response.status}`)
+        }
+
+        // Update local project status
+        project.value.status = 'Active'
+
+        notification.success({
+          message: 'Project Reactivated',
+          description: `"${project.value.project_name}" has been marked as active.`,
+          placement: 'topRight',
+          duration: 4
+        })
+
+        // Emit event to update sidebar
+        emitProjectUpdated({
+          ...project.value,
+          status: 'Active'
+        })
+
+        // Reload project and tasks to show updated status
+        await loadProject()
+        await loadProjectTasks()
+      } catch (error) {
+        console.error('Failed to mark project as active:', error)
+        notification.error({
+          message: 'Failed to Reactivate Project',
+          description: error.message || 'Unable to mark project as active. Please try again.',
+          placement: 'topRight',
+          duration: 4
+        })
+      }
+    }
+
     watch(() => route.params.id, (newId, oldId) => {
       if (newId && newId !== oldId) {
         loadProject()
@@ -1643,6 +1755,8 @@ export default {
       getTaskTimeTaken,
       isUserCollaborator,
       isParentTask,
+      isTaskOverdue,
+      formatAssigneeNames,
       taskColumns,
       handleEdit,
       handleDelete,
@@ -1663,7 +1777,8 @@ export default {
       handleExportPDF,
       showReportPreviewModal,
       reportPreviewData,
-      handleMarkAsCompleted
+      handleMarkAsCompleted,
+      handleMarkAsActive
     }
   }
 }
@@ -1843,6 +1958,10 @@ export default {
 
 .menu-item-complete[disabled] .menu-icon-complete {
   color: #d9d9d9 !important;
+}
+
+.menu-icon-active {
+  color: #1890ff !important;
 }
 
 /* Meta Info and Progress Container */
@@ -2174,6 +2293,36 @@ export default {
 
 .tasks-table :deep(.ant-table-tbody > tr:hover) {
   background-color: #f9fafb;
+}
+
+/* Overdue task styling - red border and background */
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row) {
+  border: 2px solid #ef4444 !important;
+  border-left: 4px solid #dc2626 !important;
+  background-color: #fecaca !important;
+}
+
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row:hover) {
+  background-color: #fca5a5 !important;
+  border-color: #dc2626 !important;
+}
+
+/* Override ALL cell backgrounds in overdue row to red (including sorted column) */
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row > td) {
+  background-color: #fecaca !important;
+}
+
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row:hover > td) {
+  background-color: #fca5a5 !important;
+}
+
+/* Override sorted column greyish background for overdue rows */
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row > td.ant-table-column-sort) {
+  background-color: #fecaca !important;
+}
+
+.tasks-table :deep(.ant-table-tbody > tr.overdue-task-row:hover > td.ant-table-column-sort) {
+  background-color: #fca5a5 !important;
 }
 
 .task-title-cell {
