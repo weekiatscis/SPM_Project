@@ -197,7 +197,7 @@ def notify_project_comment(project_data: dict, comment_text: str, commenter_id: 
                 "task_id": None,  # This is a project comment, not a task comment
                 "project_id": project_data.get("project_id"),  # Add project_id for navigation
                 "due_date": project_data.get("due_date"),
-                "priority": "Medium",
+
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "is_read": False
             }
@@ -583,7 +583,7 @@ def create_project():
                         "task_id": None,
                         "project_id": created_project.get("project_id"),  # Add project_id for navigation
                         "due_date": created_project.get("due_date"),
-                        "priority": "Medium",
+
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "is_read": False
                     }
@@ -597,7 +597,7 @@ def create_project():
                         "task_id": None,
                         "project_id": created_project.get("project_id"),  # Add project_id for navigation
                         "due_date": created_project.get("due_date"),
-                        "priority": "Medium",
+
                         "created_at": datetime.now(timezone.utc).isoformat(),
                         "is_read": False
                     }

@@ -196,8 +196,8 @@ export default {
     // Filtered notifications based on toggle state
     const displayedNotifications = computed(() => {
       if (showAllNotifications.value) {
-        // Show all recent notifications (max 50)
-        return recentNotifications.value
+        // Show all notifications (max 50 from backend)
+        return notifications.value
       } else {
         // Show only unread notifications
         return recentNotifications.value.filter(notif => !notif.is_read)
@@ -318,18 +318,27 @@ export default {
     }
 
     const refreshNotifications = async () => {
-      if (!user.value?.user_id) return
+      const userId = user.value?.user_id || authStore.user?.user_id
 
-      console.log('Refreshing notifications for user:', user.value.user_id)
+      if (!userId) {
+        console.error('Cannot refresh notifications: user_id is undefined')
+        console.log('Auth store user:', authStore.user)
+        console.log('Computed user:', user.value)
+        return
+      }
+
+      console.log('Refreshing notifications for user:', userId)
       isRefreshing.value = true
       try {
-        await storeRefreshNotifications(user.value.user_id)
+        await storeRefreshNotifications(userId)
         console.log('Notifications refreshed! Store state:', {
           total: notifications.value?.length || 0,
           unread: unreadCount.value || 0,
           recent: recentNotifications.value?.length || 0,
           notificationsValue: notifications.value
         })
+      } catch (error) {
+        console.error('Failed to refresh notifications:', error)
       } finally {
         isRefreshing.value = false
       }
@@ -339,12 +348,24 @@ export default {
       showAllNotifications.value = !showAllNotifications.value
     }
 
+    // Watch for panel opening and refresh notifications
+    watch(isNotificationPanelOpen, async (isOpen) => {
+      if (isOpen) {
+        const userId = user.value?.user_id || authStore.user?.user_id
+        if (userId) {
+          console.log('Notification panel opened, refreshing notifications...')
+          await refreshNotifications()
+        }
+      }
+    })
+
     // Initialize notifications
     onMounted(async () => {
       console.log('NotificationPanel mounted, user:', user.value)
-      if (user.value?.user_id) {
+      const userId = user.value?.user_id || authStore.user?.user_id
+      if (userId) {
         await requestNotificationPermission()
-        await fetchNotifications(user.value.user_id)
+        await fetchNotifications(userId)
         connect()
       }
     })
@@ -528,7 +549,8 @@ export default {
 .notifications-list-container {
   flex: 1;
   overflow-y: auto;
-  background: white;
+  background: #f9fafb;
+  padding: 4px 0;
 }
 
 /* Custom Scrollbar */
@@ -583,26 +605,34 @@ export default {
 
 /* Notification Item */
 .notification-item {
-  padding: 16px 24px;
-  border-bottom: 1px solid #f3f4f6;
+  padding: 14px 16px;
+  margin: 8px 16px;
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  transition: background-color 0.2s;
+  transition: all 0.2s ease;
   cursor: pointer;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .notification-item:hover {
   background-color: #f9fafb;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 .notification-item.unread {
   background-color: #f0f9ff;
-  border-left: 3px solid #1890ff;
+  border-left: 4px solid #1890ff;
+  box-shadow: 0 2px 4px rgba(24, 144, 255, 0.1);
 }
 
-.notification-item:last-child {
-  border-bottom: none;
+.notification-item.unread:hover {
+  background-color: #e6f4ff;
+  box-shadow: 0 3px 8px rgba(24, 144, 255, 0.15);
 }
 
 .notification-content {
