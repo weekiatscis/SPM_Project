@@ -1026,7 +1026,7 @@ def create_recurring_task_instance(original_task: dict) -> Optional[dict]:
             "title": original_task.get("title"),
             "description": original_task.get("description"),
             "due_date": next_due_date,
-            "status": "Unassigned",  # Reset status for new instance
+            "status": "Unassigned",  # Will be updated based on assignee role
             "priority": original_task.get("priority", 5),
             "owner_id": original_task.get("owner_id"),
             "project_id": original_task.get("project_id"),
@@ -1034,6 +1034,16 @@ def create_recurring_task_instance(original_task: dict) -> Optional[dict]:
             "recurrence": recurrence,  # Preserve recurrence pattern
             "created_at": datetime.now(timezone.utc).isoformat()
         }
+        
+        # BUSINESS LOGIC: When a recurring task is created and assigned to a STAFF member (not Manager/Director),
+        # automatically set status to "Ongoing" instead of "Unassigned"
+        # This only applies to Manager -> Staff assignments, not Director -> Manager assignments
+        if new_task_data.get("owner_id") and new_task_data.get("status") == "Unassigned":
+            if is_staff_member(new_task_data["owner_id"]):
+                new_task_data["status"] = "Ongoing"
+                print(f"✅ Recurring task creation: Automatically setting status to 'Ongoing' since task is assigned to staff member {new_task_data['owner_id']}")
+            else:
+                print(f"ℹ️  Recurring task creation: Keeping status as 'Unassigned' since assignee {new_task_data['owner_id']} is not a staff member (likely Manager/Director)")
 
         # Insert new task instance
         response = supabase.table("task").insert(new_task_data).execute()
@@ -1120,7 +1130,7 @@ def create_recurring_task_instance(original_task: dict) -> Optional[dict]:
                                 "title": original_subtask.get("title"),
                                 "description": original_subtask.get("description"),
                                 "due_date": subtask_due_date,
-                                "status": "Unassigned",  # Reset status
+                                "status": "Unassigned",  # Will be updated based on assignee role
                                 "priority": original_subtask.get("priority", 5),
                                 "owner_id": original_subtask.get("owner_id"),
                                 "project_id": original_subtask.get("project_id"),
@@ -1129,6 +1139,16 @@ def create_recurring_task_instance(original_task: dict) -> Optional[dict]:
                                 "isSubtask": True,
                                 "created_at": datetime.now(timezone.utc).isoformat()
                             }
+                            
+                            # BUSINESS LOGIC: When a recurring subtask is created and assigned to a STAFF member (not Manager/Director),
+                            # automatically set status to "Ongoing" instead of "Unassigned"
+                            # This only applies to Manager -> Staff assignments, not Director -> Manager assignments
+                            if new_subtask_data.get("owner_id") and new_subtask_data.get("status") == "Unassigned":
+                                if is_staff_member(new_subtask_data["owner_id"]):
+                                    new_subtask_data["status"] = "Ongoing"
+                                    print(f"✅ Recurring subtask creation: Automatically setting status to 'Ongoing' since subtask is assigned to staff member {new_subtask_data['owner_id']}")
+                                else:
+                                    print(f"ℹ️  Recurring subtask creation: Keeping status as 'Unassigned' since assignee {new_subtask_data['owner_id']} is not a staff member (likely Manager/Director)")
                             
                             # Insert the new subtask
                             subtask_response = supabase.table("task").insert(new_subtask_data).execute()
@@ -1849,10 +1869,21 @@ def get_user_accessible_tasks(user_id: str):
         for task_id, task in all_tasks.items():
             parent_task_id = task.get("parent_task_id")
             
-            # If this is a subtask, always include it (user has access to it)
+            # If this is a subtask, only include it if user has access to subtask but NOT to parent
             if parent_task_id:
-                logger.info(f"Including subtask {task_id} (parent: {parent_task_id})")
-                filtered_tasks[task_id] = task
+                # Check if user has access to the parent task
+                parent_has_access = parent_task_id in user_accessible_task_ids
+                
+                if task_id in user_accessible_task_ids:
+                    if parent_has_access:
+                        # User has access to both parent and subtask - show parent only, hide subtask
+                        logger.info(f"Excluding subtask {task_id} (parent: {parent_task_id}) - user has access to parent")
+                    else:
+                        # User has access to subtask but NOT parent - show subtask as standalone
+                        logger.info(f"Including subtask {task_id} (parent: {parent_task_id}) - user has no access to parent")
+                        filtered_tasks[task_id] = task
+                else:
+                    logger.info(f"Excluding subtask {task_id} (parent: {parent_task_id}) - user has no access to subtask")
             else:
                 # This is a parent task or standalone task
                 # Check if there are any subtasks that user has access to
