@@ -452,7 +452,14 @@ def forgot_password():
         ip_address = request.remote_addr
         user_agent = request.headers.get('User-Agent', '')
 
-        # Store reset token (previous tokens will be auto-invalidated by trigger)
+        # Invalidate all previous unused tokens for this user
+        # This ensures only the most recent reset link is valid
+        supabase.table("password_reset_tokens").update({
+            "is_used": True,
+            "used_at": datetime.now(timezone.utc).isoformat()
+        }).eq("user_id", user_id).eq("is_used", False).execute()
+
+        # Store new reset token
         supabase.table("password_reset_tokens").insert({
             "user_id": user_id,
             "reset_token": reset_token,
@@ -550,7 +557,7 @@ def reset_password():
 
         # Check if token is already used
         if token_data['is_used']:
-            return jsonify({"error": "This reset link has already been used. Please request a new password reset."}), 400
+            return jsonify({"error": "This reset link is invalid. Please request a new password reset."}), 400
 
         # Check if token is expired
         expires_at = datetime.fromisoformat(token_data['expires_at'].replace('Z', '+00:00'))
@@ -614,7 +621,7 @@ def validate_reset_token():
 
         # Check if token is already used
         if token_data['is_used']:
-            return jsonify({"valid": False, "error": "This reset link has already been used"}), 200
+            return jsonify({"valid": False, "error": "This reset link is invalid."}), 200
 
         # Check if token is expired
         expires_at = datetime.fromisoformat(token_data['expires_at'].replace('Z', '+00:00'))

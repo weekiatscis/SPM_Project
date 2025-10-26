@@ -63,14 +63,14 @@ export function validatePasswordMatch(password, confirmPassword) {
   if (!password || !confirmPassword) {
     return {
       isValid: false,
-      error: 'Both password fields are required'
+      error: 'Both password fields are required.'
     }
   }
 
   if (password !== confirmPassword) {
     return {
       isValid: false,
-      error: 'Passwords do not match'
+      error: 'Passwords do not match.'
     }
   }
 
