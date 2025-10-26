@@ -398,10 +398,9 @@ def forgot_password():
         # Get user by email
         user_response = supabase.table("user").select("*").eq("email", email).execute()
 
-        # Always return success to prevent email enumeration
-        # But only send email if user exists
+        # Check if user exists
         if not user_response.data:
-            return jsonify({"message": "If an account with that email exists, a password reset link has been sent"}), 200
+            return jsonify({"error": "Email is not registered as a user"}), 404
 
         user_data = user_response.data[0]
         user_id = user_data['user_id']
