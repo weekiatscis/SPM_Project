@@ -4,9 +4,8 @@ on:
   push:
     branches:
       - main
-      - ranentest
       - develop
-      - testingupdate  # Add your test branch
+      - testingchange  # Add your test branch
   pull_request:
     branches:
       - main
@@ -66,7 +65,7 @@ jobs:
   validate-services:
     name: Validate All Microservices
     runs-on: ubuntu-latest
-    timeout-minutes: 5  # Fail fast if workflow takes too long
+    timeout-minutes: 6  # Fail fast if workflow takes too long
 
     steps:
       - name: Checkout code
@@ -152,13 +151,21 @@ jobs:
           echo -e "\n=== Notification Service Logs ==="
           docker compose logs notification-service || true
 
-      - name: Run service validation and integration tests
+      - name: Run service validation and integration tests (via helper script)
         run: |
-          # Run comprehensive validation first
-          python tests/validate_all_services.py
+          # Make helper scripts executable if needed
+          chmod +x scripts/run_integration_tests.sh || true
 
-          # Run integration tests with coverage
-          pytest tests/ -v -k "Integration" --tb=short --cov=src/microservices --cov-report=term-missing --cov-report=xml --cov-report=html
+          # Run only integration tests in this job (unit tests run in the separate unit-tests job)
+          bash scripts/run_integration_tests.sh integration
+
+      - name: Upload collected logs (if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: ./.logs/
+          retention-days: 7
 
       - name: Upload integration coverage report
         uses: actions/upload-artifact@v4
