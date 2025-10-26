@@ -1325,7 +1325,25 @@ export default {
 
     const removeFromProject = async () => {
       try {
-        // First, fetch subtasks to build confirmation message
+        // VALIDATION: If this is a subtask, check if parent task is in the same project
+        if (props.task.isSubtask && props.task.parent_task_id) {
+          const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+
+          // Fetch parent task to check its project_id
+          const parentResponse = await fetch(`${taskServiceUrl}/tasks?task_id=${props.task.parent_task_id}`)
+          if (parentResponse.ok) {
+            const parentData = await parentResponse.json()
+            const parentTask = parentData.tasks?.[0]
+
+            // If parent task exists and is in the same project, prevent removal
+            if (parentTask && parentTask.project_id === props.task.project_id) {
+              alert(`Cannot remove this subtask from the project because its parent task "${parentTask.title}" is still in the project.\n\nTo remove this subtask, you must first remove the parent task from the project.`)
+              return
+            }
+          }
+        }
+
+        // Build confirmation message
         let confirmMessage = `Remove "${props.task.title}" from this project?`
 
         if (!props.task.isSubtask && subtasks.value.length > 0) {
