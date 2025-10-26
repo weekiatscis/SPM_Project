@@ -195,7 +195,14 @@ def check_project_due_date_reminders():
                 stakeholder_ids = [project["created_by"]]
                 collaborators = project.get("collaborators", [])
                 if collaborators:
-                    stakeholder_ids.extend(collaborators)
+                    # Ensure collaborators is a list
+                    if isinstance(collaborators, str):
+                        try:
+                            collaborators = json.loads(collaborators)
+                        except:
+                            collaborators = []
+                    if isinstance(collaborators, list):
+                        stakeholder_ids.extend(collaborators)
                 stakeholder_ids = list(set(filter(None, stakeholder_ids)))  # Remove duplicates and None
 
                 # Check if we should send a reminder today
@@ -317,45 +324,98 @@ def check_due_date_reminders():
 
                 days_until_due = (due_date - today).days
 
+                # Get all stakeholders (owner + collaborators)
+                stakeholder_ids = [task["owner_id"]]
+                collaborators = task.get("collaborators", [])
+                if collaborators:
+                    # Ensure collaborators is a list
+                    if isinstance(collaborators, str):
+                        try:
+                            collaborators = json.loads(collaborators)
+                        except:
+                            collaborators = []
+                    if isinstance(collaborators, list):
+                        stakeholder_ids.extend(collaborators)
+                stakeholder_ids = list(set(filter(None, stakeholder_ids)))  # Remove duplicates and None
+
                 # Check if we should send a reminder today
                 for days in reminder_days:
                     if days_until_due == days:
-                        # Check if we already sent this reminder
-                        existing_notification = supabase.table("notifications").select("id").eq("task_id", task["task_id"]).eq("type", f"reminder_{days}_days").execute()
+                        # Send notification to all stakeholders
+                        for user_id in stakeholder_ids:
+                            # Check if we already sent this reminder to this user TODAY
+                            existing_notification = supabase.table("notifications").select("id").eq(
+                                "user_id", user_id
+                            ).eq("task_id", task["task_id"]).eq(
+                                "type", f"reminder_{days}_days"
+                            ).gte("created_at", today.isoformat()).execute()
 
-                        if not existing_notification.data:
-                            # Create notification
-                            notification_data = {
-                                "user_id": task["owner_id"],
-                                "title": f"Task Due in {days} Day{'s' if days > 1 else ''}",
-                                "message": f"Task '{task['title']}' is due on {due_date.strftime('%B %d, %Y')}",
-                                "type": f"reminder_{days}_days",
-                                "task_id": task["task_id"],
-                                "due_date": task["due_date"]
-                            }
+                            if not existing_notification.data:
+                                # Get notification preferences for this user
+                                prefs_response = supabase.table("notification_preferences").select(
+                                    "email_enabled, in_app_enabled"
+                                ).eq("user_id", user_id).eq("task_id", task["task_id"]).execute()
 
-                            # Store in database
-                            stored_notification = create_notification(notification_data)
+                                email_enabled = True
+                                in_app_enabled = True
+                                if prefs_response.data and len(prefs_response.data) > 0:
+                                    email_enabled = prefs_response.data[0].get("email_enabled", True)
+                                    in_app_enabled = prefs_response.data[0].get("in_app_enabled", True)
 
-                            if stored_notification:
-                                # Send real-time notification via WebSocket
-                                send_realtime_notification(task["owner_id"], stored_notification)
+                                # Create notification
+                                notification_data = {
+                                    "user_id": user_id,
+                                    "title": f"Task Due in {days} Day{'s' if days > 1 else ''}",
+                                    "message": f"Task '{task['title']}' is due on {due_date.strftime('%B %d, %Y')}",
+                                    "type": f"reminder_{days}_days",
+                                    "task_id": task["task_id"],
+                                    "due_date": task["due_date"],
+                                    "priority": task.get("priority", "Medium")
+                                }
 
-                                # Publish to RabbitMQ for real-time delivery
-                                rabbitmq.publish_notification(
-                                    f"task.reminder.{days}_days",
-                                    {
-                                        "notification_id": stored_notification["id"],
-                                        "user_id": task["owner_id"],
-                                        "task_id": task["task_id"],
-                                        "title": notification_data["title"],
-                                        "message": notification_data["message"],
-                                        "type": notification_data["type"],
-                                        "created_at": stored_notification["created_at"]
-                                    }
-                                )
+                                # Store in database if in-app enabled
+                                if in_app_enabled:
+                                    stored_notification = create_notification(notification_data)
 
-                                print(f"Sent {days}-day reminder for task {task['task_id']}")
+                                    if stored_notification:
+                                        # Send real-time notification via WebSocket
+                                        send_realtime_notification(user_id, stored_notification)
+
+                                        # Publish to RabbitMQ for real-time delivery
+                                        rabbitmq.publish_notification(
+                                            f"task.reminder.{days}_days",
+                                            {
+                                                "notification_id": stored_notification["id"],
+                                                "user_id": user_id,
+                                                "task_id": task["task_id"],
+                                                "title": notification_data["title"],
+                                                "message": notification_data["message"],
+                                                "type": notification_data["type"],
+                                                "created_at": stored_notification["created_at"]
+                                            }
+                                        )
+
+                                        print(f"Sent {days}-day in-app reminder for task {task['task_id']} to user {user_id}")
+
+                                # Send email if enabled
+                                if email_enabled:
+                                    try:
+                                        # Get user email
+                                        user_response = supabase.table("user").select("email").eq("user_id", user_id).execute()
+                                        if user_response.data and len(user_response.data) > 0:
+                                            user_email = user_response.data[0].get("email")
+                                            if user_email:
+                                                send_notification_email(
+                                                    user_email=user_email,
+                                                    notification_type=f"reminder_{days}_days",
+                                                    task_title=task["title"],
+                                                    due_date=due_date.strftime('%B %d, %Y'),
+                                                    priority=task.get("priority", "Medium"),
+                                                    task_id=task["task_id"]
+                                                )
+                                                print(f"Sent {days}-day email reminder for task {task['task_id']} to {user_email}")
+                                    except Exception as email_error:
+                                        print(f"Failed to send email reminder: {email_error}")
             except Exception as e:
                 print(f"Error processing task {task.get('task_id', 'unknown')}: {e}")
     
@@ -385,14 +445,32 @@ def check_overdue_tasks():
             print("✅ No overdue tasks - nothing to do")
             return
 
-        # Group overdue tasks by owner
+        # Group overdue tasks by owner AND collaborators
         user_tasks = {}
         for task in overdue_tasks:
+            # Add owner
             owner_id = task.get("owner_id")
             if owner_id:
                 if owner_id not in user_tasks:
                     user_tasks[owner_id] = []
                 user_tasks[owner_id].append(task)
+
+            # Add collaborators (handle both array and stringified JSON)
+            collaborators = task.get("collaborators", [])
+            if collaborators:
+                # Ensure collaborators is a list
+                if isinstance(collaborators, str):
+                    try:
+                        collaborators = json.loads(collaborators)
+                    except:
+                        collaborators = []
+
+                if isinstance(collaborators, list):
+                    for collab_id in collaborators:
+                        if collab_id and collab_id != owner_id:  # Don't duplicate for owner
+                            if collab_id not in user_tasks:
+                                user_tasks[collab_id] = []
+                            user_tasks[collab_id].append(task)
 
         print(f"👥 Grouped into {len(user_tasks)} user(s)")
 
@@ -412,12 +490,23 @@ def check_overdue_tasks():
                 print(f"⏭️  Already sent overdue notification today - skipping")
                 continue
 
-            # Create notification
+            # Separate owned vs collaborated tasks
+            owned_tasks = [t for t in tasks if t.get("owner_id") == user_id]
+            collaborated_tasks = [t for t in tasks if t.get("owner_id") != user_id]
+            
+            # Create notification message
             task_word = "task" if count == 1 else "tasks"
+            if owned_tasks and collaborated_tasks:
+                message = f"You have {len(owned_tasks)} overdue {('task' if len(owned_tasks) == 1 else 'tasks')} you own and {len(collaborated_tasks)} overdue {('task' if len(collaborated_tasks) == 1 else 'tasks')} you're collaborating on"
+            elif owned_tasks:
+                message = f"You have {len(owned_tasks)} overdue {('task' if len(owned_tasks) == 1 else 'tasks')} past their due date"
+            else:
+                message = f"You have {len(collaborated_tasks)} overdue {('task' if len(collaborated_tasks) == 1 else 'tasks')} you're collaborating on that are past their due date"
+            
             notification_data = {
                 "user_id": user_id,
                 "title": f"⚠️ {count} Overdue {task_word.title()}",
-                "message": f"You have {count} {task_word} past their due date",
+                "message": message,
                 "type": "overdue_tasks",
                 "task_id": None,
                 "due_date": None,
@@ -448,13 +537,23 @@ def check_overdue_tasks():
 
                     if email:
                         print(f"📧 Sending email to {email}...")
-                        # Build task list
-                        task_list = "\n".join([
-                            f"• {t.get('title', 'Untitled')} (Due: {t.get('due_date', 'N/A')})"
-                            for t in tasks[:5]  # Show first 5
-                        ])
-                        if count > 5:
-                            task_list += f"\n...and {count - 5} more"
+                        # Build task list with ownership info
+                        task_list_parts = []
+                        if owned_tasks:
+                            task_list_parts.append("Tasks you own:")
+                            for t in owned_tasks[:3]:  # Show first 3 owned
+                                task_list_parts.append(f"• {t.get('title', 'Untitled')} (Due: {t.get('due_date', 'N/A')})")
+                            if len(owned_tasks) > 3:
+                                task_list_parts.append(f"...and {len(owned_tasks) - 3} more owned tasks")
+                        
+                        if collaborated_tasks:
+                            task_list_parts.append("Tasks you're collaborating on:")
+                            for t in collaborated_tasks[:3]:  # Show first 3 collaborated
+                                task_list_parts.append(f"• {t.get('title', 'Untitled')} (Due: {t.get('due_date', 'N/A')})")
+                            if len(collaborated_tasks) > 3:
+                                task_list_parts.append(f"...and {len(collaborated_tasks) - 3} more collaborated tasks")
+                        
+                        task_list = "\n".join(task_list_parts)
 
                         # Send email (will use generic template for now)
                         from email_service import send_notification_email
@@ -508,7 +607,14 @@ def check_overdue_projects():
             stakeholders = [project.get("created_by")]
             collabs = project.get("collaborators", [])
             if collabs:
-                stakeholders.extend(collabs)
+                # Ensure collabs is a list
+                if isinstance(collabs, str):
+                    try:
+                        collabs = json.loads(collabs)
+                    except:
+                        collabs = []
+                if isinstance(collabs, list):
+                    stakeholders.extend(collabs)
             stakeholders = list(set(filter(None, stakeholders)))
 
             for user_id in stakeholders:
@@ -614,6 +720,17 @@ scheduler_thread = threading.Thread(target=reminder_scheduler, daemon=True)
 scheduler_thread.start()
 
 # API Routes
+@app.route("/check-overdue", methods=["POST"])
+def trigger_overdue_check():
+    """Manually trigger overdue task and project checks"""
+    try:
+        print("🔍 Manual overdue check triggered")
+        check_overdue_tasks()
+        check_overdue_projects()
+        return jsonify({"message": "Overdue check completed successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to check overdue items: {str(e)}"}), 500
+
 @app.route("/notifications", methods=["GET"])
 def get_notifications():
     """Get notifications for a user"""
