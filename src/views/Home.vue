@@ -11,12 +11,12 @@
     <!-- Top Section: Timeline + Report Generator -->
     <a-row :gutter="24" class="top-section-row">
       <!-- Timeline Section with Background GIF -->
-      <a-col :xs="24" :lg="24" :xl="15">
+      <a-col :xs="24" :lg="24" :xl="isNotificationPanelOpen ? 24 : 15">
         <div class="timeline-container-wrapper">
           <!-- GIF Behind Timeline -->
           <div class="background-illustration">
-            <img 
-              src="/illustration.gif" 
+            <img
+              src="/illustration.gif"
               alt="Background illustration"
               class="hidden-illustration"
             />
@@ -44,8 +44,8 @@
           <div class="timeline-navigation-bottom">
             <div class="compact-navigation">
               <!-- Left Navigation -->
-              <a-button 
-                @click="goToPreviousWeek" 
+              <a-button
+                @click="goToPreviousWeek"
                 :disabled="isLoadingTasks"
                 type="text"
                 size="large"
@@ -55,15 +55,15 @@
                   <LeftOutlined />
                 </template>
               </a-button>
-              
+
               <!-- Center - Week Range -->
               <div class="week-range-section">
                 <div class="week-range-text">{{ weekRangeText }}</div>
               </div>
-              
+
               <!-- Right Navigation -->
-              <a-button 
-                @click="goToNextWeek" 
+              <a-button
+                @click="goToNextWeek"
                 :disabled="isLoadingTasks"
                 type="text"
                 size="large"
@@ -78,9 +78,16 @@
           </a-card>
         </div>
       </a-col>
-      
+
       <!-- Report Generator Section -->
-      <a-col :xs="24" :lg="24" :xl="9">
+      <a-col v-if="!isNotificationPanelOpen" :xs="24" :lg="24" :xl="9">
+        <ReportGenerator />
+      </a-col>
+    </a-row>
+
+    <!-- Report Generator on second row when notification panel is open -->
+    <a-row v-if="isNotificationPanelOpen" :gutter="24" class="top-section-row" style="margin-top: 24px;">
+      <a-col :span="24">
         <ReportGenerator />
       </a-col>
     </a-row>
@@ -98,6 +105,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useTaskTimeline } from '../composables/useTaskTimeline.js'
+import { useNotificationPanel } from '../composables/useNotificationPanel.js'
 import TaskList from '../components/tasks/TaskList.vue'
 import ReportGenerator from '../components/reports/ReportGenerator.vue'
 import NotificationTester from '../components/NotificationTester.vue' // Add this import
@@ -122,6 +130,9 @@ export default {
     
     // Get user data directly from auth store
     const currentUser = computed(() => authStore.user)
+
+    // Notification panel state
+    const { isNotificationPanelOpen } = useNotificationPanel()
 
     // Timeline functionality
     const {
@@ -217,7 +228,10 @@ export default {
       // User data
       currentUser,
       getGreeting,
-      
+
+      // Notification panel state
+      isNotificationPanelOpen,
+
       // Timeline data and functionality
       timelineData,
       weekRangeText,
@@ -230,7 +244,7 @@ export default {
       goToPreviousWeek,
       goToNextWeek,
       goToCurrentWeek,
-      
+
       // Styling
       welcomeSectionStyle,
       titleStyle

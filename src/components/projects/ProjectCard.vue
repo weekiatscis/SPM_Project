@@ -23,7 +23,7 @@
         ></div>
         <a-typography-text
           strong
-          style="font-size: 14px;"
+          style="font-size: 14px; color: #000000; font-weight: bold;"
           :ellipsis="true"
           :content="project.project_name"
         />
@@ -80,7 +80,7 @@
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
           <div style="display: flex; align-items: center; gap: 4px;">
             <CalendarOutlined style="font-size: 11px; color: #999;" />
-            <a-typography-text type="secondary" style="font-size: 11px;">
+            <a-typography-text style="font-size: 11px; color: #000000; font-weight: bold;">
               Created: {{ formatDate(project.created_at) }}
             </a-typography-text>
           </div>
