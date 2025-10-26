@@ -14,7 +14,8 @@
       "Bash(findstr:*)",
       "Bash(taskkill:*)",
       "Bash(cat:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

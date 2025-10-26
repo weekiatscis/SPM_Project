@@ -1296,6 +1296,8 @@ export default {
         }
 
         const data = await response.json()
+        console.log('Project Report Data:', data)
+        console.log('Team Performance:', data.team_performance)
         reportPreviewData.value = data
         showReportPreviewModal.value = true
 

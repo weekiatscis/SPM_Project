@@ -419,15 +419,36 @@ def fetch_project_report_data(project_id: str, requesting_user_id: Optional[str]
         under_review_tasks = len([t for t in tasks if t.get('status', '').lower() == 'under review'])
         completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
 
-        # Count tasks by team member with department info
+        # Count tasks by team member with department info and status breakdown
         # Each task is counted for EVERY person working on it (owner + collaborators)
         tasks_by_member = {}
         completed_by_member = {}
+        overdue_by_member = {}
+        ongoing_by_member = {}
+        under_review_by_member = {}
         member_departments = {}
+
+        # Get today's date for overdue calculation
+        today = datetime.now(timezone.utc).date()
 
         for task in tasks:
             owner_id = task.get('owner_id')
-            is_completed = task.get('status', '').lower() == 'completed'
+            status = task.get('status', '').lower()
+            due_date_str = task.get('dueDate', task.get('due_date', ''))
+
+            # Determine if task is overdue
+            is_overdue = False
+            if due_date_str and status != 'completed':
+                try:
+                    if 'T' in due_date_str:
+                        task_due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00')).date()
+                    else:
+                        task_due_date = datetime.fromisoformat(due_date_str).date()
+
+                    if task_due_date < today:
+                        is_overdue = True
+                except:
+                    pass
 
             # Get all people working on this task (owner + collaborators)
             assignee_ids = []
@@ -446,7 +467,7 @@ def fetch_project_report_data(project_id: str, requesting_user_id: Optional[str]
                     if collab_id and collab_id != owner_id:
                         assignee_ids.append(collab_id)
 
-            # Count the task for each assignee
+            # Count the task for each assignee and categorize by status
             for assignee_id in assignee_ids:
                 if assignee_id in user_info_cache:
                     member_name = user_info_cache[assignee_id]['name']
@@ -455,8 +476,18 @@ def fetch_project_report_data(project_id: str, requesting_user_id: Optional[str]
                     tasks_by_member[member_name] = tasks_by_member.get(member_name, 0) + 1
                     member_departments[member_name] = member_dept
 
-                    if is_completed:
+                    # Categorize by status
+                    if is_overdue:
+                        overdue_by_member[member_name] = overdue_by_member.get(member_name, 0) + 1
+                    elif status == 'completed':
                         completed_by_member[member_name] = completed_by_member.get(member_name, 0) + 1
+                    elif 'ongoing' in status or 'progress' in status:
+                        ongoing_by_member[member_name] = ongoing_by_member.get(member_name, 0) + 1
+                    elif 'review' in status:
+                        under_review_by_member[member_name] = under_review_by_member.get(member_name, 0) + 1
+                    else:
+                        # Default to ongoing for unrecognized statuses
+                        ongoing_by_member[member_name] = ongoing_by_member.get(member_name, 0) + 1
 
         # Group tasks by status with overdue calculation
         today = datetime.now(timezone.utc).date()
@@ -524,16 +555,22 @@ def fetch_project_report_data(project_id: str, requesting_user_id: Optional[str]
             except:
                 due_date = 'N/A'
 
-        # Build team member performance list
+        # Build team member performance list with status breakdown
         team_performance = []
         for member, total in sorted(tasks_by_member.items(), key=lambda x: x[1], reverse=True):
             completed = completed_by_member.get(member, 0)
+            overdue = overdue_by_member.get(member, 0)
+            ongoing = ongoing_by_member.get(member, 0)
+            under_review = under_review_by_member.get(member, 0)
             rate = (completed / total * 100) if total > 0 else 0
             team_performance.append({
                 'member': member,
                 'department': member_departments.get(member, 'N/A'),
                 'total': total,
                 'completed': completed,
+                'overdue': overdue,
+                'ongoing': ongoing,
+                'under_review': under_review,
                 'rate': round(rate, 1)
             })
 
@@ -664,7 +701,7 @@ def generate_pie_chart(tasks: List[Dict[str, Any]]) -> Drawing:
         'Ongoing': HexColor("#3b82f6"),      # Blue
         'Completed': HexColor("#22c55e"),    # Green
         'Unassigned': HexColor('#94a3b8'),   # Gray
-        'In Progress': HexColor("#f59e0b"),  # Orange
+        'Ongoing': HexColor("#f59e0b"),  # Orange
         'Under Review': HexColor("#a855f7"), # Purple
         'Blocked': HexColor('#ef4444'),      # Red
     }
@@ -922,6 +959,227 @@ def generate_team_member_bar_chart(team_members_data: List[Dict[str, Any]]) -> D
     total_text.fillColor = colors.black
     drawing.add(total_text)
     
+    return drawing
+
+
+def generate_horizontal_team_bar_chart(team_performance: List[Dict[str, Any]]) -> Drawing:
+    """Generate a horizontal stacked bar chart showing task status breakdown by team member."""
+    from reportlab.graphics.shapes import Rect, String, Line
+
+    if not team_performance:
+        drawing = Drawing(500, 300)
+        text = String(250, 150, "No team performance data available")
+        text.fontName = 'Helvetica'
+        text.fontSize = 12
+        text.fillColor = colors.grey
+        text.textAnchor = 'middle'
+        drawing.add(text)
+        return drawing
+
+    # Calculate dimensions
+    bar_height = 20
+    bar_spacing = 35
+    left_margin = 120  # Space for member names
+    right_margin = 80
+    top_margin = 80    # Space for title and legend
+    bottom_margin = 40  # Space for X-axis labels
+
+    drawing_width = 500
+    drawing_height = top_margin + len(team_performance) * bar_spacing + bottom_margin
+    chart_width = drawing_width - left_margin - right_margin
+
+    # Find max total tasks for scaling
+    max_total = max([member.get('total', 0) for member in team_performance], default=1)
+
+    # Define colors
+    colors_map = {
+        'overdue': HexColor('#ef4444'),      # Red
+        'ongoing': HexColor('#3b82f6'),      # Blue
+        'under_review': HexColor('#eab308'),  # Yellow
+        'completed': HexColor('#22c55e')     # Green
+    }
+
+    # Create drawing
+    drawing = Drawing(drawing_width, drawing_height)
+
+    # Add title
+    title = String(drawing_width/2, drawing_height - 20, "Task Status by Team Member")
+    title.fontName = 'Helvetica-Bold'
+    title.fontSize = 14
+    title.fillColor = colors.black
+    title.textAnchor = 'middle'
+    drawing.add(title)
+
+    # Add legend
+    legend_y = drawing_height - 45
+    legend_items = [
+        ('Overdue', colors_map['overdue']),
+        ('Ongoing', colors_map['ongoing']),
+        ('Under Review', colors_map['under_review']),
+        ('Completed', colors_map['completed'])
+    ]
+
+    legend_x = 100
+    for i, (label, color) in enumerate(legend_items):
+        rect = Rect(legend_x + i * 90, legend_y, 12, 10)
+        rect.fillColor = color
+        rect.strokeColor = colors.white
+        drawing.add(rect)
+
+        text = String(legend_x + i * 90 + 16, legend_y + 2, label)
+        text.fontName = 'Helvetica'
+        text.fontSize = 9
+        text.fillColor = colors.black
+        drawing.add(text)
+
+    # Draw bars for each team member
+    for i, member in enumerate(team_performance):
+        y_pos = drawing_height - top_margin - i * bar_spacing
+
+        # Get task counts
+        overdue = member.get('overdue', 0)
+        ongoing = member.get('ongoing', 0)
+        under_review = member.get('under_review', 0)
+        completed = member.get('completed', 0)
+        total = member.get('total', 0)
+
+        # Calculate widths based on max_total
+        scale = chart_width / max_total if max_total > 0 else 0
+        overdue_width = overdue * scale
+        ongoing_width = ongoing * scale
+        under_review_width = under_review * scale
+        completed_width = completed * scale
+
+        # Draw member name on left
+        name = member.get('member', 'Unknown')
+        if len(name) > 15:
+            name = name[:15] + '...'
+
+        name_text = String(left_margin - 5, y_pos - bar_height/2 + 2, name)
+        name_text.fontName = 'Helvetica'
+        name_text.fontSize = 9
+        name_text.fillColor = colors.black
+        name_text.textAnchor = 'end'
+        drawing.add(name_text)
+
+        # Draw stacked bars
+        current_x = left_margin
+
+        # Overdue (red)
+        if overdue > 0:
+            rect = Rect(current_x, y_pos - bar_height, overdue_width, bar_height)
+            rect.fillColor = colors_map['overdue']
+            rect.strokeColor = colors.white
+            rect.strokeWidth = 0.5
+            drawing.add(rect)
+
+            # Add count if wide enough
+            if overdue_width > 15:
+                count_text = String(current_x + overdue_width/2, y_pos - bar_height/2 + 2, str(overdue))
+                count_text.fontName = 'Helvetica-Bold'
+                count_text.fontSize = 8
+                count_text.fillColor = colors.white
+                count_text.textAnchor = 'middle'
+                drawing.add(count_text)
+
+            current_x += overdue_width
+
+        # Ongoing (blue)
+        if ongoing > 0:
+            rect = Rect(current_x, y_pos - bar_height, ongoing_width, bar_height)
+            rect.fillColor = colors_map['ongoing']
+            rect.strokeColor = colors.white
+            rect.strokeWidth = 0.5
+            drawing.add(rect)
+
+            if ongoing_width > 15:
+                count_text = String(current_x + ongoing_width/2, y_pos - bar_height/2 + 2, str(ongoing))
+                count_text.fontName = 'Helvetica-Bold'
+                count_text.fontSize = 8
+                count_text.fillColor = colors.white
+                count_text.textAnchor = 'middle'
+                drawing.add(count_text)
+
+            current_x += ongoing_width
+
+        # Under Review (yellow)
+        if under_review > 0:
+            rect = Rect(current_x, y_pos - bar_height, under_review_width, bar_height)
+            rect.fillColor = colors_map['under_review']
+            rect.strokeColor = colors.white
+            rect.strokeWidth = 0.5
+            drawing.add(rect)
+
+            if under_review_width > 15:
+                count_text = String(current_x + under_review_width/2, y_pos - bar_height/2 + 2, str(under_review))
+                count_text.fontName = 'Helvetica-Bold'
+                count_text.fontSize = 8
+                count_text.fillColor = colors.black
+                count_text.textAnchor = 'middle'
+                drawing.add(count_text)
+
+            current_x += under_review_width
+
+        # Completed (green)
+        if completed > 0:
+            rect = Rect(current_x, y_pos - bar_height, completed_width, bar_height)
+            rect.fillColor = colors_map['completed']
+            rect.strokeColor = colors.white
+            rect.strokeWidth = 0.5
+            drawing.add(rect)
+
+            if completed_width > 15:
+                count_text = String(current_x + completed_width/2, y_pos - bar_height/2 + 2, str(completed))
+                count_text.fontName = 'Helvetica-Bold'
+                count_text.fontSize = 8
+                count_text.fillColor = colors.white
+                count_text.textAnchor = 'middle'
+                drawing.add(count_text)
+
+            current_x += completed_width
+
+        # Draw total at end of bar
+        total_text = String(current_x + 5, y_pos - bar_height/2 + 2, str(total))
+        total_text.fontName = 'Helvetica-Bold'
+        total_text.fontSize = 9
+        total_text.fillColor = colors.black
+        drawing.add(total_text)
+
+    # Draw X-axis
+    x_axis_y = drawing_height - top_margin - len(team_performance) * bar_spacing + 5
+    axis_line = Line(left_margin, x_axis_y, left_margin + chart_width, x_axis_y)
+    axis_line.strokeColor = HexColor('#9ca3af')
+    axis_line.strokeWidth = 1
+    drawing.add(axis_line)
+
+    # Draw X-axis labels (5 tick marks)
+    num_ticks = 5
+    for i in range(num_ticks):
+        value = int((max_total / (num_ticks - 1)) * i)
+        x_pos = left_margin + (chart_width / (num_ticks - 1)) * i
+
+        # Tick mark
+        tick = Line(x_pos, x_axis_y, x_pos, x_axis_y - 5)
+        tick.strokeColor = HexColor('#9ca3af')
+        tick.strokeWidth = 1
+        drawing.add(tick)
+
+        # Label
+        label = String(x_pos, x_axis_y - 15, str(value))
+        label.fontName = 'Helvetica'
+        label.fontSize = 8
+        label.fillColor = HexColor('#6b7280')
+        label.textAnchor = 'middle'
+        drawing.add(label)
+
+    # X-axis title
+    axis_title = String(left_margin + chart_width/2, x_axis_y - 30, "Number of Tasks")
+    axis_title.fontName = 'Helvetica'
+    axis_title.fontSize = 9
+    axis_title.fillColor = colors.black
+    axis_title.textAnchor = 'middle'
+    drawing.add(axis_title)
+
     return drawing
 
 
@@ -1241,7 +1499,7 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
 
     # Summary statistics in a grid layout
     summary_data = [
-        ['Total Tasks', 'Completed', 'In Progress', 'Completion Rate'],
+        ['Total Tasks', 'Completed', 'Ongoing', 'Completion Rate'],
         [str(total_tasks), str(completed_tasks), str(ongoing_tasks), f"{completion_rate:.1f}%"]
     ]
 
@@ -1614,7 +1872,7 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         pie_colors.append(HexColor('#22c55e'))
 
     if summary['ongoing_tasks'] > 0:
-        pie_labels.append('In Progress')
+        pie_labels.append('Ongoing')
         pie_data.append(summary['ongoing_tasks'])
         pie_colors.append(HexColor('#3b82f6'))
 
@@ -1673,7 +1931,7 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         ['Total Tasks', str(summary['total_tasks'])],
         ['Overdue', str(overdue_count)],
         ['Completed', str(summary['completed_tasks'])],
-        ['In Progress', str(summary['ongoing_tasks'])],
+        ['Ongoing', str(summary['ongoing_tasks'])],
         ['Under Review', str(summary['under_review_tasks'])],
         ['Completion Rate', f"{summary['completion_rate']}%"]
     ]
@@ -1720,10 +1978,15 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
         team_section = []
         team_heading = Paragraph("Team Member Performance", heading_style)
         team_section.append(team_heading)
-        team_section.append(Spacer(1, 8))
+        team_section.append(Spacer(1, 12))
+
+        # Add horizontal bar chart showing task status breakdown
+        team_bar_chart = generate_horizontal_team_bar_chart(report_data['team_performance'])
+        team_section.append(team_bar_chart)
+        team_section.append(Spacer(1, 20))
 
         requesting_user_name = report_data.get('requesting_user_name')
-        team_data = [['Team Member', 'Department', 'Total Tasks', 'Completed', 'Completion Rate']]
+        team_data = [['Team Member', 'Department', 'Total', 'Overdue', 'Ongoing', 'Under Review', 'Completed', 'Rate']]
 
         # Define a style for wrapping text in cells
         cell_style = ParagraphStyle('CellStyle', fontSize=9, leading=11, fontName='Helvetica')
@@ -1738,14 +2001,25 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
                 Paragraph(member_name, cell_style),
                 Paragraph(member.get('department', 'N/A'), cell_style),
                 str(member['total']),
+                str(member.get('overdue', 0)),
+                str(member.get('ongoing', 0)),
+                str(member.get('under_review', 0)),
                 str(member['completed']),
                 f"{member['rate']}%"
             ])
 
-        team_table = Table(team_data, colWidths=[1.8*inch, 1.4*inch, 1*inch, 1*inch, 1.2*inch])
+        team_table = Table(team_data, colWidths=[1.5*inch, 1.2*inch, 0.6*inch, 0.7*inch, 0.7*inch, 0.9*inch, 0.8*inch, 0.6*inch])
         team_table.setStyle(TableStyle([
+            # Default header styling
             ('BACKGROUND', (0, 0), (-1, 0), HexColor('#3b82f6')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+
+            # Colored headers for status columns
+            ('BACKGROUND', (3, 0), (3, 0), HexColor('#ef4444')),  # Overdue - Red
+            ('BACKGROUND', (4, 0), (4, 0), HexColor('#3b82f6')),  # Ongoing - Blue
+            ('BACKGROUND', (5, 0), (5, 0), HexColor('#eab308')),  # Under Review - Yellow
+            ('BACKGROUND', (6, 0), (6, 0), HexColor('#22c55e')),  # Completed - Green
+
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -1781,6 +2055,18 @@ def generate_project_pdf_report(report_data: Dict[str, Any]) -> io.BytesIO:
                 team_table.setStyle(TableStyle([
                     ('BACKGROUND', (0, row_idx), (-1, row_idx), bg_color)
                 ]))
+
+            # Apply colored text to status columns for all rows
+            team_table.setStyle(TableStyle([
+                ('TEXTCOLOR', (3, row_idx), (3, row_idx), HexColor('#dc2626')),  # Overdue - darker red
+                ('FONTNAME', (3, row_idx), (3, row_idx), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (4, row_idx), (4, row_idx), HexColor('#2563eb')),  # Ongoing - darker blue
+                ('FONTNAME', (4, row_idx), (4, row_idx), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (5, row_idx), (5, row_idx), HexColor('#ca8a04')),  # Under Review - darker yellow
+                ('FONTNAME', (5, row_idx), (5, row_idx), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (6, row_idx), (6, row_idx), HexColor('#16a34a')),  # Completed - darker green
+                ('FONTNAME', (6, row_idx), (6, row_idx), 'Helvetica-Bold'),
+            ]))
 
         # Add the team section (heading + table) to keep them together
         team_section.append(team_table)
@@ -2346,7 +2632,7 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
                 'team_name': team_label,
                 'total_tasks': len(member_tasks),
                 'completed': status_counts.get('Completed', 0),
-                'in_progress': status_counts.get('In Progress', 0),
+                'in_progress': status_counts.get('Ongoing', 0),
                 'pending': status_counts.get('Pending', 0),
                 'overdue': len([t for t in member_tasks if is_task_overdue(t)])
             })
@@ -3306,7 +3592,7 @@ def generate_preview_pdf(preview_data: Dict[str, Any], requesting_user: Dict[str
     summary_fields = [
         ('total_tasks', 'Total Tasks', lambda v: f"{int(v)}"),
         ('completed_tasks', 'Completed Tasks', lambda v: f"{int(v)}"),
-        ('in_progress_tasks', 'In Progress Tasks', lambda v: f"{int(v)}"),
+        ('in_progress_tasks', 'Ongoing Tasks', lambda v: f"{int(v)}"),
         ('pending_tasks', 'Pending Tasks', lambda v: f"{int(v)}"),
         ('overdue_tasks', 'Overdue Tasks', lambda v: f"{int(v)}"),
         ('total_members', 'Team Members', lambda v: f"{int(v)}"),
@@ -3517,7 +3803,7 @@ def generate_preview_pdf(preview_data: Dict[str, Any], requesting_user: Dict[str
             'team_name': 'Team',
             'total_tasks': 'Total Tasks',
             'completed': 'Completed',
-            'in_progress': 'In Progress',
+            'in_progress': 'Ongoing',
             'pending': 'Pending',
             'overdue': 'Overdue'
         }
