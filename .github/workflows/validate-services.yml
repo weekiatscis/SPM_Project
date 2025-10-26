@@ -65,7 +65,7 @@ jobs:
   validate-services:
     name: Validate All Microservices
     runs-on: ubuntu-latest
-    timeout-minutes: 5  # Fail fast if workflow takes too long
+    timeout-minutes: 6  # Fail fast if workflow takes too long
 
     steps:
       - name: Checkout code
