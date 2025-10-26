@@ -48,7 +48,7 @@
           <!-- Action Buttons Row -->
           <div class="button-groups">
             <div class="action-buttons-group">
-              <a-button v-if="project.status !== 'Completed'" @click="handleCreateTask" class="action-btn primary-action">
+              <a-button @click="handleCreateTask" class="action-btn primary-action">
                 <template #icon>
                   <PlusOutlined />
                 </template>
@@ -80,13 +80,9 @@
                       <EditOutlined class="menu-icon-edit" />
                       <span style="margin-left: 8px;">Edit Project</span>
                     </a-menu-item>
-                    <a-menu-item v-if="project.status !== 'Completed'" key="complete" @click="handleMarkAsCompleted" class="menu-item-complete">
+                    <a-menu-item key="complete" @click="handleMarkAsCompleted" :disabled="project.status === 'Completed'" class="menu-item-complete">
                       <CheckCircleOutlined class="menu-icon-complete" />
                       <span style="margin-left: 8px;">Mark as Completed</span>
-                    </a-menu-item>
-                    <a-menu-item v-if="project.status === 'Completed'" key="active" @click="handleMarkAsActive" class="menu-item-active">
-                      <CheckCircleOutlined class="menu-icon-active" />
-                      <span style="margin-left: 8px;">Mark as Active</span>
                     </a-menu-item>
                     <a-menu-divider />
                     <a-menu-item key="delete" @click="handleDelete" danger>
@@ -1634,77 +1630,6 @@ export default {
       }
     }
 
-    const handleMarkAsActive = async () => {
-      if (project.value.status !== 'Completed') {
-        notification.info({
-          message: 'Project Not Completed',
-          description: 'This project is not marked as completed.',
-          placement: 'topRight',
-          duration: 3
-        })
-        return
-      }
-
-      try {
-        const userId = authStore.user?.user_id
-
-        if (!userId) {
-          throw new Error('User not authenticated')
-        }
-
-        // Mark the project as Active
-        const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
-        const response = await fetch(`${projectServiceUrl}/projects/${project.value.project_id}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            project_name: project.value.project_name,
-            project_description: project.value.project_description,
-            due_date: project.value.due_date,
-            created_by: project.value.created_by_id,
-            user_id: userId,
-            collaborators: project.value.collaborators || [],
-            status: 'Active'
-          })
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || `HTTP ${response.status}`)
-        }
-
-        // Update local project status
-        project.value.status = 'Active'
-
-        notification.success({
-          message: 'Project Reactivated',
-          description: `"${project.value.project_name}" has been marked as active.`,
-          placement: 'topRight',
-          duration: 4
-        })
-
-        // Emit event to update sidebar
-        emitProjectUpdated({
-          ...project.value,
-          status: 'Active'
-        })
-
-        // Reload project and tasks to show updated status
-        await loadProject()
-        await loadProjectTasks()
-      } catch (error) {
-        console.error('Failed to mark project as active:', error)
-        notification.error({
-          message: 'Failed to Reactivate Project',
-          description: error.message || 'Unable to mark project as active. Please try again.',
-          placement: 'topRight',
-          duration: 4
-        })
-      }
-    }
-
     watch(() => route.params.id, (newId, oldId) => {
       if (newId && newId !== oldId) {
         loadProject()
@@ -1777,8 +1702,7 @@ export default {
       handleExportPDF,
       showReportPreviewModal,
       reportPreviewData,
-      handleMarkAsCompleted,
-      handleMarkAsActive
+      handleMarkAsCompleted
     }
   }
 }
@@ -1958,10 +1882,6 @@ export default {
 
 .menu-item-complete[disabled] .menu-icon-complete {
   color: #d9d9d9 !important;
-}
-
-.menu-icon-active {
-  color: #1890ff !important;
 }
 
 /* Meta Info and Progress Container */

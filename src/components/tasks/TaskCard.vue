@@ -30,15 +30,7 @@
                   </svg>
                 </span>
               </a-tooltip>
-
-              <a-tooltip v-if="hasSubtasks" title="This is a parent task">
-                <span class="badge-icon parent-task">
-                  <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                  </svg>
-                </span>
-              </a-tooltip>
-
+              
               <a-tooltip v-if="task.isSubtask" title="This is a subtask">
                 <span class="badge-icon subtask">
                   <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -442,16 +434,6 @@ export default {
 
 .badge-icon.collaborator:hover {
   background: rgba(175, 82, 222, 0.2);
-  transform: scale(1.1);
-}
-
-.badge-icon.parent-task {
-  background: rgba(249, 115, 22, 0.1);
-  color: #f97316;
-}
-
-.badge-icon.parent-task:hover {
-  background: rgba(249, 115, 22, 0.2);
   transform: scale(1.1);
 }
 

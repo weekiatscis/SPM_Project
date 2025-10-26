@@ -87,33 +87,17 @@
                 </svg>
               </template>
             </a-input>
-            <!-- Sortable Headers -->
-            <div class="sortable-headers">
-              <button
-                class="sort-header"
-                :class="{ active: sortBy.startsWith('name') }"
-                @click="toggleSort('name')"
-              >
-                Name
-                <span class="sort-arrow">{{ sortBy === 'name-asc' ? '↑' : '↓' }}</span>
-              </button>
-              <button
-                class="sort-header"
-                :class="{ active: sortBy === 'due_date' }"
-                @click="toggleSort('due_date')"
-              >
-                Due Date
-                <span class="sort-arrow">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-              </button>
-              <button
-                class="sort-header"
-                :class="{ active: sortBy === 'created_at' }"
-                @click="toggleSort('created_at')"
-              >
-                Created Date
-                <span class="sort-arrow">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-              </button>
-            </div>
+            <a-select
+              v-model:value="sortBy"
+              size="small"
+              style="width: 180px;"
+              @change="handleSortChange"
+            >
+              <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+              <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+              <a-select-option value="created_at">Created Date</a-select-option>
+              <a-select-option value="due_date">Due Date</a-select-option>
+            </a-select>
           </div>
           <a-button type="primary" @click="activeTab = 'assign'" class="assign-task-btn">
             Assign Task
@@ -174,33 +158,17 @@
                 </svg>
               </template>
             </a-input>
-            <!-- Sortable Headers -->
-            <div class="sortable-headers">
-              <button
-                class="sort-header"
-                :class="{ active: sortBy.startsWith('name') }"
-                @click="toggleSort('name')"
-              >
-                Name
-                <span class="sort-arrow">{{ sortBy === 'name-asc' ? '↑' : '↓' }}</span>
-              </button>
-              <button
-                class="sort-header"
-                :class="{ active: sortBy === 'due_date' }"
-                @click="toggleSort('due_date')"
-              >
-                Due Date
-                <span class="sort-arrow">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-              </button>
-              <button
-                class="sort-header"
-                :class="{ active: sortBy === 'created_at' }"
-                @click="toggleSort('created_at')"
-              >
-                Created Date
-                <span class="sort-arrow">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-              </button>
-            </div>
+            <a-select
+              v-model:value="sortBy"
+              size="small"
+              style="width: 180px;"
+              @change="handleSortChange"
+            >
+              <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+              <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+              <a-select-option value="created_at">Created Date</a-select-option>
+              <a-select-option value="due_date">Due Date</a-select-option>
+            </a-select>
           </div>
           <a-button type="primary" @click="activeTab = 'assign'" class="assign-task-btn">
             Assign Task
@@ -261,33 +229,17 @@
                 </svg>
               </template>
             </a-input>
-            <!-- Sortable Headers -->
-            <div class="sortable-headers">
-              <button
-                class="sort-header"
-                :class="{ active: sortBy.startsWith('name') }"
-                @click="toggleSort('name')"
-              >
-                Name
-                <span class="sort-arrow">{{ sortBy === 'name-asc' ? '↑' : '↓' }}</span>
-              </button>
-              <button
-                class="sort-header"
-                :class="{ active: sortBy === 'due_date' }"
-                @click="toggleSort('due_date')"
-              >
-                Due Date
-                <span class="sort-arrow">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-              </button>
-              <button
-                class="sort-header"
-                :class="{ active: sortBy === 'created_at' }"
-                @click="toggleSort('created_at')"
-              >
-                Created Date
-                <span class="sort-arrow">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-              </button>
-            </div>
+            <a-select
+              v-model:value="sortBy"
+              size="small"
+              style="width: 180px;"
+              @change="handleSortChange"
+            >
+              <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+              <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+              <a-select-option value="created_at">Created Date</a-select-option>
+              <a-select-option value="due_date">Due Date</a-select-option>
+            </a-select>
           </div>
           <a-button type="primary" @click="activeTab = 'assign'" class="assign-task-btn">
             Assign Task
@@ -344,33 +296,17 @@
                 </svg>
               </template>
             </a-input>
-            <!-- Sortable Headers -->
-            <div class="sortable-headers">
-              <button
-                class="sort-header"
-                :class="{ active: sortBy.startsWith('name') }"
-                @click="toggleSort('name')"
-              >
-                Name
-                <span class="sort-arrow">{{ sortBy === 'name-asc' ? '↑' : '↓' }}</span>
-              </button>
-              <button
-                class="sort-header"
-                :class="{ active: sortBy === 'due_date' }"
-                @click="toggleSort('due_date')"
-              >
-                Due Date
-                <span class="sort-arrow">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-              </button>
-              <button
-                class="sort-header"
-                :class="{ active: sortBy === 'created_at' }"
-                @click="toggleSort('created_at')"
-              >
-                Created Date
-                <span class="sort-arrow">{{ sortDirection === 'asc' ? '↑' : '↓' }}</span>
-              </button>
-            </div>
+            <a-select
+              v-model:value="sortBy"
+              size="small"
+              style="width: 180px;"
+              @change="handleSortChange"
+            >
+              <a-select-option value="name-asc">Name (A-Z)</a-select-option>
+              <a-select-option value="name-desc">Name (Z-A)</a-select-option>
+              <a-select-option value="created_at">Created Date</a-select-option>
+              <a-select-option value="due_date">Due Date</a-select-option>
+            </a-select>
           </div>
           <a-button type="primary" @click="activeTab = 'assign'" class="assign-task-btn">
             Assign Task
@@ -586,7 +522,7 @@
 <script>
 import { ref, computed, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, UpOutlined, DownOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined } from '@ant-design/icons-vue'
 import { notification } from 'ant-design-vue'
 import { useAuthStore } from '../../stores/auth'
 import ProjectFormModal from './ProjectFormModal.vue'
@@ -611,7 +547,6 @@ export default {
     const projects = ref([])
     const isLoading = ref(false)
     const sortBy = ref('due_date')
-    const sortDirection = ref('asc') // Track sort direction for due_date and created_at
     const authStore = useAuthStore()
 
     // Search queries for each tab
@@ -710,54 +645,18 @@ export default {
       } else if (sortBy.value === 'name-desc') {
         return sorted.sort((a, b) => b.project_name.localeCompare(a.project_name))
       } else if (sortBy.value === 'created_at') {
-        return sorted.sort((a, b) => {
-          if (sortDirection.value === 'asc') {
-            // Oldest first
-            return new Date(a.created_at) - new Date(b.created_at)
-          } else {
-            // Newest first (default)
-            return new Date(b.created_at) - new Date(a.created_at)
-          }
-        })
+        return sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       } else if (sortBy.value === 'due_date') {
+        // Sort by due date - closest to due date first (ascending)
         return sorted.sort((a, b) => {
           // Handle null/undefined due dates - push them to the end
           if (!a.due_date) return 1
           if (!b.due_date) return -1
-
-          if (sortDirection.value === 'asc') {
-            // Earliest first (closest due date first)
-            return new Date(a.due_date) - new Date(b.due_date)
-          } else {
-            // Latest first (furthest due date first)
-            return new Date(b.due_date) - new Date(a.due_date)
-          }
+          return new Date(a.due_date) - new Date(b.due_date)
         })
       }
 
       return sorted
-    }
-
-    // Toggle sort function
-    const toggleSort = (field) => {
-      if (field === 'name') {
-        // Toggle between asc and desc for name
-        if (sortBy.value === 'name-asc') {
-          sortBy.value = 'name-desc'
-        } else {
-          sortBy.value = 'name-asc'
-        }
-      } else {
-        // For due_date and created_at, toggle direction
-        if (sortBy.value === field) {
-          // Same field, toggle direction
-          sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc'
-        } else {
-          // Different field, set it and default to desc for created_at, asc for due_date
-          sortBy.value = field
-          sortDirection.value = field === 'created_at' ? 'desc' : 'asc'
-        }
-      }
     }
 
     // Ongoing projects (exclude completed projects)
@@ -840,6 +739,9 @@ export default {
     })
 
     // Function to handle sort change
+    const handleSortChange = (value) => {
+      sortBy.value = value
+    }
 
     // Computed property for current user ID (safely handles undefined authStore)
     const currentUserId = computed(() => {
@@ -1199,8 +1101,7 @@ export default {
       activeTab,
       showProjectModal,
       sortBy,
-      sortDirection,
-      toggleSort,
+      handleSortChange,
       handleProjectSaved,
       addNewProject, // Expose this method to parent
       handleProjectClick,
@@ -1618,47 +1519,5 @@ export default {
     width: 100%;
     justify-content: center;
   }
-}
-
-/* Sortable Headers */
-.sortable-headers {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.sort-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #6b7280;
-  cursor: pointer;
-  transition: all 0.2s;
-  white-space: nowrap;
-}
-
-.sort-header:hover {
-  background: #f3f4f6;
-  color: #1890ff;
-}
-
-.sort-header.active {
-  background: #e6f7ff;
-  color: #1890ff;
-  font-weight: 600;
-}
-
-.sort-arrow {
-  margin-left: 6px;
-  font-size: 16px;
-  color: #000000;
-  font-weight: bold;
-  line-height: 1;
 }
 </style>
