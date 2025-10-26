@@ -104,8 +104,14 @@ def parse_datetime(value: Optional[str]) -> Optional[datetime]:
                 return None
             if text.endswith('Z'):
                 text = text[:-1] + '+00:00'
+            
+            # Handle date-only format (YYYY-MM-DD) by adding time component
+            if len(text) == 10 and text.count('-') == 2:
+                text = text + 'T23:59:59'  # End of day for due dates
+                
             dt = datetime.fromisoformat(text)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to parse datetime '{value}': {e}")
             return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -1489,6 +1495,7 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
     total_tasks = len(tasks)
     completed_tasks = len([t for t in tasks if t.get('status', '').lower() == 'completed'])
     ongoing_tasks = len([t for t in tasks if t.get('status', '').lower() == 'ongoing'])
+    overdue_tasks = len([t for t in tasks if is_task_overdue(t)])
     completion_rate = (completed_tasks/total_tasks*100) if total_tasks > 0 else 0
 
     # Summary section - keep together
@@ -1499,11 +1506,11 @@ def generate_pdf_report(user_id: str, user_name: str, tasks: List[Dict[str, Any]
 
     # Summary statistics in a grid layout
     summary_data = [
-        ['Total Tasks', 'Completed', 'Ongoing', 'Completion Rate'],
-        [str(total_tasks), str(completed_tasks), str(ongoing_tasks), f"{completion_rate:.1f}%"]
+        ['Total Tasks', 'Completed', 'Ongoing', 'Overdue', 'Completion Rate'],
+        [str(total_tasks), str(completed_tasks), str(ongoing_tasks), str(overdue_tasks), f"{completion_rate:.1f}%"]
     ]
 
-    summary_table = Table(summary_data, colWidths=[1.3*inch, 1.3*inch, 1.3*inch, 1.5*inch])
+    summary_table = Table(summary_data, colWidths=[1.0*inch, 1.0*inch, 1.0*inch, 1.0*inch, 1.5*inch])
     summary_table.setStyle(TableStyle([
         # Header row
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -2591,6 +2598,7 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
             'in_progress_tasks': task_status_count.get('Ongoing', 0),  # Fixed: Ongoing status
             'pending_tasks': task_status_count.get('Under Review', 0),  # Fixed: Under Review status
             'overdue_tasks': len([t for t in tasks if is_task_overdue(t)]),
+            'overdue_percentage': (len([t for t in tasks if is_task_overdue(t)]) / len(tasks) * 100) if len(tasks) > 0 else 0,
             'avg_completion_time_days': avg_completion_time_days,
             'total_time_spent_days': total_time_spent_days
         }
@@ -2672,6 +2680,7 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
                     'completed_tasks': member_metrics['completed_tasks'], 
                     'completion_rate': member_metrics['completion_rate'],
                     'overdue_tasks': member_metrics['overdue_tasks'],
+                    'overdue_percentage': member_metrics['overdue_percentage'],
                     'avg_completion_time_hours': member_metrics.get('avg_completion_time_hours', 0),
                     'avg_completion_time_days': member_metrics.get('avg_completion_time_hours', 0) / 24,
                     'time_spent_hours': member_metrics.get('total_time_spent_hours', 0),
@@ -2776,6 +2785,12 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
         avg_completion_time_days = avg_completion_time_hours / 24
         total_time_spent_days = total_time_spent_hours / 24
 
+        total_overdue = sum(summary['metrics']['overdue_tasks'] for summary in team_summaries)
+        avg_overdue_percentage = (
+            sum(summary['metrics']['overdue_percentage'] for summary in team_summaries) / len(team_summaries)
+            if team_summaries else 0
+        )
+
         preview_data['summary'] = {
             'team_name': team_summaries[0]['team_name'] if len(team_summaries) == 1 else f"{len(team_summaries)} teams selected",
             'selected_teams': [summary['team_name'] for summary in team_summaries],
@@ -2783,6 +2798,8 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
             'total_members': len(team_members_data),
             'total_tasks': total_tasks,
             'total_completed': total_completed,
+            'overdue_tasks': total_overdue,
+            'overdue_percentage': avg_overdue_percentage,
             'avg_completion_rate': avg_completion_rate,
             'avg_completion_time_days': avg_completion_time_days,
             'total_time_spent_days': total_time_spent_days
@@ -2928,6 +2945,7 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
                             'completed_tasks': metrics['completed_tasks'],
                             'completion_rate': metrics['completion_rate'],
                             'overdue_tasks': metrics['overdue_tasks'],
+                            'overdue_percentage': metrics['overdue_percentage'],
                             'avg_completion_time_hours': avg_completion_time_hours,
                             'avg_completion_time_days': avg_completion_time_hours / 24,
                             'avg_completion_time': avg_completion_time_hours,
@@ -2999,6 +3017,7 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
                             'completed_tasks': metrics['completed_tasks'],
                             'completion_rate': metrics['completion_rate'],
                             'overdue_tasks': metrics['overdue_tasks'],
+                            'overdue_percentage': metrics['overdue_percentage'],
                             'avg_completion_time_hours': avg_completion_time_hours,
                             'avg_completion_time_days': avg_completion_time_hours / 24,
                             'avg_completion_time': avg_completion_time_hours,
@@ -3045,6 +3064,7 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
                 'overdue_tasks': total_dept_overdue,
                 'completion_rate': dept_completion_rate,
                 'overdue_rate': dept_overdue_rate,
+                'overdue_percentage': dept_overdue_rate,  # Add this for PDF compatibility
                 'total_time_spent_days': total_time_days,
                 'avg_completion_time_days': avg_completion_time_days,
                 'avg_completion_rate': (
@@ -3151,6 +3171,7 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
                         'completed_tasks': metrics['completed_tasks'],
                         'completion_rate': metrics['completion_rate'],
                         'overdue_tasks': metrics['overdue_tasks'],
+                        'overdue_percentage': metrics['overdue_percentage'],
                         'total_time_spent_hours': metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0)),
                         'total_time_spent': metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0)),
                         'avg_completion_time_hours': metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0))
@@ -3600,6 +3621,7 @@ def generate_preview_pdf(preview_data: Dict[str, Any], requesting_user: Dict[str
         ('in_progress_tasks', 'Ongoing Tasks', lambda v: f"{int(v)}"),
         ('pending_tasks', 'Pending Tasks', lambda v: f"{int(v)}"),
         ('overdue_tasks', 'Overdue Tasks', lambda v: f"{int(v)}"),
+        ('overdue_percentage', 'Overdue Percentage', lambda v: f"{v:.1f}%" if v is not None else "0%"),
         ('total_members', 'Team Members', lambda v: f"{int(v)}"),
         ('total_teams', 'Total Teams', lambda v: f"{int(v)}"),
         ('total_departments', 'Total Departments', lambda v: f"{int(v)}"),
@@ -3607,6 +3629,7 @@ def generate_preview_pdf(preview_data: Dict[str, Any], requesting_user: Dict[str
         ('total_employees', 'Total Employees', lambda v: f"{int(v)}"),
         ('total_completed', 'Total Completed Tasks', lambda v: f"{int(v)}"),
         ('avg_completion_rate', 'Avg Completion Rate (%)', lambda v: f"{round(v, 1)}%"),
+        ('avg_overdue_percentage', 'Avg Overdue Percentage', lambda v: f"{v:.1f}%" if v is not None else "0%"),
         ('avg_completion_time_days', 'Avg Completion Time (days)', lambda v: f"{v:.1f} days" if v else "0 days"),
         ('total_time_spent_days', 'Total Time Spent (days)', lambda v: f"{v:.1f} days"),
         ('avg_time_per_employee_days', 'Avg Days per Employee', lambda v: f"{v:.1f} days"),
@@ -3983,18 +4006,28 @@ def generate_preview_pdf(preview_data: Dict[str, Any], requesting_user: Dict[str
 def is_task_overdue(task: Dict[str, Any]) -> bool:
     """Check if a task is overdue."""
     try:
-        due_date_str = task.get('due_date')
+        due_date_str = task.get('due_date') or task.get('dueDate')  # Handle both snake_case and camelCase
         if not due_date_str:
             return False
             
-        # Parse due date
-        due_date = datetime.fromisoformat(due_date_str.replace('Z', '+00:00'))
+        # Parse due date - handle both full ISO format and date-only format
+        due_date = parse_datetime(due_date_str)
+        if not due_date:
+            return False
+            
         current_date = datetime.now(timezone.utc)
         
         # Task is overdue if due date has passed and status is not completed
         status = task.get('status', '').lower()
-        return due_date < current_date and status != 'completed'
-    except Exception:
+        is_overdue = due_date < current_date and status not in ['completed', 'done']
+        
+        # Add debug logging for overdue detection
+        if is_overdue:
+            logger.info(f"🔍 OVERDUE TASK DETECTED: '{task.get('title', 'Unknown')}' - Due: {due_date_str}, Status: {status}, Current: {current_date}")
+        
+        return is_overdue
+    except Exception as e:
+        logger.warning(f"Error checking if task is overdue: {e}")
         return False
 
 def get_options_for_report_type(requesting_user: Dict[str, Any], report_type: str):
@@ -4183,6 +4216,8 @@ def get_options_for_scope_type(requesting_user: Dict[str, Any], scope_type: str)
 def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Calculate team-level metrics for director reports."""
     total_tasks = len(tasks)
+    logger.info(f"🔍 CALCULATE_TEAM_METRICS: Processing {total_tasks} tasks")
+    
     if total_tasks == 0:
         return {
             'total_tasks': 0,
@@ -4204,14 +4239,21 @@ def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
     active_times_hours: List[float] = []
     
     current_date = datetime.now(timezone.utc)
+    logger.info(f"🔍 CALCULATE_TEAM_METRICS: Current date for overdue check: {current_date}")
+    logger.info(f"🔍 CALCULATE_TEAM_METRICS: Completed tasks: {len(completed_tasks)}")
+    
+    # Add debug logging for first few tasks
+    for i, task in enumerate(tasks[:3]):
+        logger.info(f"🔍 SAMPLE TASK {i+1}: Title='{task.get('title', 'Unknown')}', Status='{task.get('status')}', DueDate='{task.get('due_date') or task.get('dueDate')}'")
     
     for task in tasks:
-        # Check for overdue tasks
-        due_date = task.get('due_date')
-        if due_date and task.get('status', '').lower() != 'completed':
-            due_dt = parse_datetime(due_date)
+        # Check for overdue tasks using the same logic as is_task_overdue function
+        due_date_str = task.get('due_date') or task.get('dueDate')  # Handle both formats
+        if due_date_str and task.get('status', '').lower() not in ['completed', 'done']:
+            due_dt = parse_datetime(due_date_str)
             if due_dt and due_dt < current_date:
                 overdue_tasks.append(task)
+                logger.info(f"🔍 TEAM METRICS - OVERDUE: '{task.get('title', 'Unknown')}' - Due: {due_date_str}, Status: {task.get('status')}")
         
         completion_hours = task.get('completion_time_hours')
         if completion_hours is not None:
@@ -4222,10 +4264,12 @@ def calculate_team_metrics(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
             if in_progress is not None:
                 active_times_hours.append(max(in_progress, 0))
     
-    completion_rate = (len(completed_tasks) / total_tasks) * 100
-    overdue_percentage = (len(overdue_tasks) / total_tasks) * 100
+    completion_rate = (len(completed_tasks) / total_tasks) * 100 if total_tasks > 0 else 0
+    overdue_percentage = (len(overdue_tasks) / total_tasks) * 100 if total_tasks > 0 else 0
     avg_completion_time_hours = sum(completion_times_hours) / len(completion_times_hours) if completion_times_hours else 0
     avg_active_time_hours = sum(active_times_hours) / len(active_times_hours) if active_times_hours else 0
+    
+    logger.info(f"🔍 CALCULATE_TEAM_METRICS RESULTS: Total={total_tasks}, Completed={len(completed_tasks)}, Overdue={len(overdue_tasks)}, CompletionRate={completion_rate:.1f}%, OverduePercentage={overdue_percentage:.1f}%")
     
     return {
         'total_tasks': total_tasks,
