@@ -237,9 +237,12 @@ export default {
       try {
         const baseUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const ownerId = authStore.user?.user_id || import.meta.env.VITE_TASK_OWNER_ID || ''
+        
+        // Use accessible-tasks endpoint to include both owned tasks and collaborator tasks
         const url = ownerId
-          ? `${baseUrl}/tasks?owner_id=${encodeURIComponent(ownerId)}`
+          ? `${baseUrl}/users/${encodeURIComponent(ownerId)}/accessible-tasks`
           : `${baseUrl}/tasks`
+        
         const response = await fetch(url)
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
         const payload = await response.json()
