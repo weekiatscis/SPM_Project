@@ -428,11 +428,13 @@
       v-if="selectedTask"
       :task="selectedTask"
       :isOpen="showTaskDetailModal"
+      :fromProject="true"
       @close="closeTaskDetailModal"
       @open-task="handleOpenTask"
       @edit="handleTaskEdit"
       @delete="handleTaskDelete"
       @task-updated="handleTaskUpdated"
+      @removed-from-project="handleRemovedFromProject"
     />
 
     <!-- Task Edit Modal -->
@@ -1098,6 +1100,9 @@ export default {
           owner_id: apiTasks[0].owner_id,
           collaborators: apiTasks[0].collaborators || [],
           project: apiTasks[0].project || project.value.project_name,
+          project_id: apiTasks[0].project_id,
+          parent_task_id: apiTasks[0].parent_task_id,
+          isSubtask: apiTasks[0].isSubtask || !!apiTasks[0].parent_task_id,
           activities: apiTasks[0].activities || [],
           comments: apiTasks[0].comments || []
         }
@@ -1707,6 +1712,14 @@ export default {
       }
     }
 
+    const handleRemovedFromProject = async (task) => {
+      // Close the detail modal
+      closeTaskDetailModal()
+
+      // Reload tasks to reflect the removal
+      await loadProjectTasks()
+    }
+
     watch(() => route.params.id, (newId, oldId) => {
       if (newId && newId !== oldId) {
         loadProject()
@@ -1780,7 +1793,8 @@ export default {
       showReportPreviewModal,
       reportPreviewData,
       handleMarkAsCompleted,
-      handleMarkAsActive
+      handleMarkAsActive,
+      handleRemovedFromProject
     }
   }
 }
