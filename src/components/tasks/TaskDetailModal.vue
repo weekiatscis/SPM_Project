@@ -296,6 +296,23 @@
             </svg>
             Only the assignee can edit or delete this task
           </div>
+          <!-- Remove from Project Button - Positioned at bottom right -->
+          <button
+            v-if="fromProject && task.project_id && isCurrentUserAssignee"
+            @click="removeFromProject"
+            :disabled="isRemovingFromProject"
+            class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            :title="!task.isSubtask && subtasks.length > 0 ? `This will also remove ${subtasks.length} subtask(s) from the project` : 'Remove this task from the project'"
+          >
+            <svg v-if="!isRemovingFromProject" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <svg v-else class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            {{ isRemovingFromProject ? 'Removing...' : 'Remove from Project' }}
+          </button>
         </div>
         </div>
       </div>
@@ -323,13 +340,18 @@ export default {
     isOpen: {
       type: Boolean,
       default: false
+    },
+    fromProject: {
+      type: Boolean,
+      default: false
     }
   },
-  emits: ['close', 'edit', 'delete', 'open-task', 'task-updated'],
+  emits: ['close', 'edit', 'delete', 'open-task', 'task-updated', 'removed-from-project'],
   setup(props, { emit }) {
     const authStore = useAuthStore()
     const isDeleting = ref(false)
     const isMarkingComplete = ref(false)
+    const isRemovingFromProject = ref(false)
     const auditLogs = ref([])
     
     // Check if the current user is the assignee
@@ -653,8 +675,11 @@ export default {
       if (isOpen && props.task?.id) {
         console.log('🔍 [TaskDetailModal] Modal opened with task:', props.task)
         console.log('🔍 [TaskDetailModal] Task status:', props.task.status)
-        console.log('🔍 [TaskDetailModal] Task completedDate:', props.task.completedDate)
-        console.log('🔍 [TaskDetailModal] Task completed_date:', props.task.completed_date)
+        console.log('🔍 [TaskDetailModal] Task project_id:', props.task.project_id)
+        console.log('🔍 [TaskDetailModal] fromProject prop:', props.fromProject)
+        console.log('🔍 [TaskDetailModal] isCurrentUserAssignee:', isCurrentUserAssignee.value)
+        console.log('🔍 [TaskDetailModal] authStore.user?.user_id:', authStore.user?.user_id)
+        console.log('🔍 [TaskDetailModal] task.owner_id:', props.task.owner_id)
         console.log('🔍 [TaskDetailModal] All task keys:', Object.keys(props.task))
         nextTick(() => fetchAllData())
       }
@@ -1298,9 +1323,160 @@ export default {
       isAuditLogOpen.value = !isAuditLogOpen.value
     }
 
+    const removeFromProject = async () => {
+      try {
+        // First, fetch subtasks to build confirmation message
+        let confirmMessage = `Remove "${props.task.title}" from this project?`
+
+        if (!props.task.isSubtask && subtasks.value.length > 0) {
+          const subtasksInProject = subtasks.value.filter(st => st.project_id === props.task.project_id)
+          if (subtasksInProject.length > 0) {
+            confirmMessage += `\n\nThis will also remove ${subtasksInProject.length} subtask(s) from the project:`
+            subtasksInProject.forEach(subtask => {
+              confirmMessage += `\n• ${subtask.title}`
+            })
+          }
+        }
+
+        confirmMessage += '\n\nThis action will unassign the task(s) from the project.'
+
+        if (!confirm(confirmMessage)) {
+          return
+        }
+
+        isRemovingFromProject.value = true
+        const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+
+        // Remove project from main task
+        // Note: We need to get the full task data first, then update with project_id: null
+        const taskResponse = await fetch(`${taskServiceUrl}/tasks?task_id=${props.task.id}`)
+        if (!taskResponse.ok) {
+          throw new Error('Failed to fetch task details')
+        }
+
+        const taskData = await taskResponse.json()
+        const currentTask = taskData.tasks?.[0]
+
+        if (!currentTask) {
+          throw new Error('Task not found')
+        }
+
+        // Prepare collaborators as JSON string if it's an array
+        let collaboratorsString = currentTask.collaborators
+        if (Array.isArray(currentTask.collaborators)) {
+          collaboratorsString = JSON.stringify(currentTask.collaborators)
+        } else if (typeof currentTask.collaborators === 'string') {
+          collaboratorsString = currentTask.collaborators
+        } else {
+          collaboratorsString = JSON.stringify([])
+        }
+
+        // Prepare the update payload
+        const updatePayload = {
+          title: currentTask.title,
+          description: currentTask.description,
+          status: currentTask.status,
+          priority: currentTask.priority,
+          due_date: currentTask.dueDate,
+          owner_id: currentTask.owner_id,
+          collaborators: collaboratorsString,
+          project_id: null  // Set to null to remove from project
+        }
+
+        console.log('🔍 Sending PUT request to remove from project:', updatePayload)
+        console.log('🔍 Current task data:', currentTask)
+
+        // Update task with project_id set to null using PUT method
+        const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(updatePayload)
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          console.error('❌ Failed to remove from project. Error:', errorData)
+          throw new Error(errorData.error || errorData.details || `HTTP ${response.status}`)
+        }
+
+        // If this is a parent task, also remove project from all subtasks
+        if (!props.task.isSubtask && subtasks.value.length > 0) {
+          const subtaskPromises = subtasks.value
+            .filter(st => st.project_id === props.task.project_id)
+            .map(async (subtask) => {
+              try {
+                // Fetch full subtask data
+                const subtaskDataResponse = await fetch(`${taskServiceUrl}/tasks?task_id=${subtask.id}`)
+                if (!subtaskDataResponse.ok) {
+                  console.error(`Failed to fetch subtask data: ${subtask.title}`)
+                  return
+                }
+
+                const subtaskData = await subtaskDataResponse.json()
+                const currentSubtask = subtaskData.tasks?.[0]
+
+                if (!currentSubtask) {
+                  console.error(`Subtask not found: ${subtask.title}`)
+                  return
+                }
+
+                // Prepare collaborators as JSON string
+                let subtaskCollaboratorsString = currentSubtask.collaborators
+                if (Array.isArray(currentSubtask.collaborators)) {
+                  subtaskCollaboratorsString = JSON.stringify(currentSubtask.collaborators)
+                } else if (typeof currentSubtask.collaborators === 'string') {
+                  subtaskCollaboratorsString = currentSubtask.collaborators
+                } else {
+                  subtaskCollaboratorsString = JSON.stringify([])
+                }
+
+                // Update subtask with PUT method
+                const subtaskResponse = await fetch(`${taskServiceUrl}/tasks/${subtask.id}`, {
+                  method: 'PUT',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    title: currentSubtask.title,
+                    description: currentSubtask.description,
+                    status: currentSubtask.status,
+                    priority: currentSubtask.priority,
+                    due_date: currentSubtask.dueDate,
+                    owner_id: currentSubtask.owner_id,
+                    collaborators: subtaskCollaboratorsString,
+                    project_id: null  // Set to null to remove from project
+                  })
+                })
+
+                if (!subtaskResponse.ok) {
+                  console.error(`Failed to remove subtask from project: ${subtask.title}`)
+                }
+              } catch (error) {
+                console.error(`Error removing subtask ${subtask.title} from project:`, error)
+              }
+            })
+
+          await Promise.all(subtaskPromises)
+        }
+
+        alert('Task removed from project successfully!')
+        emit('removed-from-project', props.task)
+        emit('close')
+
+      } catch (error) {
+        console.error('Failed to remove task from project:', error)
+        alert(`Failed to remove task from project: ${error.message}`)
+      } finally {
+        isRemovingFromProject.value = false
+      }
+    }
+
     return {
       isDeleting,
       isMarkingComplete,
+      isRemovingFromProject,
       auditLogs,
       auditLogsWithUserNames,
       isLoadingLogs,
@@ -1333,6 +1509,7 @@ export default {
       editTask,
       deleteTask,
       markAsCompleted,
+      removeFromProject,
       handleCommentsUpdated,
       handleSubtaskClick,
       toggleAuditLog

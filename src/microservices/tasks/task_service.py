@@ -2258,10 +2258,20 @@ def update_task(task_id: str):
 
             # Prepare update data (only include non-None values, exclude fields that are handled automatically)
             # Note: completed_date and approval fields are excluded because they're handled automatically
+            # Special handling: project_id can be explicitly set to None to remove task from project
             exclude_fields = {
                 "reminder_days", "email_enabled", "in_app_enabled", "updated_by", "completed_date"
             }
+
+            # First, build update_data with non-None values
             update_data = {k: v for k, v in task_data.dict(exclude=exclude_fields).items() if v is not None}
+
+            # Special case: If project_id is explicitly provided in the request body as None/null,
+            # we want to include it in the update to remove the task from the project
+            if "project_id" in body and body["project_id"] is None:
+                update_data["project_id"] = None
+                print(f"✅ Explicitly removing task from project (setting project_id to None)")
+
             actor_id = task_data.updated_by or existing_task.get("owner_id", "system")
             
             # BUSINESS LOGIC: Handle owner_id change (task reassignment)
