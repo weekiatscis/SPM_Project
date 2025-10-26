@@ -64,7 +64,7 @@
           </div>
         </div>
         <div class="flex-1 relative">
-          <!-- Comment Input Field with Inline Tags -->
+          <!-- Contenteditable div for rich text with inline mentions -->
           <div
             ref="commentTextarea"
             contenteditable="true"
@@ -74,32 +74,11 @@
               'focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:outline-none',
               { 'opacity-50 cursor-not-allowed': isAddingComment }
             ]"
-            @input="handleContentEditableInput"
-            @keyup="handleContentEditableInput"
+            @input="handleInput"
             @keydown="handleKeydown"
             @paste="handlePaste"
-          >
-            <!-- Mentioned Users Tags (inline) -->
-            <a-tag
-              v-for="user in mentionedUsers"
-              :key="user.user_id"
-              closable
-              color="blue"
-              contenteditable="false"
-              @close.stop="removeMention(user.user_id)"
-              class="inline-flex items-center mr-1 mb-1"
-              style="vertical-align: middle; user-select: none;"
-            >
-              <span class="text-xs">@{{ user.name }}</span>
-            </a-tag>
-            <!-- Placeholder -->
-            <span
-              v-if="mentionedUsers.length === 0 && !newComment"
-              class="placeholder-text"
-            >
-              Add a comment... (Type @ to mention someone)
-            </span>
-          </div>
+            data-placeholder="Add a comment... (Type @ to mention someone)"
+          ></div>
           
           <!-- Mention Dropdown -->
           <div
@@ -139,7 +118,7 @@
           <div class="flex justify-end items-center mt-2">
             <button
               @click="addComment"
-              :disabled="(!newComment.trim() && mentionedUsers.length === 0) || isAddingComment"
+              :disabled="isButtonDisabled"
               class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {{ isAddingComment ? 'Posting...' : 'Post Comment' }}
@@ -162,7 +141,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 
 export default {
@@ -229,6 +208,13 @@ export default {
       // Fallback to original logic (owner or collaborator)
       return props.task.owner_id === currentUserId.value || 
              (props.task.collaborators && props.task.collaborators.includes(currentUserId.value))
+    })
+
+    // Computed property for button disabled state
+    const isButtonDisabled = computed(() => {
+      const hasContent = newComment.value.trim() || mentionedUsers.value.length > 0
+      const disabled = !hasContent || isAddingComment.value
+      return disabled
     })
 
     const getInitials = (name) => {
@@ -426,44 +412,36 @@ export default {
       )
     })
     
-    // Handle contenteditable input
-    const handleContentEditableInput = (event) => {
-      const element = event.target || commentTextarea.value
-      if (!element) return
+    // Handle contenteditable input for mention detection
+    const handleInput = () => {
+      if (!commentTextarea.value) return
       
-      // Get text content directly from the element
-      let textContent = ''
+      // Get the text content
+      const text = getTextContent()
+      newComment.value = text
       
-      // Extract text from all child nodes, excluding tag components
-      Array.from(element.childNodes).forEach(node => {
-        if (node.nodeType === Node.TEXT_NODE) {
-          textContent += node.textContent
-        } else if (node.nodeType === Node.ELEMENT_NODE && !node.classList.contains('ant-tag')) {
-          textContent += node.textContent
-        }
-      })
+      // Update mentions array based on current mention spans
+      updateMentionsFromDOM()
       
-      newComment.value = textContent
-      
-      console.log('Current text:', textContent)
-      
-      // Detect @ mentions
-      const text = textContent
+      // Detect @ mentions for dropdown
       const lastAtIndex = text.lastIndexOf('@')
-      
-      console.log('Last @ index:', lastAtIndex)
       
       if (lastAtIndex !== -1) {
         const textAfterAt = text.substring(lastAtIndex + 1)
-        console.log('Text after @:', textAfterAt)
         
+        // Check if we're still typing a mention (no space or newline after @)
         if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
           mentionStartPos.value = lastAtIndex
-          mentionSearchQuery.value = textAfterAt
-          showMentionDropdown.value = true
-          selectedMentionIndex.value = 0
           
-          console.log('Showing dropdown, search query:', textAfterAt)
+          // Only reset selected index if the search query actually changed
+          const previousQuery = mentionSearchQuery.value
+          mentionSearchQuery.value = textAfterAt
+          
+          if (previousQuery !== textAfterAt) {
+            selectedMentionIndex.value = 0
+          }
+          
+          showMentionDropdown.value = true
           
           calculateDropdownPosition()
           
@@ -472,10 +450,54 @@ export default {
           }
         } else {
           showMentionDropdown.value = false
+          mentionSearchQuery.value = ''
         }
       } else {
         showMentionDropdown.value = false
+        mentionSearchQuery.value = ''
+        mentionStartPos.value = 0
       }
+    }
+    
+    // Get text content from contenteditable, preserving spaces
+    const getTextContent = () => {
+      if (!commentTextarea.value) return ''
+      
+      let text = ''
+      const traverse = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          text += node.textContent
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+          if (node.classList && node.classList.contains('mention-tag')) {
+            // For mention spans, get the data-name attribute
+            text += '@' + (node.getAttribute('data-name') || node.textContent.replace('@', ''))
+          } else {
+            // Traverse child nodes
+            node.childNodes.forEach(traverse)
+          }
+        }
+      }
+      
+      commentTextarea.value.childNodes.forEach(traverse)
+      return text
+    }
+    
+    // Update mentionedUsers array based on mention spans in DOM
+    const updateMentionsFromDOM = () => {
+      if (!commentTextarea.value) return
+      
+      const mentionSpans = commentTextarea.value.querySelectorAll('.mention-tag')
+      const currentMentions = []
+      
+      mentionSpans.forEach(span => {
+        const userId = span.getAttribute('data-user-id')
+        const userName = span.getAttribute('data-name')
+        if (userId && userName) {
+          currentMentions.push({ user_id: userId, name: userName })
+        }
+      })
+      
+      mentionedUsers.value = currentMentions
     }
     
     // Handle paste to strip formatting
@@ -509,97 +531,102 @@ export default {
       
       if (event.key === 'ArrowDown') {
         event.preventDefault()
+        event.stopPropagation()
         selectedMentionIndex.value = Math.min(
           selectedMentionIndex.value + 1,
           filteredMentionUsers.value.length - 1
         )
       } else if (event.key === 'ArrowUp') {
         event.preventDefault()
+        event.stopPropagation()
         selectedMentionIndex.value = Math.max(selectedMentionIndex.value - 1, 0)
       } else if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
         if (filteredMentionUsers.value.length > 0) {
           event.preventDefault()
+          event.stopPropagation()
           selectMention(filteredMentionUsers.value[selectedMentionIndex.value])
         }
       } else if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
         showMentionDropdown.value = false
       }
     }
     
     // Select a mention from dropdown
     const selectMention = (user) => {
+      if (!commentTextarea.value) return
+      
       // Check if user is already mentioned
-      if (!mentionedUsers.value.find(u => u.user_id === user.user_id)) {
+      if (mentionedUsers.value.find(u => u.user_id === user.user_id)) {
+        showMentionDropdown.value = false
+        mentionSearchQuery.value = ''
+        return
+      }
+      
+      // Save the current selection/cursor position
+      const selection = window.getSelection()
+      const range = selection.getRangeAt(0)
+      
+      // Find the @ character and the text after it to replace
+      const textNode = range.startContainer
+      let container = textNode.nodeType === Node.TEXT_NODE ? textNode : commentTextarea.value
+      
+      // Get all text up to cursor
+      const textBeforeCursor = container.nodeType === Node.TEXT_NODE 
+        ? container.textContent.substring(0, range.startOffset)
+        : getTextContent()
+      
+      const atIndex = textBeforeCursor.lastIndexOf('@')
+      
+      if (atIndex !== -1) {
+        // Calculate how many characters to delete (@ + search query)
+        const charsToDelete = textBeforeCursor.length - atIndex
+        
+        // Delete the @ and search text
+        for (let i = 0; i < charsToDelete; i++) {
+          document.execCommand('delete', false)
+        }
+        
+        // Create a mention span element
+        const mentionSpan = document.createElement('span')
+        mentionSpan.className = 'mention-tag'
+        mentionSpan.contentEditable = 'false'
+        mentionSpan.setAttribute('data-user-id', user.user_id)
+        mentionSpan.setAttribute('data-name', user.name)
+        mentionSpan.textContent = '@' + user.name
+        
+        // Insert the mention span
+        const newRange = selection.getRangeAt(0)
+        newRange.insertNode(mentionSpan)
+        
+        // Add a space after the mention
+        const spaceNode = document.createTextNode(' ')
+        mentionSpan.parentNode.insertBefore(spaceNode, mentionSpan.nextSibling)
+        
+        // Move cursor after the space
+        newRange.setStartAfter(spaceNode)
+        newRange.setEndAfter(spaceNode)
+        selection.removeAllRanges()
+        selection.addRange(newRange)
+        
+        // Update the mentions array
         mentionedUsers.value.push({
           user_id: user.user_id,
           name: user.name
         })
       }
       
-      // Remove the @ and search text from the content
-      const beforeMention = newComment.value.substring(0, mentionStartPos.value)
-      const afterMention = newComment.value.substring(mentionStartPos.value + mentionSearchQuery.value.length + 1)
-      
-      // Update the text content in the contenteditable div
-      if (commentTextarea.value) {
-        // Get all text nodes and update them
-        const textNodes = []
-        const walker = document.createTreeWalker(
-          commentTextarea.value,
-          NodeFilter.SHOW_TEXT,
-          null,
-          false
-        )
-        
-        let node
-        while (node = walker.nextNode()) {
-          textNodes.push(node)
-        }
-        
-        // Clear text nodes and set new content
-        textNodes.forEach(node => {
-          if (node.textContent.includes('@')) {
-            node.textContent = beforeMention + afterMention
-          }
-        })
-      }
-      
-      newComment.value = beforeMention + afterMention
-      
       // Close dropdown
       showMentionDropdown.value = false
+      mentionSearchQuery.value = ''
+      mentionStartPos.value = 0
       
-      // Focus back on contenteditable and position cursor after the tag
-      setTimeout(() => {
-        if (commentTextarea.value) {
-          commentTextarea.value.focus()
-          
-          // Move cursor to the end of the contenteditable div (after all tags)
-          const range = document.createRange()
-          const selection = window.getSelection()
-          
-          // Find the last child node (or create a text node if needed)
-          let lastNode = commentTextarea.value.lastChild
-          
-          // If the last child is a tag, we need to add a text node after it
-          if (!lastNode || lastNode.nodeType !== Node.TEXT_NODE) {
-            const textNode = document.createTextNode('\u00A0') // Non-breaking space
-            commentTextarea.value.appendChild(textNode)
-            lastNode = textNode
-          }
-          
-          // Set cursor position at the end
-          range.setStart(lastNode, lastNode.textContent.length)
-          range.collapse(true)
-          selection.removeAllRanges()
-          selection.addRange(range)
-        }
-      }, 10)
-    }
-    
-    // Remove a mention tag
-    const removeMention = (userId) => {
-      mentionedUsers.value = mentionedUsers.value.filter(u => u.user_id !== userId)
+      // Focus back to contenteditable
+      commentTextarea.value.focus()
+      
+      // Trigger input event to update state
+      handleInput()
     }
     
     const addComment = async () => {
@@ -607,16 +634,19 @@ export default {
       const hasContent = newComment.value.trim() || mentionedUsers.value.length > 0
       if (!hasContent || !canComment.value || isAddingComment.value) return
 
+      console.log('Starting to add comment...')
       isAddingComment.value = true
+      
+      // Store the initial comment count to compare later
+      const initialCommentCount = comments.value.length
+      
       try {
-        // Build the final comment text with mentions
-        let finalCommentText = newComment.value.trim()
+        // The final comment text already includes inline mentions from getTextContent()
+        // No need to prepend mentions again as they're already in the text
+        const finalCommentText = newComment.value.trim()
         
-        // Prepend mentions if any
-        if (mentionedUsers.value.length > 0) {
-          const mentions = mentionedUsers.value.map(u => `@${u.name}`).join(' ')
-          finalCommentText = mentions + (finalCommentText ? ' ' + finalCommentText : '')
-        }
+        console.log('Sending comment with text:', finalCommentText)
+        console.log('Mentioned users:', mentionedUsers.value.map(u => u.name))
         
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
         const response = await fetch(`${taskServiceUrl}/tasks/${props.taskId}/comments`, {
@@ -630,52 +660,94 @@ export default {
           })
         })
 
-        const result = await response.json()
+        console.log('Response status:', response.status, response.statusText)
+        
+        // Parse the response JSON
+        let result
+        try {
+          result = await response.json()
+          console.log('Response data:', result)
+        } catch (parseError) {
+          console.error('Failed to parse response JSON:', parseError)
+          throw new Error('Invalid response from server')
+        }
 
+        // Check if response is not OK (status >= 400)
         if (!response.ok) {
+          console.error('Response not OK:', result)
           throw new Error(result.error || `Failed to add comment: ${response.statusText}`)
         }
         
-        if (result.success && result.comment) {
-          // Cache the user name for the new comment
-          if (result.comment.user_name) {
-            userCache.value[result.comment.user_id] = result.comment.user_name
-          }
-          
-          // Add the new comment to the beginning of the list (since backend returns latest first)
-          comments.value.unshift(result.comment)
-          newComment.value = ''
-          mentionedUsers.value = [] // Clear mentioned users
-          
-          // Clear the contenteditable div
-          if (commentTextarea.value) {
-            commentTextarea.value.innerHTML = ''
-          }
-          
-          emit('comments-updated', comments.value.length)
-        } else {
-          throw new Error('Server returned invalid response')
+        // Verify the response has the expected structure
+        if (!result.success || !result.comment) {
+          console.error('Invalid response structure:', result)
+          throw new Error('Server returned invalid response structure')
         }
+        
+        console.log('Comment created successfully:', result.comment)
+        
+        // Cache the user name for the new comment
+        if (result.comment.user_name) {
+          userCache.value[result.comment.user_id] = result.comment.user_name
+        }
+        
+        // IMPORTANT: Clear input BEFORE adding comment to list
+        // This prevents Vue from trying to render tags that are being removed
+        clearCommentInputSync()
+        
+        // Wait for Vue to finish clearing the input area
+        await nextTick()
+        
+        // NOW add the new comment to the beginning of the list
+        comments.value.unshift(result.comment)
+        
+        console.log('Comment added successfully, state cleared')
+        emit('comments-updated', comments.value.length)
 
       } catch (error) {
-        console.error('Failed to add comment:', error)
+        console.error('Error in addComment:', error.message, error)
         
-        // Even if there was an error in the response, the comment might have been added
-        // Let's refetch comments to make sure we show the latest state
+        // The comment might have been created despite the error
+        // Refetch to check and update the UI accordingly
         try {
+          console.log('Refetching comments to verify...')
           await fetchComments()
-          // If the comment count changed, the comment was probably added successfully
-          if (comments.value.length > 0) {
-            newComment.value = '' // Clear the input if comments were updated
-            return // Don't show error if the refetch shows the comment was added
+          
+          // Check if a NEW comment was added by comparing counts
+          if (comments.value.length > initialCommentCount) {
+            console.log('Comment was actually created successfully! Clearing input...')
+            // The comment was added successfully, clear the input
+            clearCommentInputSync()
+            await nextTick()
+            // Don't show error since the comment was actually added
+            return
+          } else {
+            console.log('No new comment found after refetch')
           }
         } catch (refetchError) {
           console.error('Failed to refetch comments:', refetchError)
         }
         
+        // Show error only if comment was not actually added
         alert('Failed to add comment. Please try again.')
       } finally {
         isAddingComment.value = false
+        console.log('Finally block: isAddingComment set to false')
+      }
+    }
+    
+    // Helper function to clear comment input state
+    const clearCommentInputSync = () => {
+      // Clear all reactive state
+      newComment.value = ''
+      mentionedUsers.value = []
+      showMentionDropdown.value = false
+      mentionSearchQuery.value = ''
+      mentionStartPos.value = 0
+      
+      // Clear the contenteditable div
+      if (commentTextarea.value) {
+        commentTextarea.value.innerHTML = ''
       }
     }
 
@@ -707,6 +779,7 @@ export default {
       newComment,
       currentUserName,
       canComment,
+      isButtonDisabled,
       getInitials,
       formatCommentDate,
       getUserName,
@@ -718,45 +791,55 @@ export default {
       isLoadingDepartmentMembers,
       selectedMentionIndex,
       dropdownStyle,
-      handleContentEditableInput,
+      handleInput,
       handleKeydown,
       handlePaste,
       selectMention,
-      mentionedUsers,
-      removeMention
+      mentionedUsers
     }
   }
 }
 </script>
 
+<style>
+/* Global styles for dynamically created mention tags (unscoped) */
+.mention-tag {
+  display: inline-flex !important;
+  align-items: center;
+  padding: 2px 8px !important;
+  margin: 0 2px;
+  background-color: #dbeafe !important;
+  color: #2563eb !important;
+  border-radius: 4px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  user-select: none;
+  cursor: default;
+  vertical-align: middle;
+}
+
+.mention-tag:hover {
+  background-color: #bfdbfe !important;
+}
+</style>
+
 <style scoped>
 /* Comment input field (contenteditable) */
 .comment-input-field {
-  min-height: 76px;
-  max-height: 200px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-wrap: break-word;
   font-size: 14px;
   line-height: 1.5;
   color: #374151;
+  font-family: inherit;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
+/* Placeholder for empty contenteditable */
 .comment-input-field:empty:before {
   content: attr(data-placeholder);
   color: #9ca3af;
-}
-
-.placeholder-text {
-  color: #9ca3af;
   pointer-events: none;
-  position: absolute;
-  left: 12px;
-  top: 12px;
-}
-
-.comment-input-field:focus .placeholder-text {
-  display: none;
 }
 
 /* Custom scrollbar for comments list */

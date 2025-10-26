@@ -45,9 +45,20 @@ def test_login(headless=False, reuse_browser=False):
         # ========== CREATE PROJECT FIRST ==========
         # Step 1: Click on Projects in the sidebar
         print("\n--- Creating Project ---")
-        projects_menu = driver.find_element(By.CSS_SELECTOR, "[data-menu-id='projects']")
-        projects_menu.click()
+        # Wait for the Projects menu to be clickable
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        
+        # Wait for the Projects menu to be clickable
+        projects_menu = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".nav-group-header .nav-icon"))
+        )
+        # Click using JavaScript to avoid any potential click interception
+        driver.execute_script("arguments[0].click();", projects_menu)
         print("✓ Clicked Projects menu")
+        
+        # Add a small delay to ensure the projects menu has expanded
+        time.sleep(1)
         
         
         # Step 2: Click on "New Project" button
@@ -59,7 +70,7 @@ def test_login(headless=False, reuse_browser=False):
         # Step 3: Fill in the Project Form Modal
         # Project Name
         project_name_input = driver.find_element(By.CSS_SELECTOR, ".ant-input[placeholder*='Website Redesign']")
-        project_name_input.send_keys("Automated Test Project")
+        project_name_input.send_keys("Automated Test Projectttt")
         print("✓ Entered project name")
         
         # Project Description
@@ -111,19 +122,23 @@ def test_login(headless=False, reuse_browser=False):
         print("✓ Project created successfully!\n")
         
         print("\n--- Moving to home page to create task---")
-        home_menu = driver.find_element(By.CSS_SELECTOR, "[data-menu-id='home']")
-        home_menu.click()
-        time.sleep(0.5)
+        # Wait for the Home menu to be clickable
+        home_menu = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".nav-item.home"))
+        )
+        # Click using JavaScript to avoid any potential click interception
+        driver.execute_script("arguments[0].click();", home_menu)
+        time.sleep(1)  # Wait for navigation to complete
         # ========== NOW CREATE A TASK ==========
         print("--- Creating Task ---")
         # Click on "New Task" button
-        new_task_button = driver.find_element(By.CSS_SELECTOR, ".createtask")
+        new_task_button = driver.find_element(By.CSS_SELECTOR, ".create-task-button")
         new_task_button.click()
         
         # Fill in the task form
         # Title
         title_input = driver.find_element(By.ID, "title")
-        title_input.send_keys("Automated Test Task")
+        title_input.send_keys("Automated Test Taskkkkkkk")
         
         # Description
         description_textarea = driver.find_element(By.ID, "description")
@@ -134,7 +149,7 @@ def test_login(headless=False, reuse_browser=False):
         due_date_input = driver.find_element(By.ID, "dueDate")
         driver.execute_script("""
             const dateInput = arguments[0];
-            dateInput.value = '2025-10-17';
+            dateInput.value = '2025-10-30';
             dateInput.dispatchEvent(new Event('input', { bubbles: true }));
             dateInput.dispatchEvent(new Event('change', { bubbles: true }));
             dateInput.dispatchEvent(new Event('blur', { bubbles: true }));
@@ -203,46 +218,163 @@ def test_login(headless=False, reuse_browser=False):
         print("\n✓ Task created successfully!")
         
         print("\n--- Going back to project to assign task to project ---")
-        projects_menu = driver.find_element(By.CSS_SELECTOR, "[data-menu-id='projects']")
-        projects_menu.click()
+
+        # Wait for the Projects menu to be clickable
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        
+        # Wait for the Projects menu to be clickable
+        projects_menu = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".nav-group-header .nav-icon"))
+        )
+        # Click using JavaScript to avoid any potential click interception
+        driver.execute_script("arguments[0].click();", projects_menu)
         print("✓ Clicked Projects menu")
+        
+        # Add a small delay to ensure the projects menu has expanded
         time.sleep(1)
         
-        # Click on the "Assign Task" tab
-        assign_task_tab = driver.find_element(By.XPATH, "//div[@role='tab' and contains(., 'Assign Task')]")
-        assign_task_tab.click()
-        print("✓ Clicked Assign Task tab")
+        # Click on the "Assign Task" button to open the assign task section
+        assign_task_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".assign-task-btn"))
+        )
+        driver.execute_script("arguments[0].click();", assign_task_button)
+        print("✓ Clicked Assign Task button")
         
+        # Wait for the assign task section to load
+        time.sleep(1)
         
         # Wait for tasks to load and click on the first task in the available tasks list
-        first_task = driver.find_element(By.CSS_SELECTOR, ".ant-list-item")
+        first_task = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".ant-list-item"))
+        )
+        driver.execute_script("arguments[0].scrollIntoView();", first_task)
         first_task.click()
         print("✓ Selected first task from available tasks")
         
+        # Wait for the task to be selected (UI might update)
+        time.sleep(1)
         
-        # Wait for projects list to load on the right side and click on the first project
+        # Now select the first project from the projects list (right side)
+        # The projects list is in the right column (span="17")
+        # We need to target the second ant-list (the projects list, not the tasks list)
         
-        # Get all list items - first ones are tasks (left), later ones are projects (right)
-        all_list_items = driver.find_elements(By.CSS_SELECTOR, ".ant-list-item")
+        # Wait for all ant-list elements to be present
+        all_lists = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".ant-list"))
+        )
         
-        # Find the first project item (it will be in the second list, after the task items)
-        # We can identify it by looking for items that contain the "Assign Task" button or project details
-        project_items = driver.find_elements(By.XPATH, "//div[@style and contains(@style, 'height: 300px')]//li[contains(@class, 'ant-list-item')]")
-        
-        if project_items:
-            project_items[0].click()
-            print("✓ Selected first project from available projects")
+        # The second list should be the projects list (first is tasks)
+        if len(all_lists) >= 2:
+            # Find project items within the second list (projects list)
+            project_items = all_lists[1].find_elements(By.CSS_SELECTOR, ".ant-list-item")
             
+            if project_items:
+                # Scroll the first project into view and click it
+                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", project_items[0])
+                time.sleep(0.5)  # Small delay for scroll to complete
+                driver.execute_script("arguments[0].click();", project_items[0])
+                print("✓ Selected first project from available projects")
+            else:
+                print("⚠ No projects found in the projects list")
         else:
-            print("⚠ No projects found on the right side")
+            print("⚠ Could not find projects list")
         
-        # Click on the "Assign Task" button that appears after selecting a project
-        assign_button = driver.find_element(By.XPATH, "//button[contains(., 'Assign') and (@type='primary' or contains(@class, 'ant-btn-primary'))]")
-        assign_button.click()
-        print("✓ Clicked Assign Task button")
+        # Wait for the assign button to be clickable
+        time.sleep(0.5)
         
+        # Click on the "Assign" button to confirm the assignment
+        assign_confirm_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'ant-btn-primary') and contains(., 'Assign')]"))
+        )
+        driver.execute_script("arguments[0].click();", assign_confirm_button)
+        print("✓ Clicked Assign button to confirm task assignment")
         
+        # Wait for assignment to complete
+        time.sleep(2)
         
+        # ========== CLEANUP: DELETE THE CREATED TASK AND PROJECT ==========
+        print("\n--- Cleaning up: Deleting created task and project ---")
+        
+        # Step 1: Navigate to home to delete the task
+        home_menu = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".nav-item.home"))
+        )
+        driver.execute_script("arguments[0].click();", home_menu)
+        time.sleep(1)
+        
+        # Step 2: Click on the created task to open task detail modal
+        task_items = WebDriverWait(driver, 10).until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, ".task-card-wrapper"))
+        )
+        
+        if task_items:
+            # Click on the first task (the one we just created)
+            task_items[0].click()
+            time.sleep(1)
+            
+            # Step 3: Click the delete button in the task detail modal
+            delete_task_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//button[contains(., 'Delete')]"))
+            )
+            delete_task_button.click()
+            
+            # Step 4: Confirm deletion in the browser alert
+            time.sleep(0.5)
+            try:
+                alert = driver.switch_to.alert
+                alert.accept()
+                print("✓ Task deleted successfully")
+                time.sleep(1)
+            except:
+                print("⚠ No confirmation alert found for task deletion")
+        else:
+            print("⚠ Could not find task to delete")
+        
+        # Step 5: Navigate to projects to delete the project
+        projects_menu = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".nav-group-header"))
+        )
+        driver.execute_script("arguments[0].click();", projects_menu)
+        time.sleep(1)
+        
+        # Step 6: Click on the first project in the submenu (the one we created)
+        first_project_link = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".submenu-item"))
+        )
+        first_project_link.click()
+        time.sleep(1)
+        
+        # Step 7: Click on the three-dot menu (ellipsis) to open project options
+        ellipsis_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, ".ant-dropdown-trigger"))
+        )
+        ellipsis_button.click()
+        time.sleep(0.5)
+        
+        # Step 8: Click on "Delete Project" option
+        delete_project_option = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Delete Project')]"))
+        )
+        delete_project_option.click()
+        time.sleep(1)
+        
+        # Step 9: Type "delete" in the confirmation input
+        delete_confirmation_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "input[placeholder*='delete']"))
+        )
+        delete_confirmation_input.send_keys("delete")
+        time.sleep(0.5)
+        
+        # Step 10: Click the "Delete Project" button in the modal
+        confirm_delete_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'ant-btn-dangerous') and contains(., 'Delete Project')]"))
+        )
+        driver.execute_script("arguments[0].click();", confirm_delete_button)
+        print("✓ Project deleted successfully")
+        
+        time.sleep(2)
+        print("✓ Cleanup completed successfully!")
         
     finally:
         # Only quit if not reusing browser

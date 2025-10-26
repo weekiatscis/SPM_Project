@@ -52,6 +52,17 @@
               <span class="sort-label">Priority</span>
               <span class="sort-arrow">{{ sortBy === 'priority-asc' ? '↑' : sortBy === 'priority-desc' ? '↓' : '↑' }}</span>
             </a-button>
+            <a-input
+              v-model:value="searchQuery"
+              placeholder="Search tasks..."
+              class="search-input"
+              size="middle"
+              allow-clear
+            >
+              <template #prefix>
+                <SearchOutlined class="search-icon" />
+              </template>
+            </a-input>
           </a-space>
         </div>
       </template>
@@ -90,7 +101,7 @@
           </a-spin>
         </a-tab-pane>
 
-        <a-tab-pane key="completed" tab="Completed">
+        <a-tab-pane key="completed" tab="Completed" class="Completed">
           <template #tab>
             <span>
               Completed
@@ -123,7 +134,7 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted, h } from 'vue'
-import { PlusOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons-vue'
 import { notification } from 'ant-design-vue'
 import { useAuthStore } from '../../stores/auth'
 import TaskFormModal from './TaskFormModal.vue'
@@ -148,6 +159,7 @@ export default {
     const authStore = useAuthStore()
     const expandedParents = ref({})
     const activeTab = ref('ongoing')
+    const searchQuery = ref('')
 
     // Modal state for creating task
     const showTaskModal = ref(false)
@@ -421,7 +433,7 @@ export default {
       }
     }
 
-    // All tasks computed property with sorting
+    // All tasks computed property with sorting and search filtering
     const allTasks = computed(() => {
       // Include:
       // 1. Parent tasks (tasks without parent_task_id)
@@ -461,16 +473,27 @@ export default {
       
       console.log('📊 Visible tasks count:', visibleTasks.length)
       
+      // Apply search filter
+      let filteredTasks = visibleTasks
+      if (searchQuery.value.trim()) {
+        const query = searchQuery.value.toLowerCase().trim()
+        filteredTasks = visibleTasks.filter(task => {
+          return task.title?.toLowerCase().includes(query) ||
+                 task.status?.toLowerCase().includes(query) ||
+                 task.assignee?.toLowerCase().includes(query)
+        })
+      }
+      
       // Apply sorting
-      let sorted = [...visibleTasks]
+      let sorted = [...filteredTasks]
       if (sortBy.value === 'dueDate-asc') {
-        sorted = visibleTasks.sort((a, b) => {
+        sorted = filteredTasks.sort((a, b) => {
           if (!a.dueDate) return 1
           if (!b.dueDate) return -1
           return new Date(a.dueDate) - new Date(b.dueDate)
         })
       } else if (sortBy.value === 'dueDate-desc') {
-        sorted = visibleTasks.sort((a, b) => {
+        sorted = filteredTasks.sort((a, b) => {
           if (!a.dueDate) return 1
           if (!b.dueDate) return -1
           return new Date(b.dueDate) - new Date(a.dueDate)
@@ -478,14 +501,14 @@ export default {
       } else if (sortBy.value === 'priority-asc') {
         // Sort by priority: lower numbers (1) = lower priority, higher numbers (10) = higher priority
         // Ascending = low to high (1 to 10)
-        sorted = visibleTasks.sort((a, b) => {
+        sorted = filteredTasks.sort((a, b) => {
           const aPriority = typeof a.priority === 'number' ? a.priority : (parseInt(a.priority) || 5)
           const bPriority = typeof b.priority === 'number' ? b.priority : (parseInt(b.priority) || 5)
           return aPriority - bPriority
         })
       } else if (sortBy.value === 'priority-desc') {
         // Descending = high to low (10 to 1)
-        sorted = visibleTasks.sort((a, b) => {
+        sorted = filteredTasks.sort((a, b) => {
           const aPriority = typeof a.priority === 'number' ? a.priority : (parseInt(a.priority) || 5)
           const bPriority = typeof b.priority === 'number' ? b.priority : (parseInt(b.priority) || 5)
           return bPriority - aPriority
@@ -574,6 +597,7 @@ export default {
     return {
       h,
       PlusOutlined,
+      SearchOutlined,
       authStore,
       allTasks,
       ongoingTasks,
@@ -587,6 +611,7 @@ export default {
       showEditModal,
       editingTask,
       sortBy,
+      searchQuery,
       expandedParents,
       handleTabChange,
       toggleDueDateSort,
@@ -693,8 +718,52 @@ export default {
 .sort-buttons {
   display: flex;
   gap: 10px;
+  align-items: center;
   position: relative;
   z-index: 1;
+}
+
+/* Search Input - Matching Design */
+.search-input {
+  width: 480px !important;
+  height: 38px !important;
+  border-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 0, 0, 0.06) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.search-input:hover {
+  border-color: rgba(0, 122, 255, 0.2) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.search-input:focus,
+.search-input:focus-within {
+  border-color: rgba(0, 122, 255, 0.4) !important;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.15);
+  background: rgba(255, 255, 255, 0.95) !important;
+}
+
+:deep(.search-input .ant-input) {
+  background: transparent !important;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+:deep(.search-input .ant-input::placeholder) {
+  color: #86868b;
+  font-weight: 500;
+}
+
+.search-icon {
+  color: #86868b;
+  font-size: 14px;
 }
 
 .sort-button {
@@ -1025,6 +1094,35 @@ export default {
   background: rgba(44, 44, 46, 0.95) !important;
 }
 
+/* Dark Mode - Search Input */
+:global(.dark) .search-input {
+  background: rgba(44, 44, 46, 0.8) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+:global(.dark) .search-input:hover {
+  border-color: rgba(0, 122, 255, 0.3) !important;
+}
+
+:global(.dark) .search-input:focus,
+:global(.dark) .search-input:focus-within {
+  background: rgba(44, 44, 46, 0.95) !important;
+  border-color: rgba(0, 122, 255, 0.5) !important;
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.2);
+}
+
+:global(.dark) :deep(.search-input .ant-input) {
+  color: #f5f5f7 !important;
+}
+
+:global(.dark) :deep(.search-input .ant-input::placeholder) {
+  color: #86868b;
+}
+
+:global(.dark) .search-icon {
+  color: #86868b;
+}
+
 /* Responsive Design */
 @media (max-width: 1200px) {
   .task-grid {
@@ -1056,6 +1154,16 @@ export default {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
+  }
+  
+  .sort-buttons {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  
+  .search-input {
+    width: 100% !important;
+    order: 3;
   }
   
   .task-list-title {

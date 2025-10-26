@@ -11,23 +11,28 @@
           class="inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-4xl sm:w-full relative" style="z-index: 10001;">
         <!-- Header -->
         <div class="modal-header">
-          <div class="flex items-start justify-between">
-            <div class="flex-1 pr-8">
-              <div class="flex items-center gap-3 mb-3">
-                <h2 class="modal-title">{{ task.title }}</h2>
-                <a-tag :color="getStatusColor(task.status)" class="status-tag-large">
-                  {{ getStatusText(task.status) }}
-                </a-tag>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3 flex-1 min-w-0 pr-8">
+              <!-- Title -->
+              <h2 class="modal-title flex-shrink-0">{{ task.title }}</h2>
+              
+              <!-- Status Badge with Dot -->
+              <div :class="['status-badge', getStatusBadgeClasses(task.status)]">
+                <span class="status-dot" :class="getStatusDotClass(task.status)"></span>
+                <span class="status-text">{{ getStatusText(task.status) }}</span>
               </div>
-              <button @click="editTask" class="edit-button" v-if="isCurrentUserAssignee">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              
+              <!-- Edit Button -->
+              <button @click="editTask" class="edit-button-icon" v-if="isCurrentUserAssignee" title="Edit Task">
+                <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
-                <span>Edit Task</span>
               </button>
             </div>
+            
+            <!-- Close Button -->
             <button @click="$emit('close')" class="close-button">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -182,43 +187,70 @@
             />
           </div>
 
-          <!-- Audit Log Section -->
+          <!-- Audit Log Section - Collapsible -->
           <div class="audit-log-section">
             <div class="audit-log-container">
-              <h3 class="section-title">Audit Log</h3>
-              <div class="audit-log-scroll">
-                <div v-if="isLoadingLogs" class="text-center py-4">
-                  <div class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
-                  <p class="text-xs text-gray-500 mt-1">Loading audit logs...</p>
+              <!-- Collapsible Header -->
+              <button 
+                @click="toggleAuditLog" 
+                class="audit-log-header"
+                :aria-expanded="isAuditLogOpen"
+              >
+                <div class="flex items-center gap-2">
+                  <h3 class="section-title-collapsible">Audit Log</h3>
+                  <span class="audit-log-count" v-if="auditLogsWithUserNames.length > 0">
+                    {{ auditLogsWithUserNames.length }}
+                  </span>
                 </div>
-                
-                <div v-else-if="auditLogsWithUserNames.length === 0" class="text-center py-4">
-                  <p class="text-xs text-gray-500">No audit logs found.</p>
-                </div>
-                
-                <div v-else class="space-y-0.5">
-                  <div 
-                    v-for="log in auditLogsWithUserNames" 
-                    :key="log.log_id"
-                    class="flex items-start space-x-2 py-0.5 px-1 hover:bg-gray-50 rounded transition-colors duration-150"
-                  >
-                    <div class="flex-shrink-0">
-                      <div class="w-1.5 h-1.5 rounded-full mt-1" :class="{
-                        'bg-green-400': log.action === 'create',
-                        'bg-blue-400': log.action === 'update',
-                        'bg-red-400': log.action === 'delete'
-                      }"></div>
+                <svg 
+                  class="audit-log-chevron" 
+                  :class="{ 'audit-log-chevron-open': isAuditLogOpen }"
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              <!-- Collapsible Content -->
+              <transition name="audit-log-transition">
+                <div v-if="isAuditLogOpen" class="audit-log-content">
+                  <div class="audit-log-scroll">
+                    <div v-if="isLoadingLogs" class="text-center py-4">
+                      <div class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+                      <p class="text-xs text-gray-500 mt-1">Loading audit logs...</p>
                     </div>
-                    <div class="flex-1 min-w-0">
-                      <p class="text-xs text-gray-700 leading-tight">
-                        <span class="font-medium text-gray-500">{{ formatLogDate(log.created_at) }}</span>: 
-                        <span class="font-medium text-indigo-600">{{ log.userName }}</span>
-                        {{ formatLogMessage(log) }}
-                      </p>
+                    
+                    <div v-else-if="auditLogsWithUserNames.length === 0" class="text-center py-4">
+                      <p class="text-xs text-gray-500">No audit logs found.</p>
+                    </div>
+                    
+                    <div v-else class="space-y-0.5">
+                      <div 
+                        v-for="log in auditLogsWithUserNames" 
+                        :key="log.log_id"
+                        class="flex items-start space-x-2 py-0.5 px-1 hover:bg-gray-50 rounded transition-colors duration-150"
+                      >
+                        <div class="flex-shrink-0">
+                          <div class="w-1.5 h-1.5 rounded-full mt-1" :class="{
+                            'bg-green-400': log.action === 'create',
+                            'bg-blue-400': log.action === 'update',
+                            'bg-red-400': log.action === 'delete'
+                          }"></div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                          <p class="text-xs text-gray-700 leading-tight">
+                            <span class="font-medium text-gray-500">{{ formatLogDate(log.created_at) }}</span>: 
+                            <span class="font-medium text-indigo-600">{{ log.userName }}</span>
+                            {{ formatLogMessage(log) }}
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              </transition>
             </div>
           </div>
         </div>
@@ -322,6 +354,7 @@ export default {
     const isLoadingParentTask = ref(false)
     const assigneeName = ref('Unassigned')
     const projectName = ref('No Project')
+    const isAuditLogOpen = ref(false)
 
     // Fetch audit logs when modal opens or task changes
     const fetchAuditLogs = async () => {
@@ -540,28 +573,34 @@ export default {
       console.log('   props.task:', props.task);
       console.log('   All task keys:', Object.keys(props.task));
       console.log('   props.task.project:', props.task.project);
+      console.log('   props.task.project_id:', props.task.project_id);
       console.log('   typeof props.task.project:', typeof props.task.project);
       if (typeof props.task.project === 'object' && props.task.project !== null) {
         console.log('   props.task.project object:', JSON.stringify(props.task.project));
       }
-      if (!props.task.project) {
-        console.warn('   ⚠️ No project found, setting to "No Project"');
+      
+      // Check for project_id first (this is what the API returns)
+      const projectId = props.task.project_id || props.task.project;
+      
+      if (!projectId) {
+        console.warn('   ⚠️ No project or project_id found, setting to "No Project"');
         projectName.value = 'No Project';
         return;
       }
+      
       // If project is an object, use its name directly
       if (typeof props.task.project === 'object' && props.task.project !== null) {
-        projectName.value = props.task.project.name || 'No Project';
+        projectName.value = props.task.project.name || props.task.project.project_name || 'No Project';
         return;
       }
-      // If project is a string, check if it's a likely ID (UUID or number)
-      if (typeof props.task.project === 'string') {
+      // If projectId is a string, check if it's a likely ID (UUID or number)
+      if (typeof projectId === 'string') {
         // Simple check: if it looks like a UUID, fetch from API; otherwise, use as name
         const uuidRegex = /^[0-9a-fA-F-]{36}$/;
-        if (uuidRegex.test(props.task.project)) {
-          const projectId = props.task.project;
+        if (uuidRegex.test(projectId)) {
           try {
-            const response = await fetch(`/api/projects?project_id=${projectId}`);
+            const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+            const response = await fetch(`${projectServiceUrl}/projects?project_id=${projectId}`);
             console.log('   Response status:', response.status);
             if (response.ok) {
               const result = await response.json();
@@ -583,7 +622,7 @@ export default {
           }
         } else {
           // Use the string directly as the project name
-          projectName.value = props.task.project;
+          projectName.value = projectId;
           console.log('   ✅ Project name set directly from string:', projectName.value);
         }
         return;
@@ -1032,6 +1071,26 @@ export default {
       return classes[status] || 'bg-gray-100 text-gray-800'
     }
 
+    const getStatusBadgeClasses = (status) => {
+      const classes = {
+        'Unassigned': 'status-badge-gray',
+        'Ongoing': 'status-badge-blue',
+        'Under Review': 'status-badge-yellow',
+        'Completed': 'status-badge-green'
+      }
+      return classes[status] || 'status-badge-gray'
+    }
+
+    const getStatusDotClass = (status) => {
+      const classes = {
+        'Unassigned': 'status-dot-gray',
+        'Ongoing': 'status-dot-blue',
+        'Under Review': 'status-dot-yellow',
+        'Completed': 'status-dot-green'
+      }
+      return classes[status] || 'status-dot-gray'
+    }
+
     const getInitials = (name) => {
       if (!name) return '??'
       return name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2)
@@ -1235,6 +1294,10 @@ export default {
       console.log('open-task event emitted successfully')
     }
 
+    const toggleAuditLog = () => {
+      isAuditLogOpen.value = !isAuditLogOpen.value
+    }
+
     return {
       isDeleting,
       isMarkingComplete,
@@ -1251,12 +1314,15 @@ export default {
       projectName,
       isCurrentUserAssignee,
       timeTaken,
+      isAuditLogOpen,
       formatDate,
       formatLogDate,
       formatActivityDate,
       getStatusColor,
       getStatusText,
       getStatusBadgeClass,
+      getStatusBadgeClasses,
+      getStatusDotClass,
       getPriorityColor,
       getUserName,
       getProjectName,
@@ -1268,7 +1334,8 @@ export default {
       deleteTask,
       markAsCompleted,
       handleCommentsUpdated,
-      handleSubtaskClick
+      handleSubtaskClick,
+      toggleAuditLog
     }
   }
 }
@@ -1277,65 +1344,147 @@ export default {
 <style scoped>
 /* Modal Header */
 .modal-header {
-  background: linear-gradient(to bottom, #ffffff, #f9fafb);
-  padding: 28px 32px;
+  background: linear-gradient(to bottom, #ffffff 0%, #fafbfc 100%);
+  padding: 24px 32px;
   border-bottom: 1px solid #e5e7eb;
 }
 
 .modal-title {
-  font-size: 26px;
-  font-weight: 700;
-  color: #111827;
-  letter-spacing: -0.02em;
+  font-size: 24px;
+  font-weight: 600;
+  color: #0f172a;
+  letter-spacing: -0.025em;
   line-height: 1.3;
   margin: 0;
+  max-width: none;
 }
 
-.status-tag-large {
-  font-size: 14px !important;
-  font-weight: 600 !important;
-  padding: 6px 16px !important;
-  border-radius: 8px !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1) !important;
-}
-
-.edit-button {
+/* Status Badge - Premium pill design */
+.status-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
-  background: #f3f4f6;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  color: #374151;
-  font-size: 14px;
+  padding: 5px 12px;
+  border-radius: 24px;
+  font-size: 12px;
   font-weight: 500;
-  transition: all 0.2s ease;
-  cursor: pointer;
+  letter-spacing: 0.02em;
+  user-select: none;
+  border: 1px solid;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.edit-button:hover {
-  background: #e5e7eb;
-  border-color: #9ca3af;
-  color: #111827;
+.status-badge-gray {
+  background-color: #f8f9fa;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.status-badge-blue {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+
+.status-badge-yellow {
+  background: linear-gradient(135deg, #fefce8 0%, #fef3c7 100%);
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.status-badge-green {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  color: #166534;
+  border-color: #bbf7d0;
+}
+
+/* Status Dot Indicators with pulse animation */
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.status-dot-gray {
+  background-color: #94a3b8;
+}
+
+.status-dot-blue {
+  background-color: #3b82f6;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
+.status-dot-yellow {
+  background-color: #f59e0b;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.3);
+}
+
+.status-dot-green {
+  background-color: #22c55e;
+  box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.3);
+}
+
+.status-text {
+  line-height: 1;
+  text-transform: capitalize;
+}
+
+/* Edit Button - Minimal & Discoverable */
+.edit-button-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  border-radius: 6px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.edit-button-icon:hover {
+  color: #3b82f6;
+  background: #f1f5f9;
+  opacity: 1;
   transform: translateY(-1px);
 }
 
+.edit-button-icon:active {
+  transform: translateY(0);
+  background: #e2e8f0;
+}
+
+/* Close Button - Clean & Accessible */
 .close-button {
-  padding: 8px;
-  background: #f3f4f6;
-  border: 1px solid #d1d5db;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: transparent;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  color: #6b7280;
+  color: #64748b;
   transition: all 0.2s ease;
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .close-button:hover {
-  background: #fee2e2;
-  border-color: #fca5a5;
+  background: #fef2f2;
+  border-color: #fecaca;
   color: #dc2626;
+}
+
+.close-button:active {
+  background: #fee2e2;
+  transform: scale(0.95);
 }
 
 /* Modal Content */
@@ -1454,7 +1603,7 @@ export default {
   box-shadow: 0 2px 8px rgba(96, 165, 250, 0.15);
 }
 
-/* Audit Log Section */
+/* Audit Log Section - Collapsible */
 .audit-log-section {
   border-top: 1px solid #e5e7eb;
   padding-top: 32px;
@@ -1464,12 +1613,79 @@ export default {
 .audit-log-container {
   background: #f9fafb;
   border-radius: 12px;
-  padding: 24px;
   border: 1px solid #e5e7eb;
+  overflow: hidden;
+}
+
+/* Collapsible Header */
+.audit-log-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.audit-log-header:hover {
+  background: rgba(249, 250, 251, 0.8);
+}
+
+.audit-log-header:active {
+  background: rgba(243, 244, 246, 0.9);
+}
+
+.section-title-collapsible {
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+/* Audit Log Count Badge */
+.audit-log-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 6px;
+  background: #e0e7ff;
+  color: #4338ca;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Chevron Icon */
+.audit-log-chevron {
+  width: 20px;
+  height: 20px;
+  color: #9ca3af;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: rotate(0deg);
+  flex-shrink: 0;
+}
+
+.audit-log-chevron-open {
+  transform: rotate(180deg);
+  color: #6366f1;
+}
+
+/* Collapsible Content */
+.audit-log-content {
+  border-top: 1px solid #e5e7eb;
+  padding: 16px 20px;
 }
 
 .audit-log-scroll {
-  height: 200px;
+  max-height: 200px;
   overflow-y: auto;
   padding-right: 8px;
 }
@@ -1490,6 +1706,41 @@ export default {
 
 .audit-log-scroll::-webkit-scrollbar-thumb:hover {
   background: #6b7280;
+}
+
+/* Vue Transition Animations */
+.audit-log-transition-enter-active {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.audit-log-transition-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.6, 1);
+  overflow: hidden;
+}
+
+.audit-log-transition-enter-from {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.audit-log-transition-enter-to {
+  max-height: 240px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.audit-log-transition-leave-from {
+  max-height: 240px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.audit-log-transition-leave-to {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
 }
 
 /* Modal Footer */

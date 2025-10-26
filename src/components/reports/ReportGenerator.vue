@@ -4,6 +4,44 @@
       <div class="card-header">
         <FileTextOutlined class="header-icon" />
         <span>Generate Report</span>
+        <a-tooltip placement="right" overlayClassName="features-tooltip" :arrow="false">
+          <template #title>
+            <div class="tooltip-content">
+              <div class="tooltip-title">Available Features for {{ currentUser?.role || 'Staff' }}</div>
+              <div class="tooltip-features">
+                <div class="tooltip-item">
+                  <CheckCircleOutlined class="tooltip-icon success" />
+                  <span>Individual task reports</span>
+                </div>
+                <div v-if="canGenerateTeamReports" class="tooltip-item">
+                  <TeamOutlined class="tooltip-icon primary" />
+                  <span>Team performance reports</span>
+                </div>
+                <div v-if="canGenerateDepartmentReports" class="tooltip-item">
+                  <BankOutlined class="tooltip-icon secondary" />
+                  <span>Department analysis</span>
+                </div>
+                <div v-if="isHR" class="tooltip-item">
+                  <GlobalOutlined class="tooltip-icon warning" />
+                  <span>Organization-wide insights</span>
+                </div>
+                <div class="tooltip-item">
+                  <PieChartOutlined class="tooltip-icon primary" />
+                  <span>Visual analytics & charts</span>
+                </div>
+                <div class="tooltip-item">
+                  <CalendarOutlined class="tooltip-icon secondary" />
+                  <span>Duration & deadline tracking</span>
+                </div>
+                <div class="tooltip-item">
+                  <FilterOutlined class="tooltip-icon info" />
+                  <span>Advanced filtering options</span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <InfoCircleOutlined class="info-icon-header" />
+        </a-tooltip>
       </div>
     </template>
 
@@ -106,6 +144,32 @@
       </a-checkbox-group>
       </div>
 
+      <!-- Staff-only: Report Context Card -->
+      <div v-if="isStaff" class="staff-context-card">
+        <div class="context-header">
+          <InfoCircleOutlined class="context-icon" />
+          <span class="context-title">What's in Your Report?</span>
+        </div>
+        <div class="context-items">
+          <div class="context-item">
+            <CheckCircleOutlined class="item-icon" />
+            <span>Task completion statistics</span>
+          </div>
+          <div class="context-item">
+            <CalendarOutlined class="item-icon" />
+            <span>Timeline and deadline tracking</span>
+          </div>
+          <div class="context-item">
+            <PieChartOutlined class="item-icon" />
+            <span>Visual charts and analytics</span>
+          </div>
+          <div class="context-item">
+            <FilterOutlined class="item-icon" />
+            <span>Filtered by your selected criteria</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Generate Button -->
       <a-button
       type="primary"
@@ -157,40 +221,6 @@
       class="compact-alert"
       />
 
-      <!-- Role-specific Report Info -->
-      <div class="role-specific-info">
-      <h4 class="info-title">Available Features for {{ currentUser?.role || 'Staff' }}</h4>
-      <div class="report-info">
-        <div class="info-item">
-        <CheckCircleOutlined class="info-icon success" />
-        <span>Individual task reports</span>
-        </div>
-        <div v-if="canGenerateTeamReports" class="info-item">
-        <TeamOutlined class="info-icon primary" />
-        <span>Team performance reports</span>
-        </div>
-        <div v-if="canGenerateDepartmentReports" class="info-item">
-        <BankOutlined class="info-icon secondary" />
-        <span>Department analysis</span>
-        </div>
-        <div v-if="isHR" class="info-item">
-        <GlobalOutlined class="info-icon warning" />
-        <span>Organization-wide insights</span>
-        </div>
-        <div class="info-item">
-        <PieChartOutlined class="info-icon primary" />
-        <span>Visual analytics & charts</span>
-        </div>
-        <div class="info-item">
-        <CalendarOutlined class="info-icon secondary" />
-        <span>Duration & deadline tracking</span>
-        </div>
-        <div class="info-item">
-        <FilterOutlined class="info-icon info" />
-        <span>Advanced filtering options</span>
-        </div>
-      </div>
-      </div>
     </div>
   </a-card>
 </template>
@@ -674,7 +704,9 @@ export default {
 
 <style scoped>
 .report-card {
-  height: 100%;
+  height: 548.979px;
+  min-height: 548.979px;
+  max-height: 548.979px;
   border-radius: 16px !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03) !important;
   border: 1px solid rgba(229, 231, 235, 0.8) !important;
@@ -687,7 +719,7 @@ export default {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 20px !important;
+  padding: 16px !important;
 }
 
 .report-card:hover {
@@ -715,11 +747,26 @@ export default {
   font-size: 20px;
 }
 
+.info-icon-header {
+  color: #8c8c8c;
+  font-size: 16px;
+  margin-left: auto;
+  cursor: help;
+  transition: color 0.3s ease;
+}
+
+.info-icon-header:hover {
+  color: #1890ff;
+}
+
 .report-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 100%;
 }
 
 .filters-wrapper {
@@ -731,7 +778,7 @@ export default {
 .filter-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .filter-label {
@@ -744,12 +791,13 @@ export default {
 
 .checkbox-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
-  padding: 12px;
+  padding: 10px;
   background-color: #f9fafb;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
+  width: 100%;
 }
 
 :deep(.ant-checkbox-wrapper) {
@@ -759,12 +807,13 @@ export default {
 }
 
 .generate-button {
-  height: 44px;
+  height: 40px;
   font-size: 14px;
   font-weight: 600;
   border-radius: 10px;
   box-shadow: 0 2px 8px rgba(24, 144, 255, 0.25) !important;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  margin-top: auto;
 }
 
 .generate-button:hover:not(:disabled) {
@@ -1070,5 +1119,163 @@ export default {
 @keyframes loading-shine {
   0% { left: -100%; }
   100% { left: 100%; }
+}
+
+/* Tooltip styling */
+:global(.features-tooltip .ant-tooltip-inner) {
+  background-color: #ffffff;
+  color: #262626;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  border-radius: 8px;
+  padding: 0;
+  min-width: 280px;
+}
+
+:global(.features-tooltip .ant-tooltip-arrow-content) {
+  background-color: #ffffff;
+}
+
+.tooltip-content {
+  padding: 12px;
+}
+
+.tooltip-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #262626;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.tooltip-features {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tooltip-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #595959;
+  font-weight: 500;
+}
+
+.tooltip-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.tooltip-icon.success {
+  color: #52c41a;
+}
+
+.tooltip-icon.primary {
+  color: #1890ff;
+}
+
+.tooltip-icon.secondary {
+  color: #722ed1;
+}
+
+.tooltip-icon.warning {
+  color: #fa8c16;
+}
+
+.tooltip-icon.info {
+  color: #13c2c2;
+}
+
+/* Staff-only components */
+.staff-context-card {
+  background: linear-gradient(135deg, #e6f4ff 0%, #bae0ff 100%);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 0;
+  margin-top: 20px;
+  border: 2px solid #91caff;
+  position: relative;
+  overflow: hidden;
+}
+
+.staff-context-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #1890ff 0%, #40a9ff 50%, #1890ff 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.context-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(24, 144, 255, 0.2);
+}
+
+.context-icon {
+  font-size: 20px;
+  color: #1890ff;
+  background: white;
+  padding: 6px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.15);
+}
+
+.context-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0050b3;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.context-items {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #0050b3;
+  font-weight: 600;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  border: 1px solid rgba(24, 144, 255, 0.2);
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(24, 144, 255, 0.08);
+}
+
+.context-item .item-icon {
+  font-size: 15px;
+  color: #1890ff;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px rgba(24, 144, 255, 0.3));
+}
+
+/* Responsive: Stack on smaller widths */
+@media (max-width: 1400px) {
+  .context-items {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

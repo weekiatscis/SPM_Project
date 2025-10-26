@@ -23,7 +23,7 @@
     <!-- Navigation Menu -->
     <nav class="nav-menu">
       <!-- Home -->
-      <router-link to="/home" class="nav-item" :class="{ 'active': isActive('/home') }">
+      <router-link to="/home" class="nav-item home" :class="{ 'active': isActive('/home') }">
         <div class="nav-icon">
           <HomeIcon />
         </div>
@@ -31,7 +31,7 @@
       </router-link>
 
       <!-- Dashboard -->
-      <router-link to="/dashboard" class="nav-item" :class="{ 'active': isActive('/dashboard') }">
+      <router-link to="/dashboard" class="nav-item dashboard" :class="{ 'active': isActive('/dashboard') }">
         <div class="nav-icon">
           <DashboardIcon />
         </div>
@@ -39,7 +39,7 @@
       </router-link>
 
       <!-- Projects -->
-      <div class="nav-group">
+      <div class="nav-group group">
         <div
           class="nav-item nav-group-header"
           :class="{ 'active': isActive('/projects') }"
