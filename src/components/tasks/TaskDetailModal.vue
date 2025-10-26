@@ -192,13 +192,13 @@
                   <p class="text-xs text-gray-500 mt-1">Loading audit logs...</p>
                 </div>
                 
-                <div v-else-if="auditLogs.length === 0" class="text-center py-4">
+                <div v-else-if="auditLogsWithUserNames.length === 0" class="text-center py-4">
                   <p class="text-xs text-gray-500">No audit logs found.</p>
                 </div>
                 
                 <div v-else class="space-y-0.5">
                   <div 
-                    v-for="log in auditLogs" 
+                    v-for="log in auditLogsWithUserNames" 
                     :key="log.log_id"
                     class="flex items-start space-x-2 py-0.5 px-1 hover:bg-gray-50 rounded transition-colors duration-150"
                   >
@@ -212,7 +212,7 @@
                     <div class="flex-1 min-w-0">
                       <p class="text-xs text-gray-700 leading-tight">
                         <span class="font-medium text-gray-500">{{ formatLogDate(log.created_at) }}</span>: 
-                        <span class="font-medium text-indigo-600">{{ getUserName(log.user_id) }}</span>
+                        <span class="font-medium text-indigo-600">{{ log.userName }}</span>
                         {{ formatLogMessage(log) }}
                       </p>
                     </div>
@@ -330,7 +330,9 @@ export default {
       isLoadingLogs.value = true
       try {
         const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
-        const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}/logs`)
+        
+        // Use the new optimized endpoint that fetches everything in one request
+        const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}/details`)
         
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`)
@@ -338,22 +340,41 @@ export default {
         
         const result = await response.json()
         
-        // Logs are already sorted by the backend (latest first)
-        auditLogs.value = result.logs || []
+        // Update all data from the optimized response
+        auditLogs.value = result.logs ? result.logs.filter(log => log.action !== 'comment') : []
         
-        // Fetch user names for all unique user_ids
-        const userIds = [...new Set(auditLogs.value.map(log => log.user_id))]
-        await fetchUserNames(userIds)
+        // If we got comments, update them too (avoid separate API call)
+        if (result.comments) {
+          // You can emit this to parent or handle comments here if needed
+          console.log('Comments fetched with details:', result.comments)
+        }
+        
+        console.log('Optimization info:', result.cache_info)
         
       } catch (error) {
-        console.error('Failed to fetch audit logs:', error)
-        auditLogs.value = []
+        console.error('Failed to fetch task details:', error)
+        // Fallback to individual API calls if optimized endpoint fails
+        try {
+          const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
+          const response = await fetch(`${taskServiceUrl}/tasks/${props.task.id}/logs`)
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`)
+          }
+          
+          const result = await response.json()
+          let logs = result.logs || []
+          logs = logs.filter(log => log.action !== 'comment')
+          auditLogs.value = logs
+          
+        } catch (fallbackError) {
+          console.error('Fallback fetch also failed:', fallbackError)
+          auditLogs.value = []
+        }
       } finally {
         isLoadingLogs.value = false
       }
-    }
-
-    // Fetch assignee details
+    }    // Fetch assignee details
     const fetchAssignee = async () => {
       if (!props.task?.owner_id) {
         assigneeName.value = 'Unassigned'
@@ -514,8 +535,8 @@ export default {
     }
 
     // Fetch project name from project_id
-    const fetchProjectName = async () => {
-      console.log('🔍 [TaskDetailModal] fetchProjectName called');
+    const fetchTaskProjectName = async () => {
+      console.log('🔍 [TaskDetailModal] fetchTaskProjectName called');
       console.log('   props.task:', props.task);
       console.log('   All task keys:', Object.keys(props.task));
       console.log('   props.task.project:', props.task.project);
@@ -577,7 +598,7 @@ export default {
         fetchSubtasks(),
         fetchParentTask(),
         fetchAssigneeName(),
-        fetchProjectName()
+        fetchTaskProjectName()
       ])
     }
 
@@ -636,24 +657,30 @@ export default {
           const taskServiceUrl = import.meta.env.VITE_TASK_SERVICE_URL || 'http://localhost:8080'
           const url = `${taskServiceUrl}/users/${userId}`
           
+          console.log(`Fetching user name for ${userId} from ${url}`)
           const response = await fetch(url)
           
           if (response.ok) {
             const result = await response.json()
+            console.log(`User response for ${userId}:`, result)
             
             if (result.user && result.user.name) {
               userCache.value[userId] = result.user.name
+              console.log(`Cached user name: ${userId} -> ${result.user.name}`)
             } else {
               // Fallback to short ID if no name found
               const shortId = userId.slice(0, 8)
               userCache.value[userId] = `User ${shortId}`
+              console.log(`Fallback user name: ${userId} -> User ${shortId}`)
             }
           } else {
+            console.log(`Failed to fetch user ${userId}: HTTP ${response.status}`)
             // Fallback for failed requests
             const shortId = userId.slice(0, 8)
             userCache.value[userId] = `User ${shortId}`
           }
         } catch (error) {
+          console.error(`Error fetching user ${userId}:`, error)
           // Set a fallback name so we don't keep trying
           const shortId = userId.slice(0, 8)
           userCache.value[userId] = `User ${shortId}`
@@ -661,6 +688,7 @@ export default {
       }
     }
 
+    // Create a computed function for getting user names that's reactive to cache changes
     const getUserName = (userId) => {
       if (!userId) return 'Unknown User'
       
@@ -669,23 +697,39 @@ export default {
         return userCache.value[userId]
       }
       
-      // Create a user-friendly fallback name from the UUID
-      const shortId = userId.slice(0, 8)
-      const friendlyName = `User-${shortId}`
-      userCache.value[userId] = friendlyName
+      // If not cached, fetch it and return null to indicate we need the actual name
+      // The fallback will be handled in the display layer
+      fetchUserNames([userId])
       
-      return friendlyName
+      return null
     }
+
+    // Force reactivity for audit logs by creating computed user names
+    const auditLogsWithUserNames = computed(() => {
+      return auditLogs.value.map(log => {
+        const userName = getUserName(log.user_id)
+        const logWithUser = {
+          ...log,
+          userName: userName || `User-${log.user_id.slice(0, 8)}`
+        }
+        
+        // For assign_task actions, also resolve the assignee name
+        if (log.action === 'assign_task' && log.new_value?.assignee) {
+          const assigneeName = getUserName(log.new_value.assignee)
+          logWithUser.assigneeName = assigneeName || `User-${log.new_value.assignee.slice(0, 8)}`
+        }
+        
+        return logWithUser
+      })
+    })
 
     const formatLogMessage = (log) => {
       if (log.action === 'create') {
         return 'created task.'
       } else if (log.action === 'assign_task') {
         // Handle task assignment: "assigned task to [User Name]"
-        const assigneeId = log.new_value?.assignee
-        if (assigneeId) {
-          const assigneeName = getUserName(assigneeId)
-          return `assigned task to ${assigneeName}.`
+        if (log.assigneeName) {
+          return `assigned task to ${log.assigneeName}.`
         }
         return 'assigned task.'
       } else if (log.action === 'auto_add_collaborator') {
@@ -694,16 +738,106 @@ export default {
       } else if (log.action === 'update') {
         const fieldName = log.field
         
+        // Special handling for project_id changes
+        if (fieldName === 'project_id') {
+          const oldProjectName = formatUserFriendlyValue(fieldName, log.old_value?.[fieldName])
+          const newProjectName = formatUserFriendlyValue(fieldName, log.new_value?.[fieldName])
+          
+          if (oldProjectName === 'null' && newProjectName !== 'null') {
+            return `added task to project "${newProjectName}".`
+          } else if (oldProjectName !== 'null' && newProjectName === 'null') {
+            return `removed task from project "${oldProjectName}".`
+          } else if (oldProjectName !== newProjectName) {
+            return `moved task from project "${oldProjectName}" to "${newProjectName}".`
+          }
+          return `updated project from "${oldProjectName}" to "${newProjectName}".`
+        }
+        
+        // Special handling for collaborators changes
+        if (fieldName === 'collaborators') {
+          const oldCollaborators = log.old_value?.[fieldName]
+          const newCollaborators = log.new_value?.[fieldName]
+          
+          // Parse collaborator arrays
+          let oldList = []
+          let newList = []
+          
+          try {
+            if (typeof oldCollaborators === 'string') {
+              oldList = JSON.parse(oldCollaborators)
+            } else if (Array.isArray(oldCollaborators)) {
+              oldList = oldCollaborators
+            }
+          } catch (e) { oldList = [] }
+          
+          try {
+            if (typeof newCollaborators === 'string') {
+              newList = JSON.parse(newCollaborators)
+            } else if (Array.isArray(newCollaborators)) {
+              newList = newCollaborators
+            }
+          } catch (e) { newList = [] }
+          
+          // Find added and removed collaborators
+          const added = newList.filter(id => !oldList.includes(id))
+          const removed = oldList.filter(id => !newList.includes(id))
+          
+          if (added.length > 0 && removed.length === 0) {
+            const addedNames = added.map(id => {
+              const userName = getUserName(id)
+              if (userName) {
+                return userName
+              }
+              const shortId = id.slice(0, 8)
+              return `User-${shortId}`
+            }).join(', ')
+            return `added ${addedNames} as collaborator${added.length > 1 ? 's' : ''}.`
+          } else if (removed.length > 0 && added.length === 0) {
+            const removedNames = removed.map(id => {
+              const userName = getUserName(id)
+              if (userName) {
+                return userName
+              }
+              const shortId = id.slice(0, 8)
+              return `User-${shortId}`
+            }).join(', ')
+            return `removed ${removedNames} as collaborator${removed.length > 1 ? 's' : ''}.`
+          } else if (added.length > 0 && removed.length > 0) {
+            const addedNames = added.map(id => {
+              const userName = getUserName(id)
+              if (userName) {
+                return userName
+              }
+              const shortId = id.slice(0, 8)
+              return `User-${shortId}`
+            }).join(', ')
+            const removedNames = removed.map(id => {
+              const userName = getUserName(id)
+              if (userName) {
+                return userName
+              }
+              const shortId = id.slice(0, 8)
+              return `User-${shortId}`
+            }).join(', ')
+            return `updated collaborators: added ${addedNames}, removed ${removedNames}.`
+          }
+          
+          // Fallback to original display
+          const oldValue = formatUserFriendlyValue(fieldName, oldCollaborators)
+          const newValue = formatUserFriendlyValue(fieldName, newCollaborators)
+          return `updated ${fieldName.replace(/_/g, ' ')} from "${oldValue}" to "${newValue}".`
+        }
+        
         // Handle JSONB structure for old and new values
         let oldValue = 'null'
         let newValue = 'null'
         
         if (log.old_value && typeof log.old_value === 'object' && log.old_value[fieldName] !== undefined) {
-          oldValue = log.old_value[fieldName] === null ? 'null' : String(log.old_value[fieldName])
+          oldValue = log.old_value[fieldName] === null ? 'null' : formatUserFriendlyValue(fieldName, log.old_value[fieldName])
         }
         
         if (log.new_value && typeof log.new_value === 'object' && log.new_value[fieldName] !== undefined) {
-          newValue = log.new_value[fieldName] === null ? 'null' : String(log.new_value[fieldName])
+          newValue = log.new_value[fieldName] === null ? 'null' : formatUserFriendlyValue(fieldName, log.new_value[fieldName])
         }
         
         // Format field names to be more readable
@@ -714,6 +848,121 @@ export default {
         return 'deleted task.'
       }
       return `performed ${log.action} action.`
+    }
+
+    // Format values to be user-friendly (convert user IDs to names, project IDs to names)
+    const formatUserFriendlyValue = (fieldName, value) => {
+      if (value === null || value === undefined) return 'null'
+      
+      // Check if this field typically contains user IDs
+      const userIdFields = ['owner_id', 'assignee', 'user_id', 'collaborator']
+      const isUserIdField = userIdFields.some(field => fieldName.toLowerCase().includes(field))
+      
+      if (isUserIdField && typeof value === 'string' && value.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        // This looks like a UUID user ID, convert to user name
+        const userName = getUserName(value)
+        if (userName) {
+          return userName
+        }
+        // If not cached yet, return a fallback name
+        const shortId = value.slice(0, 8)
+        return `User-${shortId}`
+      }
+      
+      // For collaborators array
+      if (fieldName === 'collaborators') {
+        if (typeof value === 'string') {
+          try {
+            const parsed = JSON.parse(value)
+            if (Array.isArray(parsed)) {
+              return parsed.map(id => {
+                const userName = getUserName(id)
+                if (userName) {
+                  return userName
+                }
+                const shortId = id.slice(0, 8)
+                return `User-${shortId}`
+              }).join(', ')
+            }
+          } catch (e) {
+            // Not valid JSON, treat as string
+          }
+        } else if (Array.isArray(value)) {
+          return value.map(id => {
+            const userName = getUserName(id)
+            if (userName) {
+              return userName
+            }
+            const shortId = id.slice(0, 8)
+            return `User-${shortId}`
+          }).join(', ')
+        }
+      }
+      
+      // For project_id field, fetch project name
+      if (fieldName === 'project_id' && typeof value === 'string' && value.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        const projectName = getProjectName(value)
+        if (projectName) {
+          return projectName
+        }
+        // If not cached yet, return a fallback name
+        const shortId = value.slice(0, 8)
+        return `Project-${shortId}`
+      }
+      
+      return String(value)
+    }
+
+    // Get project name from cache or fetch it
+    const projectCache = ref({})
+    
+    const getProjectName = (projectId) => {
+      if (!projectId) return 'No Project'
+      
+      // Check if we have a cached name
+      if (projectCache.value[projectId]) {
+        return projectCache.value[projectId]
+      }
+      
+      // If not cached, fetch project name in background and return null
+      // The fallback will be handled in the display layer
+      fetchProjectName(projectId)
+      
+      return null
+    }
+
+    const fetchProjectName = async (projectId) => {
+      if (!projectId || projectCache.value[projectId]) return
+      
+      try {
+        const projectServiceUrl = import.meta.env.VITE_PROJECT_SERVICE_URL || 'http://localhost:8082'
+        const url = `${projectServiceUrl}/projects?project_id=${projectId}`
+        
+        console.log(`Fetching project name for ${projectId} from ${url}`)
+        const response = await fetch(url)
+        
+        if (response.ok) {
+          const result = await response.json()
+          console.log(`Project response for ${projectId}:`, result)
+          
+          if (result.projects && result.projects.length > 0 && result.projects[0].project_name) {
+            projectCache.value[projectId] = result.projects[0].project_name
+            console.log(`Cached project name: ${projectId} -> ${result.projects[0].project_name}`)
+          } else {
+            const shortId = projectId.slice(0, 8)
+            projectCache.value[projectId] = `Project-${shortId}`
+            console.log(`Fallback project name: ${projectId} -> Project-${shortId}`)
+          }
+        } else {
+          console.log(`Failed to fetch project ${projectId}: HTTP ${response.status}`)
+          const shortId = projectId.slice(0, 8)
+          projectCache.value[projectId] = `Project-${shortId}`
+        }
+      } catch (error) {
+        console.error(`Error fetching project ${projectId}:`, error)
+        const shortId = projectId.slice(0, 8)
+        projectCache.value[projectId] = `Project-${shortId}`
+      }
     }
 
     const formatValue = (field, valueObj) => {
@@ -990,6 +1239,7 @@ export default {
       isDeleting,
       isMarkingComplete,
       auditLogs,
+      auditLogsWithUserNames,
       isLoadingLogs,
       collaborators,
       isLoadingCollaborators,
@@ -1009,9 +1259,11 @@ export default {
       getStatusBadgeClass,
       getPriorityColor,
       getUserName,
+      getProjectName,
       getInitials,
       getDeleteButtonText,
       formatLogMessage,
+      formatUserFriendlyValue,
       editTask,
       deleteTask,
       markAsCompleted,

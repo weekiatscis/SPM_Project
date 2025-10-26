@@ -678,12 +678,12 @@ const handleTaskDeleted = (deletedTask) => {
   })
 }
 
-// Auto-refresh every 5 minutes
+// Auto-refresh every 10 minutes with intelligent caching
 const startAutoRefresh = () => {
   refreshInterval.value = setInterval(() => {
     console.log('Auto-refreshing team tasks...')
     fetchTeamTasks()
-  }, 5 * 60 * 1000) // 5 minutes
+  }, 10 * 60 * 1000) // 10 minutes - reduced frequency
 }
 
 const stopAutoRefresh = () => {

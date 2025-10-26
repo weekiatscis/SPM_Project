@@ -109,10 +109,11 @@
           >
             <div v-if="isLoadingDepartmentMembers" class="p-3 text-center text-sm text-gray-500">
               <div class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
-              Loading members...
+              Loading task members...
             </div>
             <div v-else-if="filteredMentionUsers.length === 0" class="p-3 text-center text-sm text-gray-500">
-              No members found
+              No task members found
+              <div class="text-xs mt-1 text-gray-400">Only task owners and collaborators can be mentioned</div>
             </div>
             <div v-else>
               <button
@@ -340,24 +341,73 @@ export default {
       }
     }
 
-    // Fetch department members for mentions
-    const fetchDepartmentMembers = async () => {
-      if (!authStore.user?.department) return
+    // Fetch task-related members for mentions (owner + collaborators only)
+    const fetchTaskRelatedMembers = async () => {
+      if (!props.task) return
       
       isLoadingDepartmentMembers.value = true
       try {
-        const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
-        const response = await fetch(`${userServiceUrl}/users/departments/${authStore.user.department}`)
+        const taskRelatedUserIds = new Set()
         
-        if (response.ok) {
-          const data = await response.json()
-          // Filter out current user from the list
-          departmentMembers.value = (data.users || []).filter(
-            user => user.user_id !== currentUserId.value
-          )
+        // Add task owner
+        if (props.task.owner_id) {
+          taskRelatedUserIds.add(props.task.owner_id)
         }
+        
+        // Add collaborators
+        if (props.task.collaborators && Array.isArray(props.task.collaborators)) {
+          props.task.collaborators.forEach(collaboratorId => {
+            if (collaboratorId) {
+              taskRelatedUserIds.add(collaboratorId)
+            }
+          })
+        }
+        
+        // Remove current user from mention list
+        taskRelatedUserIds.delete(currentUserId.value)
+        
+        // Convert to array and fetch user details
+        const userIds = Array.from(taskRelatedUserIds)
+        
+        if (userIds.length === 0) {
+          departmentMembers.value = []
+          return
+        }
+        
+        // Fetch user details for each task-related user
+        const taskRelatedUsers = []
+        
+        for (const userId of userIds) {
+          try {
+            const userServiceUrl = import.meta.env.VITE_USER_SERVICE_URL || 'http://localhost:8081'
+            const response = await fetch(`${userServiceUrl}/users/${userId}`)
+            
+            if (response.ok) {
+              const data = await response.json()
+              if (data.user) {
+                taskRelatedUsers.push({
+                  user_id: data.user.user_id,
+                  name: data.user.name || `User ${userId.slice(0, 8)}`,
+                  role: data.user.role || 'Member'
+                })
+              }
+            }
+          } catch (error) {
+            console.error(`Failed to fetch user ${userId}:`, error)
+            // Add fallback user data
+            taskRelatedUsers.push({
+              user_id: userId,
+              name: `User ${userId.slice(0, 8)}`,
+              role: 'Member'
+            })
+          }
+        }
+        
+        departmentMembers.value = taskRelatedUsers
+        
       } catch (error) {
-        console.error('Failed to fetch department members:', error)
+        console.error('Failed to fetch task-related members:', error)
+        departmentMembers.value = []
       } finally {
         isLoadingDepartmentMembers.value = false
       }
@@ -418,7 +468,7 @@ export default {
           calculateDropdownPosition()
           
           if (departmentMembers.value.length === 0 && !isLoadingDepartmentMembers.value) {
-            fetchDepartmentMembers()
+            fetchTaskRelatedMembers()
           }
         } else {
           showMentionDropdown.value = false
@@ -629,12 +679,20 @@ export default {
       }
     }
 
-    // Watch for task changes to refetch comments
+    // Watch for task changes to refetch comments and task-related members
     watch(() => props.taskId, (newTaskId) => {
       if (newTaskId) {
         fetchComments()
       }
     })
+
+    // Watch for task object changes (including collaborators) to refetch task-related members
+    watch(() => props.task, (newTask) => {
+      if (newTask) {
+        // Clear existing members to force refetch when dropdown is opened
+        departmentMembers.value = []
+      }
+    }, { deep: true })
 
     onMounted(() => {
       if (props.taskId) {

@@ -6,6 +6,8 @@ import logging
 import uuid
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timezone, timedelta
+from functools import lru_cache
+import time
 
 import pika
 import requests
@@ -47,6 +49,107 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)
+
+# In-memory cache for performance optimization
+USER_CACHE = {}
+PROJECT_CACHE = {}
+CACHE_TTL = 300  # 5 minutes
+
+def get_cached_user(user_id: str) -> Dict[str, Any]:
+    """Get user data from cache or fetch and cache it"""
+    if not user_id:
+        return None
+        
+    cache_key = f"user_{user_id}"
+    current_time = time.time()
+    
+    if cache_key in USER_CACHE:
+        cached_data, timestamp = USER_CACHE[cache_key]
+        if current_time - timestamp < CACHE_TTL:
+            return cached_data
+    
+    # Fetch from database
+    try:
+        response = supabase.table("user").select("user_id, name, email, department").eq("user_id", user_id).execute()
+        if response.data and len(response.data) > 0:
+            user_data = response.data[0]
+            USER_CACHE[cache_key] = (user_data, current_time)
+            return user_data
+    except Exception as e:
+        print(f"Error fetching user {user_id}: {e}")
+    
+    return None
+
+def batch_fetch_users(user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Fetch multiple users in a single query and cache them"""
+    if not user_ids:
+        return {}
+    
+    # Remove duplicates and None values
+    unique_ids = list(set(filter(None, user_ids)))
+    if not unique_ids:
+        return {}
+    
+    # Check cache first
+    users_data = {}
+    missing_ids = []
+    current_time = time.time()
+    
+    for user_id in unique_ids:
+        cache_key = f"user_{user_id}"
+        if cache_key in USER_CACHE:
+            cached_data, timestamp = USER_CACHE[cache_key]
+            if current_time - timestamp < CACHE_TTL:
+                users_data[user_id] = cached_data
+                continue
+        missing_ids.append(user_id)
+    
+    # Fetch missing users in batch
+    if missing_ids:
+        try:
+            response = supabase.table("user").select("user_id, name, email, department").in_("user_id", missing_ids).execute()
+            if response.data:
+                for user in response.data:
+                    user_id = user["user_id"]
+                    users_data[user_id] = user
+                    USER_CACHE[f"user_{user_id}"] = (user, current_time)
+        except Exception as e:
+            print(f"Error batch fetching users: {e}")
+    
+    return users_data
+
+def enhance_task_with_user_data(task: Dict[str, Any], user_cache: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Enhance task data with user information from cache"""
+    enhanced_task = task.copy()
+    
+    # Add owner name
+    if task.get("owner_id") and user_cache:
+        owner_data = user_cache.get(task["owner_id"])
+        if owner_data:
+            enhanced_task["owner_name"] = owner_data.get("name", "Unknown User")
+            enhanced_task["owner_email"] = owner_data.get("email", "")
+    
+    # Add collaborator names
+    collaborators = task.get("collaborators", [])
+    if isinstance(collaborators, str):
+        try:
+            collaborators = json.loads(collaborators)
+        except:
+            collaborators = []
+    
+    if collaborators and user_cache:
+        collaborator_details = []
+        for collab_id in collaborators:
+            collab_data = user_cache.get(collab_id)
+            if collab_data:
+                collaborator_details.append({
+                    "user_id": collab_id,
+                    "name": collab_data.get("name", "Unknown User"),
+                    "email": collab_data.get("email", "")
+                })
+        enhanced_task["collaborator_details"] = collaborator_details
+    
+    return enhanced_task
 
 
 # Pydantic models for request validation
@@ -295,6 +398,17 @@ def map_db_row_to_api(row: Dict[str, Any], include_subtasks_count: bool = False)
 def log_task_change(task_id: str, action: str, field: str, user_id: str,
                     old_value: Any, new_value: Any) -> Optional[Dict[str, Any]]:
     try:
+        # Validate inputs
+        if not task_id:
+            print(f"ERROR: Cannot log task change - missing task_id")
+            return None
+        
+        if not user_id or user_id == 'None':
+            print(f"WARNING: Using 'system' user_id for task {task_id} action {action}")
+            user_id = 'system'
+        
+        print(f"📝 AUDIT LOG: Task {task_id} - {action} on {field} by {user_id}")
+        
         # Ensure values are JSON-serializable for JSONB storage
         def make_json_serializable(value):
             if value is None:
@@ -320,15 +434,22 @@ def log_task_change(task_id: str, action: str, field: str, user_id: str,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         
+        print(f"📝 AUDIT LOG DATA: {log_data}")
+        
         response = supabase.table("task_log").insert(log_data).execute()
         
         if not response.data:
-            print(f"WARNING: No data returned from task_log insert for task {task_id}")
+            print(f"ERROR: No data returned from task_log insert for task {task_id}")
+            print(f"Response: {response}")
             return None
-            
+        
+        print(f"✅ AUDIT LOG CREATED: {response.data[0].get('log_id')} for task {task_id}")
         return response.data[0]
+        
     except Exception as exc:
         print(f"ERROR: Failed to log task change for {task_id}: {exc}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def validate_reminder_days(reminder_days: List[int]) -> bool:
@@ -1991,6 +2112,47 @@ def create_task():
     except Exception as exc:
         return jsonify({"error": f"Failed to create task: {str(exc)}"}), 500
 
+@app.route("/debug/audit-logs/<task_id>", methods=["GET"])
+def debug_audit_logs(task_id: str):
+    """Debug endpoint to check audit logging for a specific task"""
+    try:
+        # Get task info
+        task_response = supabase.table("task").select("*").eq("task_id", task_id).execute()
+        if not task_response.data:
+            return jsonify({"error": "Task not found"}), 404
+        
+        task = task_response.data[0]
+        
+        # Get audit logs
+        logs_response = supabase.table("task_log").select("*").eq("task_id", task_id).order("created_at", desc=True).execute()
+        logs = logs_response.data or []
+        
+        # Test creating a new audit log
+        test_log_result = log_task_change(
+            task_id=task_id,
+            action="debug_test",
+            field="debug",
+            user_id="system",
+            old_value="test_old",
+            new_value="test_new"
+        )
+        
+        return jsonify({
+            "task_id": task_id,
+            "task_title": task.get("title"),
+            "task_status": task.get("status"),
+            "task_owner": task.get("owner_id"),
+            "audit_log_count": len(logs),
+            "audit_logs": logs[:5],  # First 5 logs
+            "test_log_creation": {
+                "success": test_log_result is not None,
+                "result": test_log_result
+            }
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/tasks/<task_id>/logs", methods=["GET"])
 def get_task_logs(task_id: str):
     """
@@ -2260,9 +2422,13 @@ def update_task(task_id: str):
                 
         # Log changes for audit trail - only log ACTUAL changes
         changes_made = False
+        print(f"\n🔍 CHECKING FOR CHANGES to log for task {task_id}:")
+        
         for field, new_value in update_data.items():
             # Get the actual OLD value from the complete task data (before update)
             old_value = complete_existing_task.get(field)
+            
+            print(f"  Field '{field}': '{old_value}' -> '{new_value}'")
             
             # Normalize values for accurate comparison
             if field == "due_date":
@@ -2296,7 +2462,8 @@ def update_task(task_id: str):
             
             # Only log if there's actually a change
             if old_value != new_value:
-                log_task_change(
+                print(f"  📝 LOGGING CHANGE: {field} from '{old_value}' to '{new_value}'")
+                log_result = log_task_change(
                     task_id=task_id,
                     action="update",
                     field=field,
@@ -2304,7 +2471,18 @@ def update_task(task_id: str):
                     old_value=old_value,
                     new_value=new_value
                 )
-                changes_made = True
+                if log_result:
+                    changes_made = True
+                    print(f"  ✅ Successfully logged change for field '{field}'")
+                else:
+                    print(f"  ❌ Failed to log change for field '{field}'")
+            else:
+                print(f"  ⏭️ No change for field '{field}' - skipping audit log")
+        
+        if not changes_made:
+            print(f"⚠️ No audit logs created for task {task_id} - no actual changes detected")
+        else:
+            print(f"✅ Audit logs created for task {task_id} changes")
 
         return jsonify({"task": updated_task, "message": "Task updated successfully"}), 200
 
@@ -2593,7 +2771,7 @@ def debug_notifications(user_id: str):
 
 @app.route("/tasks/<task_id>/comments", methods=["GET"])
 def get_task_comments(task_id: str):
-    """Get all comments for a specific task"""
+    """Get all comments for a specific task - OPTIMIZED with batch user fetching"""
     
     if not validate_task_id(task_id):
         return jsonify({"error": "Invalid task ID"}), 400
@@ -2612,25 +2790,17 @@ def get_task_comments(task_id: str):
                 "comments": []
             }), 200
         
+        # Extract all unique user IDs
+        user_ids = list(set([comment["user_id"] for comment in response.data if comment.get("user_id")]))
+        
+        # Batch fetch all users
+        user_cache = batch_fetch_users(user_ids)
+        
+        # Build comments with user names
         comments = []
         for comment in response.data:
-            # Get user info for each comment
-            user_name = "Unknown User"
-            try:
-                user_response = supabase.table("user")\
-                    .select("name")\
-                    .eq("user_id", comment["user_id"])\
-                    .execute()
-
-                if user_response.data:
-                    user = user_response.data[0]
-                    user_name = user.get('name', '').strip()
-                    if not user_name:
-                        user_name = f"User-{comment['user_id'][:8]}"
-                else:
-                    user_name = f"User-{comment['user_id'][:8]}"
-            except Exception:
-                user_name = f"User-{comment['user_id'][:8]}"
+            user_data = user_cache.get(comment["user_id"])
+            user_name = user_data.get("name", f"User-{comment['user_id'][:8]}") if user_data else f"User-{comment['user_id'][:8]}"
             
             comments.append({
                 "comment_id": comment["comment_id"],
@@ -2643,7 +2813,11 @@ def get_task_comments(task_id: str):
         
         return jsonify({
             "success": True,
-            "comments": comments
+            "comments": comments,
+            "optimization_info": {
+                "users_fetched": len(user_cache),
+                "total_comments": len(comments)
+            }
         }), 200
         
     except Exception as e:
@@ -2715,19 +2889,8 @@ def add_task_comment(task_id: str):
             if not user_name:  # If the name is empty after stripping
                 user_name = "Unknown User"
         
-        # Log the comment activity
-        try:
-            log_task_change(
-                task_id=task_id,
-                action="comment",
-                field="comments",
-                user_id=user_id,
-                old_value=None,
-                new_value=comment_data.comment_text
-            )
-        except Exception as log_error:
-            # Don't fail the entire request if logging fails
-            pass
+        # Comments are not logged in audit trail - they are tracked separately
+        # No need for audit logging as comments have their own tracking system
 
         # Send notifications to all stakeholders (owner + collaborators) except the commenter
         print(f"\n🔔 Attempting to send comment notifications for task {task_id}...")
@@ -2897,6 +3060,221 @@ def stop_task_recurrence(task_id: str):
 
     except Exception as e:
         return jsonify({"error": f"Failed to stop recurrence: {str(e)}"}), 500
+
+# OPTIMIZED ENDPOINTS FOR PERFORMANCE
+
+@app.route("/tasks/<task_id>/details", methods=["GET"])
+def get_task_details_optimized(task_id: str):
+    """
+    Optimized endpoint that returns task with comments, logs, and user data in one request
+    This reduces the number of API calls from frontend
+    """
+    try:
+        if not validate_task_id(task_id):
+            return jsonify({"error": "Invalid task ID"}), 400
+
+        # Get task data
+        task_data = get_task_by_id(task_id)
+        if not task_data:
+            return jsonify({"error": "Task not found"}), 404
+
+        # Collect all user IDs that we need to fetch
+        all_user_ids = set()
+        
+        # Add task owner
+        if task_data.get("owner_id"):
+            all_user_ids.add(task_data["owner_id"])
+        
+        # Add collaborators
+        collaborators = task_data.get("collaborators", [])
+        if isinstance(collaborators, str):
+            try:
+                collaborators = json.loads(collaborators)
+            except:
+                collaborators = []
+        all_user_ids.update(collaborators)
+
+        # Get comments and extract user IDs
+        comments_response = supabase.table("task_comments").select(
+            "comment_id, comment_text, user_id, created_at, updated_at"
+        ).eq("task_id", task_id).order("created_at", desc=False).execute()
+        
+        comments = comments_response.data or []
+        for comment in comments:
+            if comment.get("user_id"):
+                all_user_ids.add(comment["user_id"])
+
+        # Get logs and extract user IDs
+        logs_response = supabase.table("task_log").select(
+            "log_id,task_id,action,user_id,old_value,new_value,created_at,field"
+        ).eq("task_id", task_id).order("created_at", desc=True).execute()
+        
+        logs = logs_response.data or []
+        for log in logs:
+            if log.get("user_id"):
+                all_user_ids.add(log["user_id"])
+
+        # Batch fetch all users
+        user_cache = batch_fetch_users(list(all_user_ids))
+
+        # Enhance task with user data
+        enhanced_task = enhance_task_with_user_data(task_data, user_cache)
+        mapped_task = map_db_row_to_api(enhanced_task)
+
+        # Enhance comments with user names
+        enhanced_comments = []
+        for comment in comments:
+            user_data = user_cache.get(comment["user_id"])
+            user_name = user_data.get("name", f"User-{comment['user_id'][:8]}") if user_data else f"User-{comment['user_id'][:8]}"
+            
+            enhanced_comments.append({
+                "comment_id": comment["comment_id"],
+                "comment_text": comment["comment_text"],
+                "user_id": comment["user_id"],
+                "user_name": user_name,
+                "created_at": comment["created_at"],
+                "updated_at": comment.get("updated_at")
+            })
+
+        # Enhance logs with user names
+        enhanced_logs = []
+        for log in logs:
+            user_data = user_cache.get(log["user_id"])
+            user_name = user_data.get("name", f"User-{log['user_id'][:8]}") if user_data else f"User-{log['user_id'][:8]}"
+            
+            enhanced_logs.append({
+                **log,
+                "user_name": user_name
+            })
+
+        # Get subtasks count
+        subtasks_response = supabase.table("task").select("task_id", count="exact").eq("parent_task_id", task_id).eq("isSubtask", True).execute()
+        subtasks_count = subtasks_response.count if subtasks_response.count is not None else 0
+
+        return jsonify({
+            "task": mapped_task,
+            "comments": enhanced_comments,
+            "comments_count": len(enhanced_comments),
+            "logs": enhanced_logs,
+            "logs_count": len(enhanced_logs),
+            "subtasks_count": subtasks_count,
+            "cache_info": {
+                "users_cached": len(user_cache),
+                "total_users_needed": len(all_user_ids)
+            }
+        }), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to retrieve task details: {str(exc)}"}), 500
+
+@app.route("/tasks/optimized", methods=["GET"])
+def get_tasks_optimized():
+    """
+    Optimized tasks endpoint that includes user data to reduce frontend API calls
+    """
+    try:
+        # Get query parameters
+        owner_id = request.args.get("owner_id")
+        project_id = request.args.get("project_id")
+        status = request.args.get("status")
+        include_subtasks = request.args.get("include_subtasks", "true").lower() == "true"
+
+        # Build query
+        query = supabase.table("task").select("*")
+        
+        if owner_id:
+            query = query.eq("owner_id", owner_id)
+        if project_id:
+            query = query.eq("project_id", project_id)
+        if status:
+            query = query.eq("status", status)
+        if not include_subtasks:
+            query = query.or_("isSubtask.is.null,isSubtask.eq.false")
+            
+        query = query.order("created_at", desc=True)
+        
+        response = query.execute()
+        tasks = response.data or []
+
+        if not tasks:
+            return jsonify({"tasks": [], "count": 0}), 200
+
+        # Collect all user IDs from tasks
+        all_user_ids = set()
+        for task in tasks:
+            if task.get("owner_id"):
+                all_user_ids.add(task["owner_id"])
+            
+            collaborators = task.get("collaborators", [])
+            if isinstance(collaborators, str):
+                try:
+                    collaborators = json.loads(collaborators)
+                except:
+                    collaborators = []
+            all_user_ids.update(collaborators)
+
+        # Batch fetch all users
+        user_cache = batch_fetch_users(list(all_user_ids))
+
+        # Enhance tasks with user data
+        enhanced_tasks = []
+        for task in tasks:
+            enhanced_task = enhance_task_with_user_data(task, user_cache)
+            mapped_task = map_db_row_to_api(enhanced_task)
+            enhanced_tasks.append(mapped_task)
+
+        return jsonify({
+            "tasks": enhanced_tasks, 
+            "count": len(enhanced_tasks),
+            "optimization_info": {
+                "users_cached": len(user_cache),
+                "total_users_needed": len(all_user_ids),
+                "cache_hit_ratio": f"{((len(all_user_ids) - len([uid for uid in all_user_ids if f'user_{uid}' not in USER_CACHE])) / len(all_user_ids)) * 100:.1f}%" if all_user_ids else "0%"
+            }
+        }), 200
+
+    except Exception as exc:
+        return jsonify({"error": f"Failed to retrieve tasks: {str(exc)}"}), 500
+
+@app.route("/cache/status", methods=["GET"])
+def get_cache_status():
+    """Get information about the current cache status"""
+    try:
+        current_time = time.time()
+        active_users = 0
+        expired_users = 0
+        
+        for cache_key, (data, timestamp) in USER_CACHE.items():
+            if current_time - timestamp < CACHE_TTL:
+                active_users += 1
+            else:
+                expired_users += 1
+        
+        return jsonify({
+            "user_cache": {
+                "active_entries": active_users,
+                "expired_entries": expired_users,
+                "total_entries": len(USER_CACHE),
+                "cache_ttl_seconds": CACHE_TTL
+            },
+            "project_cache": {
+                "total_entries": len(PROJECT_CACHE)
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to get cache status: {str(e)}"}), 500
+
+@app.route("/cache/clear", methods=["POST"])
+def clear_cache():
+    """Clear all caches - useful for development/debugging"""
+    try:
+        global USER_CACHE, PROJECT_CACHE
+        USER_CACHE.clear()
+        PROJECT_CACHE.clear()
+        
+        return jsonify({"message": "All caches cleared successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to clear cache: {str(e)}"}), 500
 
 # Error handlers
 @app.errorhandler(404)

@@ -327,7 +327,7 @@ export default {
       closeDetailModal()
     }
 
-    // Fetch tasks from backend
+    // Fetch tasks from backend - OPTIMIZED
     const fetchTasks = async () => {
       isLoading.value = true
       try {
@@ -336,21 +336,35 @@ export default {
         
         console.log('DEBUG: Loading tasks for user:', ownerId)
         
-        // Use the new accessible-tasks endpoint to get all tasks user can access
-        const url = ownerId
-          ? `${baseUrl}/users/${encodeURIComponent(ownerId)}/accessible-tasks`
-          : `${baseUrl}/tasks`
-          
-        console.log('DEBUG: Fetching from URL:', url)
-          
-        const response = await fetch(url)
-        if (!response.ok) throw new Error(`HTTP ${response.status}`)
-        const payload = await response.json()
+        // Try the new optimized endpoint first
+        let url = `${baseUrl}/tasks/optimized`
+        if (ownerId) {
+          url += `?owner_id=${encodeURIComponent(ownerId)}`
+        }
         
-        console.log('DEBUG: API response:', payload)
+        console.log('DEBUG: Fetching from optimized URL:', url)
+        
+        let response = await fetch(url)
+        let payload
+        
+        if (!response.ok) {
+          console.warn('Optimized endpoint failed, falling back to accessible-tasks endpoint')
+          // Fallback to the accessible-tasks endpoint
+          const fallbackUrl = ownerId
+            ? `${baseUrl}/users/${encodeURIComponent(ownerId)}/accessible-tasks`
+            : `${baseUrl}/tasks`
+          response = await fetch(fallbackUrl)
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          payload = await response.json()
+        } else {
+          payload = await response.json()
+          if (payload.optimization_info) {
+            console.log('Optimization info:', payload.optimization_info)
+          }
+        }
         
         const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
-        console.log('DEBUG: Processed tasks:', apiTasks)
+        console.log('DEBUG: Processed tasks:', apiTasks.length, 'tasks')
         
         tasks.value = apiTasks.map(t => ({
           id: t.id,
@@ -365,7 +379,10 @@ export default {
           owner_id: t.owner_id || null,
           collaborators: t.collaborators || [],
           assignee: t.assignee || null,
-          created_at: t.created_at || null
+          created_at: t.created_at || null,
+          // Enhanced data from optimized endpoint
+          owner_name: t.owner_name,
+          collaborator_details: t.collaborator_details
         }))
         
         // Initialize all parent tasks as expanded by default
