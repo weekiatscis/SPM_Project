@@ -438,6 +438,88 @@ def create_email_template(notification_type: str, data: dict) -> str:
         </html>
         """
 
+    elif notification_type == "overdue_tasks":
+        message = data.get("message", "You have overdue tasks")
+        subject = f"⚠️ {task_title}"
+
+        # Style for overdue (high priority red)
+        overdue_style = base_style.replace("{priority_color}", "#cf1322")
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{overdue_style}</head>
+        <body>
+            <div class="container">
+                <div class="header" style="background: linear-gradient(135deg, #cf1322 0%, #a8071a 100%);">
+                    <h1 style="margin: 0;">⚠️ Overdue Tasks Alert</h1>
+                </div>
+                <div class="content">
+                    <p>{message}</p>
+
+                    <div class="task-card" style="border-left: 4px solid #cf1322; background: #fff1f0;">
+                        <h2 style="margin-top: 0; color: #cf1322;">Action Required</h2>
+                        <p style="color: #666; margin-top: 15px;">These tasks are past their due date and need your attention. Please review and update them as soon as possible.</p>
+                    </div>
+
+                    <center>
+                        <a href="{FRONTEND_URL}/tasks" class="button" style="background: #cf1322;">View All Tasks</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> Complete or reschedule overdue tasks to stay on track with your goals.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this daily reminder until all overdue tasks are completed or rescheduled.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+    elif notification_type == "overdue_projects":
+        message = data.get("message", "You have overdue projects")
+        subject = f"⚠️ {task_title}"
+
+        # Style for overdue (high priority red)
+        overdue_style = base_style.replace("{priority_color}", "#cf1322")
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>{overdue_style}</head>
+        <body>
+            <div class="container">
+                <div class="header" style="background: linear-gradient(135deg, #cf1322 0%, #a8071a 100%);">
+                    <h1 style="margin: 0;">⚠️ Overdue Projects Alert</h1>
+                </div>
+                <div class="content">
+                    <p>{message}</p>
+
+                    <div class="task-card" style="border-left: 4px solid #cf1322; background: #fff1f0;">
+                        <h2 style="margin-top: 0; color: #cf1322;">Action Required</h2>
+                        <p style="color: #666; margin-top: 15px;">These projects are past their due date and need your attention. Please review and update them as soon as possible.</p>
+                    </div>
+
+                    <center>
+                        <a href="{FRONTEND_URL}/projects" class="button" style="background: #cf1322;">View All Projects</a>
+                    </center>
+
+                    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+                        💡 <strong>Tip:</strong> Complete or reschedule overdue projects to stay on track with your goals.
+                    </p>
+                </div>
+                <div class="footer">
+                    <p>You're receiving this daily reminder until all overdue projects are completed or rescheduled.</p>
+                    <p>Task Manager • Helping you stay productive</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
     else:
         # Generic notification - but only if we have a valid message
         message = data.get("message", "")
