@@ -98,6 +98,29 @@
         <TaskList ref="taskListRef" />
       </a-col>
     </a-row>
+
+    <!-- Timeline Tasks Modal -->
+    <a-modal
+      v-model:open="showTimelineTasksModal"
+      :title="timelineModalTitle"
+      width="800px"
+      :footer="null"
+      @cancel="closeTimelineModal"
+    >
+      <div class="timeline-tasks-list">
+        <div v-if="timelineSelectedTasks.length === 0" class="empty-state">
+          <p>No tasks found for this date</p>
+        </div>
+        <div v-else>
+          <TaskCard
+            v-for="task in timelineSelectedTasks"
+            :key="task.task_id"
+            :task="task"
+            @view-details="handleTaskClick"
+          />
+        </div>
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -107,6 +130,7 @@ import { useAuthStore } from '../stores/auth'
 import { useTaskTimeline } from '../composables/useTaskTimeline.js'
 import { useNotificationPanel } from '../composables/useNotificationPanel.js'
 import TaskList from '../components/tasks/TaskList.vue'
+import TaskCard from '../components/tasks/TaskCard.vue'
 import ReportGenerator from '../components/reports/ReportGenerator.vue'
 import NotificationTester from '../components/NotificationTester.vue' // Add this import
 import TaskTimelineChart from '../components/charts/TaskTimelineChart.vue'
@@ -116,6 +140,7 @@ export default {
   name: 'Home',
   components: {
     TaskList,
+    TaskCard,
     ReportGenerator,
     NotificationTester, // Add this component
     TaskTimelineChart,
@@ -147,7 +172,10 @@ export default {
       getTasksForDate
     } = useTaskTimeline(tasks)
 
-
+    // Timeline modal state
+    const showTimelineTasksModal = ref(false)
+    const timelineSelectedTasks = ref([])
+    const timelineModalTitle = ref('')
 
     // Helper functions for welcome section
     const getGreeting = () => {
@@ -176,20 +204,31 @@ export default {
     const handleTimelineClick = (clickData) => {
       const { date, dayLabel, taskCount } = clickData
       const tasksForDate = getTasksForDate(date)
-      
+
       if (tasksForDate.length > 0) {
-        // Show notification with task details
-        const taskTitles = tasksForDate.slice(0, 3).map(t => t.title).join(', ')
-        const moreText = tasksForDate.length > 3 ? ` and ${tasksForDate.length - 3} more` : ''
-        
-        // You can extend this to show a modal or filter the task list
-        console.log('Tasks for', dayLabel, ':', tasksForDate)
-        
-        // Optional: scroll to task list or highlight specific tasks
-        if (taskListRef.value) {
-          // You can add methods to TaskList component to highlight specific tasks
-        }
+        // Set modal data and show modal
+        timelineSelectedTasks.value = tasksForDate
+        timelineModalTitle.value = `Tasks due on ${dayLabel} (${tasksForDate.length})`
+        showTimelineTasksModal.value = true
       }
+    }
+
+    // Handle task card click in modal
+    const handleTaskClick = (task) => {
+      // Close the timeline modal
+      showTimelineTasksModal.value = false
+
+      // Open task details by calling the TaskList's handleTaskClick method
+      if (taskListRef.value && taskListRef.value.handleTaskClick) {
+        taskListRef.value.handleTaskClick(task)
+      }
+    }
+
+    // Close timeline modal
+    const closeTimelineModal = () => {
+      showTimelineTasksModal.value = false
+      timelineSelectedTasks.value = []
+      timelineModalTitle.value = ''
     }
 
     // Load tasks for stats and timeline
@@ -244,6 +283,13 @@ export default {
       goToPreviousWeek,
       goToNextWeek,
       goToCurrentWeek,
+
+      // Timeline modal
+      showTimelineTasksModal,
+      timelineSelectedTasks,
+      timelineModalTitle,
+      handleTaskClick,
+      closeTimelineModal,
 
       // Styling
       welcomeSectionStyle,
@@ -592,5 +638,32 @@ export default {
   .welcome-section :deep(.ant-typography-h1) {
     font-size: 24px !important;
   }
+}
+
+/* Timeline Tasks Modal */
+.timeline-tasks-list {
+  max-height: 600px;
+  overflow-y: auto;
+  padding: 16px 0;
+}
+
+.timeline-tasks-list .empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b7280;
+}
+
+.timeline-tasks-list > div > div {
+  margin-bottom: 12px;
+  cursor: pointer;
+}
+
+.timeline-tasks-list :deep(.task-card-wrapper) {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.timeline-tasks-list :deep(.task-card-wrapper:hover) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 </style>
