@@ -15,8 +15,8 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!user.value && !!sessionToken.value)
 
   // Session timeout management (15 minutes)
-  const SESSION_DURATION = 3 * 60 * 1000 // 15 minutes in milliseconds
-  const WARNING_TIME = 1 * 60 * 1000 // 13 minutes (2 minutes before expiration)
+  const SESSION_DURATION = 15 * 60 * 1000 // 15 minutes in milliseconds
+  const WARNING_TIME = 13 * 60 * 1000 // 13 minutes (2 minutes before expiration)
   
   // Singapore timezone helper
   const getSingaporeTime = () => {

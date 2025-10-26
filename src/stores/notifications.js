@@ -10,8 +10,8 @@ export const useNotificationStore = defineStore('notifications', () => {
     notifications.value.filter(n => !n.is_read).length
   )
 
-  const recentNotifications = computed(() => 
-    notifications.value.slice(0, 10)
+  const recentNotifications = computed(() =>
+    notifications.value.slice(0, 50)
   )
 
   // Actions
