@@ -698,12 +698,12 @@ def generate_pie_chart(tasks: List[Dict[str, Any]]) -> Drawing:
 
     # Define colors for different statuses
     color_map = {
-        'Ongoing': HexColor("#3b82f6"),      # Blue
         'Completed': HexColor("#22c55e"),    # Green
-        'Unassigned': HexColor('#94a3b8'),   # Gray
-        'Ongoing': HexColor("#f59e0b"),  # Orange
+        'Ongoing': HexColor("#3b82f6"),      # Blue
         'Under Review': HexColor("#a855f7"), # Purple
+        'Unassigned': HexColor('#94a3b8'),   # Gray
         'Blocked': HexColor('#ef4444'),      # Red
+        'Pending': HexColor("#f59e0b"),      # Orange
     }
 
     chart_colors = [color_map.get(label, HexColor('#d9d9d9')) for label in labels]
@@ -2827,25 +2827,50 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
                 summary['team_name']: round(summary['metrics']['completion_rate'], 2) for summary in team_summaries
             }
 
-            pie_source = completion_by_team if sum(completion_by_team.values()) > 0 else total_tasks_by_team
+            # For single team selection, show task status breakdown instead of team comparison
+            if len(team_summaries) == 1:
+                # Get all tasks from the single team to show status breakdown
+                single_team_tasks = []
+                for tasks in tasks_by_scope.values():
+                    single_team_tasks.extend(tasks)
+                
+                # Create task status distribution for the single team
+                task_status_counter = Counter([task.get('status') or 'Unknown' for task in single_team_tasks])
+                task_status_distribution = dict(task_status_counter)
+                
+                preview_data['charts'] = [
+                    {
+                        'type': 'pie',
+                        'title': f'{team_summaries[0]["team_name"]} - Task Status Distribution',
+                        'data': task_status_distribution
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Task Status Breakdown',
+                        'data': task_status_distribution
+                    }
+                ]
+            else:
+                # Multiple teams - show team comparison
+                pie_source = completion_by_team if sum(completion_by_team.values()) > 0 else total_tasks_by_team
 
-            preview_data['charts'] = [
-                {
-                    'type': 'pie',
-                    'title': 'Team Contribution (Completed Tasks)',
-                    'data': pie_source
-                },
-                {
-                    'type': 'bar_vertical',
-                    'title': 'Completion Rate by Team (%)',
-                    'data': completion_rate_by_team
-                },
-                {
-                    'type': 'bar_vertical',
-                    'title': 'Overdue Tasks by Team',
-                    'data': overdue_by_team
-                }
-            ]
+                preview_data['charts'] = [
+                    {
+                        'type': 'pie',
+                        'title': 'Team Contribution (Completed Tasks)',
+                        'data': pie_source
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Completion Rate by Team (%)',
+                        'data': completion_rate_by_team
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Overdue Tasks by Team',
+                        'data': overdue_by_team
+                    }
+                ]
 
         preview_data['detailed_data'] = {
             'team_members': team_members_data,
@@ -3046,40 +3071,56 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
             dept_status_counter = Counter([task.get('status') or 'Unknown' for task in all_dept_tasks])
             dept_status_distribution = dict(dept_status_counter)
 
-            pie_source = completed_workload if sum(completed_workload.values()) > 0 else total_tasks_map
+            # For single team selection, show task status breakdown instead of team comparison
+            if len(team_comparison_data) == 1:
+                preview_data['charts'] = [
+                    {
+                        'type': 'pie',
+                        'title': f'{department} Department - Task Status Distribution',
+                        'data': dept_status_distribution
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Task Status Breakdown',
+                        'data': dept_status_distribution
+                    }
+                ]
+            else:
+                # Multiple teams - show both status distribution and team comparison
+                pie_source = completed_workload if sum(completed_workload.values()) > 0 else total_tasks_map
 
-            preview_data['charts'] = [
-                {
-                    'type': 'pie',
-                    'title': f'{department} Department - Task Status Distribution',
-                    'data': dept_status_distribution
-                },
-                {
-                    'type': 'pie',
-                    'title': f'{department} Department - Task Distribution by Team',
-                    'data': pie_source
-                },
-                {
-                    'type': 'bar_vertical',
-                    'title': 'Team Completion Rates (%)',
-                    'data': completion_rates
-                },
-                {
-                    'type': 'bar_vertical',
-                    'title': 'Overdue Tasks by Team',
-                    'data': overdue_work
-                },
-                {
-                    'type': 'bar_vertical',
-                    'title': 'Team Workload (days)',
-                    'data': team_workload
-                },
-                {
-                    'type': 'bar_vertical',
-                    'title': 'Average Task Duration by Team (days)',
-                    'data': team_efficiency
-                }
-            ]
+                preview_data['charts'] = [
+                    {
+                        'type': 'pie',
+                        'title': f'{department} Department - Task Status Distribution',
+                        'data': dept_status_distribution
+                    },
+                    {
+                        'type': 'pie',
+                        'title': f'{department} Department - Task Distribution by Team',
+                        'data': pie_source
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Team Completion Rates (%)',
+                        'data': completion_rates
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Overdue Tasks by Team',
+                        'data': overdue_work
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Team Workload (days)',
+                        'data': team_workload
+                    },
+                    {
+                        'type': 'bar_vertical',
+                        'title': 'Average Task Duration by Team (days)',
+                        'data': team_efficiency
+                    }
+                ]
 
             preview_data['detailed_data'] = {
                 'team_comparison': team_comparison_data,
@@ -3165,60 +3206,24 @@ def generate_report_preview_data(requesting_user: Dict[str, Any], report_type: s
                     }
                 ]
             else:
-                # Single department - compare teams within department
+                # Single department - show task status breakdown instead of team comparison
                 single_dept = selected_departments[0] if selected_departments else 'Unknown'
                 dept_tasks = data_by_scope.get(single_dept, [])
                 
-                # Get teams within the department for comparison
-                all_users = supabase.table('user').select('*').eq('department', single_dept).execute().data or []
-                teams_in_dept = {}
-                
-                for user in all_users:
-                    superior_id = user.get('superior')
-                    if superior_id:
-                        superior_user = get_user_details(superior_id)
-                        if superior_user and superior_user.get('role') == 'Manager':
-                            team_name = f"{superior_user.get('name', 'Unknown')}'s Team"
-                            if team_name not in teams_in_dept:
-                                teams_in_dept[team_name] = []
-                            teams_in_dept[team_name].append(user)
-                
-                # Calculate team metrics within the department
-                team_metrics = []
-                for team_name, members in teams_in_dept.items():
-                    member_ids = [member['user_id'] for member in members if member.get('user_id')]
-                    if member_ids:
-                        team_tasks = fetch_tasks_for_multiple_users(member_ids, start_date, end_date, status_filter)
-                        metrics = calculate_team_metrics(team_tasks)
-                        team_metrics.append({
-                            'team_name': team_name,
-                            'completion_rate': metrics['completion_rate'],
-                            'overdue_tasks': metrics['overdue_tasks'],
-                            'avg_completion_time_hours': metrics.get('avg_completion_time_hours', 0),
-                            'avg_completion_time': metrics.get('avg_completion_time_hours', metrics.get('avg_completion_time', 0)),
-                            'time_spent_hours': metrics.get('total_time_spent_hours', metrics.get('total_time_spent', 0))
-                        })
+                # Create task status distribution for the entire department
+                dept_status_counter = Counter([task.get('status') or 'Unknown' for task in dept_tasks])
+                dept_status_distribution = dict(dept_status_counter)
                 
                 preview_data['charts'] = [
                     {
-                        'type': 'bar_vertical',
-                        'title': f'Team Completion Rates in {single_dept} (%)',
-                        'data': {team['team_name']: round(team['completion_rate'], 2) for team in team_metrics}
+                        'type': 'pie',
+                        'title': f'{single_dept} Department - Task Status Distribution',
+                        'data': dept_status_distribution
                     },
                     {
                         'type': 'bar_vertical',
-                        'title': f'Team Overdue Tasks in {single_dept}',
-                        'data': {team['team_name']: team['overdue_tasks'] for team in team_metrics}
-                    },
-                    {
-                        'type': 'bar_vertical',
-                        'title': f'Team Avg Completion Time in {single_dept} (hrs)',
-                        'data': {team['team_name']: round(team['avg_completion_time_hours'], 2) for team in team_metrics}
-                    },
-                    {
-                        'type': 'bar_vertical',
-                        'title': f'Time Spent on Tasks in {single_dept} (hrs)',
-                        'data': {team['team_name']: round(team.get('time_spent_hours', 0), 2) for team in team_metrics}
+                        'title': 'Task Status Breakdown',
+                        'data': dept_status_distribution
                     }
                 ]
             
