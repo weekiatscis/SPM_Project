@@ -70,7 +70,7 @@ export function validatePasswordMatch(password, confirmPassword) {
   if (password !== confirmPassword) {
     return {
       isValid: false,
-      error: 'Passwords do not match'
+      error: 'Passwords do not match.'
     }
   }
 
