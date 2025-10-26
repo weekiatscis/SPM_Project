@@ -81,7 +81,7 @@
               <span class="stat-value completed-color">{{ reportData.summary.completed_tasks }}</span>
             </div>
             <div class="stat-item">
-              <span class="stat-label">In Progress</span>
+              <span class="stat-label">Ongoing</span>
               <span class="stat-value progress-color">{{ reportData.summary.ongoing_tasks }}</span>
             </div>
             <div class="stat-item">
@@ -99,6 +99,15 @@
       <!-- Team Member Performance -->
       <div class="report-section" v-if="reportData.team_performance.length > 0">
         <h2 class="section-title">Team Member Performance</h2>
+
+        <!-- Team Member Bar Chart -->
+        <div class="bar-chart-section">
+          <h3 class="chart-title">Task Status by Team Member</h3>
+          <div class="bar-chart-container">
+            <canvas ref="teamBarChartCanvas" width="800" height="450"></canvas>
+          </div>
+        </div>
+
         <a-table
           :dataSource="reportData.team_performance"
           :columns="teamColumns"
@@ -208,6 +217,7 @@ const modalVisible = ref(false)
 const isExporting = ref(false)
 const activeGroups = ref(['Overdue', 'Ongoing'])
 const pieChartCanvas = ref(null)
+const teamBarChartCanvas = ref(null)
 
 // Watch for prop changes
 watch(() => props.isOpen, (newVal) => {
@@ -217,11 +227,14 @@ watch(() => props.isOpen, (newVal) => {
   }
 }, { immediate: true })
 
-// Watch for reportData changes to draw pie chart
+// Watch for reportData changes to draw charts
 watch(() => props.reportData, (newVal) => {
   if (newVal) {
+    console.log('ProjectReportPreviewModal - reportData received:', newVal)
+    console.log('Team performance data:', newVal.team_performance)
     nextTick(() => {
       drawPieChart()
+      drawTeamBarChart()
     })
   }
 }, { immediate: true })
@@ -256,7 +269,7 @@ const drawPieChart = () => {
 
   if (summary.ongoing_tasks > 0) {
     data.push(summary.ongoing_tasks)
-    labels.push('In Progress')
+    labels.push('Ongoing')
     colors.push('#3b82f6')
   }
 
@@ -320,6 +333,211 @@ const drawPieChart = () => {
   })
 }
 
+const drawTeamBarChart = () => {
+  if (!teamBarChartCanvas.value || !props.reportData?.team_performance?.length) return
+
+  const canvas = teamBarChartCanvas.value
+  const ctx = canvas.getContext('2d')
+  const teamMembers = props.reportData.team_performance
+
+  // Clear canvas
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // Calculate dimensions for HORIZONTAL bars
+  const barHeight = 30
+  const barSpacing = 50
+  const leftMargin = 150  // Space for member names on left
+  const rightMargin = 50
+  const topMargin = 100   // Space for title and legend
+  const bottomMargin = 20
+
+  const maxTotalTasks = Math.max(...teamMembers.map(member => member.total || 0))
+  const chartWidth = canvas.width - leftMargin - rightMargin
+
+  // Define colors for each status
+  const colors = {
+    overdue: '#ef4444',      // Red
+    ongoing: '#3b82f6',      // Blue
+    underReview: '#eab308',  // Yellow
+    completed: '#22c55e'     // Green
+  }
+
+  // Add title
+  ctx.fillStyle = '#1f2937'
+  ctx.font = 'bold 16px Arial'
+  ctx.textAlign = 'center'
+  ctx.fillText('Task Status by Team Member', canvas.width/2, 25)
+
+  // Add legend in a single row
+  const legendY = 50
+  const legendStartX = 200
+
+  ctx.font = '11px Arial'
+  ctx.textAlign = 'left'
+
+  // Overdue legend
+  ctx.fillStyle = colors.overdue
+  ctx.fillRect(legendStartX, legendY, 18, 12)
+  ctx.fillStyle = '#1f2937'
+  ctx.fillText('Overdue', legendStartX + 24, legendY + 10)
+
+  // Ongoing legend
+  ctx.fillStyle = colors.ongoing
+  ctx.fillRect(legendStartX + 100, legendY, 18, 12)
+  ctx.fillStyle = '#1f2937'
+  ctx.fillText('Ongoing', legendStartX + 124, legendY + 10)
+
+  // Under Review legend
+  ctx.fillStyle = colors.underReview
+  ctx.fillRect(legendStartX + 200, legendY, 18, 12)
+  ctx.fillStyle = '#1f2937'
+  ctx.fillText('Under Review', legendStartX + 224, legendY + 10)
+
+  // Completed legend
+  ctx.fillStyle = colors.completed
+  ctx.fillRect(legendStartX + 320, legendY, 18, 12)
+  ctx.fillStyle = '#1f2937'
+  ctx.fillText('Completed', legendStartX + 344, legendY + 10)
+
+  // Draw horizontal stacked bars for each member
+  teamMembers.forEach((member, i) => {
+    const yPos = topMargin + i * barSpacing
+
+    // Get task counts for each status
+    const overdue = member.overdue || 0
+    const ongoing = member.ongoing || 0
+    const underReview = member.under_review || 0
+    const completed = member.completed || 0
+    const total = member.total || 0
+
+    // Calculate widths for each section based on actual task count (scaled to maxTotalTasks)
+    const scale = maxTotalTasks > 0 ? chartWidth / maxTotalTasks : 0
+    const overdueWidth = overdue * scale
+    const ongoingWidth = ongoing * scale
+    const underReviewWidth = underReview * scale
+    const completedWidth = completed * scale
+
+    // Draw member name on the left
+    ctx.fillStyle = '#1f2937'
+    ctx.font = '12px Arial'
+    ctx.textAlign = 'right'
+    ctx.fillText(
+      member.member.length > 18 ? member.member.substring(0, 18) + '...' : member.member,
+      leftMargin - 10,
+      yPos + barHeight/2 + 4
+    )
+
+    // Draw stacked sections from left to right
+    let currentX = leftMargin
+
+    // Overdue (red) - leftmost
+    if (overdue > 0) {
+      ctx.fillStyle = colors.overdue
+      ctx.fillRect(currentX, yPos, overdueWidth, barHeight)
+
+      // Draw count if section is wide enough
+      if (overdueWidth > 25) {
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 11px Arial'
+        ctx.textAlign = 'center'
+        ctx.fillText(overdue, currentX + overdueWidth/2, yPos + barHeight/2 + 4)
+      }
+
+      currentX += overdueWidth
+    }
+
+    // Ongoing (blue)
+    if (ongoing > 0) {
+      ctx.fillStyle = colors.ongoing
+      ctx.fillRect(currentX, yPos, ongoingWidth, barHeight)
+
+      if (ongoingWidth > 25) {
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 11px Arial'
+        ctx.textAlign = 'center'
+        ctx.fillText(ongoing, currentX + ongoingWidth/2, yPos + barHeight/2 + 4)
+      }
+
+      currentX += ongoingWidth
+    }
+
+    // Under Review (yellow)
+    if (underReview > 0) {
+      ctx.fillStyle = colors.underReview
+      ctx.fillRect(currentX, yPos, underReviewWidth, barHeight)
+
+      if (underReviewWidth > 25) {
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 11px Arial'
+        ctx.textAlign = 'center'
+        ctx.fillText(underReview, currentX + underReviewWidth/2, yPos + barHeight/2 + 4)
+      }
+
+      currentX += underReviewWidth
+    }
+
+    // Completed (green) - rightmost
+    if (completed > 0) {
+      ctx.fillStyle = colors.completed
+      ctx.fillRect(currentX, yPos, completedWidth, barHeight)
+
+      if (completedWidth > 25) {
+        ctx.fillStyle = '#ffffff'
+        ctx.font = 'bold 11px Arial'
+        ctx.textAlign = 'center'
+        ctx.fillText(completed, currentX + completedWidth/2, yPos + barHeight/2 + 4)
+      }
+
+      currentX += completedWidth
+    }
+
+    // Draw total count at the end of the bar
+    ctx.fillStyle = '#1f2937'
+    ctx.font = 'bold 12px Arial'
+    ctx.textAlign = 'left'
+    ctx.fillText(
+      total,
+      currentX + 8,
+      yPos + barHeight/2 + 4
+    )
+  })
+
+  // Draw X-axis with scale
+  const xAxisY = topMargin + teamMembers.length * barSpacing + 10
+  ctx.strokeStyle = '#9ca3af'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(leftMargin, xAxisY)
+  ctx.lineTo(leftMargin + chartWidth, xAxisY)
+  ctx.stroke()
+
+  // Draw X-axis labels (0, max/4, max/2, 3*max/4, max)
+  ctx.fillStyle = '#6b7280'
+  ctx.font = '10px Arial'
+  ctx.textAlign = 'center'
+
+  const xAxisLabels = 5
+  for (let i = 0; i < xAxisLabels; i++) {
+    const value = Math.round((maxTotalTasks / (xAxisLabels - 1)) * i)
+    const xPos = leftMargin + (chartWidth / (xAxisLabels - 1)) * i
+
+    // Draw tick mark
+    ctx.beginPath()
+    ctx.moveTo(xPos, xAxisY)
+    ctx.lineTo(xPos, xAxisY + 5)
+    ctx.stroke()
+
+    // Draw label
+    ctx.fillText(value, xPos, xAxisY + 18)
+  }
+
+  // Draw X-axis title
+  ctx.fillStyle = '#1f2937'
+  ctx.font = '11px Arial'
+  ctx.textAlign = 'center'
+  ctx.fillText('Number of Tasks', leftMargin + chartWidth/2, xAxisY + 35)
+}
+
 // Team performance table columns
 const teamColumns = [
   {
@@ -347,10 +565,32 @@ const teamColumns = [
     align: 'center'
   },
   {
+    title: 'Overdue',
+    dataIndex: 'overdue',
+    key: 'overdue',
+    align: 'center',
+    customRender: ({ record }) => record.overdue || 0
+  },
+  {
+    title: 'Ongoing',
+    dataIndex: 'ongoing',
+    key: 'ongoing',
+    align: 'center',
+    customRender: ({ record }) => record.ongoing || 0
+  },
+  {
+    title: 'Under Review',
+    dataIndex: 'under_review',
+    key: 'under_review',
+    align: 'center',
+    customRender: ({ record }) => record.under_review || 0
+  },
+  {
     title: 'Completed',
     dataIndex: 'completed',
     key: 'completed',
-    align: 'center'
+    align: 'center',
+    customRender: ({ record }) => record.completed || 0
   },
   {
     title: 'Completion Rate',
@@ -624,6 +864,27 @@ const handleExportPDF = () => {
   margin-top: 8px;
 }
 
+/* Bar Chart Section */
+.bar-chart-section {
+  margin-top: 32px;
+}
+
+.chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.bar-chart-container {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
 /* Highlight current user row in team performance table */
 .team-table :deep(.highlight-current-user) {
   background-color: #dbeafe !important;
@@ -632,6 +893,48 @@ const handleExportPDF = () => {
 .team-table :deep(.highlight-current-user td) {
   color: #1e40af !important;
   font-weight: 600 !important;
+}
+
+/* Colored column headers for team performance table */
+.team-table :deep(th:nth-child(4)) {
+  background-color: #ef4444 !important; /* Overdue - Red */
+  color: white !important;
+}
+
+.team-table :deep(th:nth-child(5)) {
+  background-color: #3b82f6 !important; /* Ongoing - Blue */
+  color: white !important;
+}
+
+.team-table :deep(th:nth-child(6)) {
+  background-color: #eab308 !important; /* Under Review - Yellow */
+  color: white !important;
+}
+
+.team-table :deep(th:nth-child(7)) {
+  background-color: #22c55e !important; /* Completed - Green */
+  color: white !important;
+}
+
+/* Colored values in status columns */
+.team-table :deep(td:nth-child(4)) {
+  color: #dc2626; /* Overdue values - darker red */
+  font-weight: 600;
+}
+
+.team-table :deep(td:nth-child(5)) {
+  color: #2563eb; /* Ongoing values - darker blue */
+  font-weight: 600;
+}
+
+.team-table :deep(td:nth-child(6)) {
+  color: #ca8a04; /* Under Review values - darker yellow */
+  font-weight: 600;
+}
+
+.team-table :deep(td:nth-child(7)) {
+  color: #16a34a; /* Completed values - darker green */
+  font-weight: 600;
 }
 
 .task-groups :deep(.ant-collapse-item) {
@@ -646,23 +949,23 @@ const handleExportPDF = () => {
 }
 
 .task-groups :deep(.status-overdue .ant-collapse-header) {
-  background: #fee2e2;
-  color: #dc2626;
+  background: #ef4444;
+  color: white;
 }
 
 .task-groups :deep(.status-ongoing .ant-collapse-header) {
-  background: #dbeafe;
-  color: #2563eb;
+  background: #3b82f6;
+  color: white;
 }
 
 .task-groups :deep(.status-under-review .ant-collapse-header) {
-  background: #e9d5ff;
-  color: #9333ea;
+  background: #eab308;
+  color: white;
 }
 
 .task-groups :deep(.status-completed .ant-collapse-header) {
-  background: #d1fae5;
-  color: #059669;
+  background: #22c55e;
+  color: white;
 }
 
 .task-groups :deep(.status-unassigned .ant-collapse-header) {
