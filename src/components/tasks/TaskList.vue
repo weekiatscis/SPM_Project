@@ -339,7 +339,7 @@ export default {
       closeDetailModal()
     }
 
-    // Fetch tasks from backend - OPTIMIZED
+    // Fetch tasks from backend - Use accessible-tasks endpoint for proper access control
     const fetchTasks = async () => {
       isLoading.value = true
       try {
@@ -348,35 +348,21 @@ export default {
         
         console.log('DEBUG: Loading tasks for user:', ownerId)
         
-        // Try the new optimized endpoint first
-        let url = `${baseUrl}/tasks/optimized`
-        if (ownerId) {
-          url += `?owner_id=${encodeURIComponent(ownerId)}`
-        }
+        // Use accessible-tasks endpoint for proper access control including collaborators
+        const url = ownerId
+          ? `${baseUrl}/users/${encodeURIComponent(ownerId)}/accessible-tasks`
+          : `${baseUrl}/tasks`
         
-        console.log('DEBUG: Fetching from optimized URL:', url)
+        console.log('DEBUG: Fetching from accessible-tasks URL:', url)
         
-        let response = await fetch(url)
-        let payload
-        
+        const response = await fetch(url)
         if (!response.ok) {
-          console.warn('Optimized endpoint failed, falling back to accessible-tasks endpoint')
-          // Fallback to the accessible-tasks endpoint
-          const fallbackUrl = ownerId
-            ? `${baseUrl}/users/${encodeURIComponent(ownerId)}/accessible-tasks`
-            : `${baseUrl}/tasks`
-          response = await fetch(fallbackUrl)
-          if (!response.ok) throw new Error(`HTTP ${response.status}`)
-          payload = await response.json()
-        } else {
-          payload = await response.json()
-          if (payload.optimization_info) {
-            console.log('Optimization info:', payload.optimization_info)
-          }
+          throw new Error(`HTTP ${response.status}`)
         }
         
+        const payload = await response.json()
         const apiTasks = Array.isArray(payload?.tasks) ? payload.tasks : []
-        console.log('DEBUG: Processed tasks:', apiTasks.length, 'tasks')
+        console.log('DEBUG: Processed tasks from accessible-tasks:', apiTasks.length, 'tasks')
         
         tasks.value = apiTasks.map(t => ({
           id: t.id,
@@ -392,7 +378,7 @@ export default {
           collaborators: t.collaborators || [],
           assignee: t.assignee || null,
           created_at: t.created_at || null,
-          // Enhanced data from optimized endpoint
+          // Enhanced data if available
           owner_name: t.owner_name,
           collaborator_details: t.collaborator_details
         }))
@@ -435,49 +421,18 @@ export default {
 
     // All tasks computed property with sorting and search filtering
     const allTasks = computed(() => {
-      // Include:
-      // 1. Parent tasks (tasks without parent_task_id)
-      // 2. Standalone subtasks (subtasks where user doesn't have access to parent)
-      // Exclude:
-      // - Subtasks where the parent task is also in the user's task list (shown under parent)
+      // The backend accessible-tasks endpoint already handles the complex logic:
+      // - Shows subtasks if user has access to them (even without parent access)
+      // - Shows parent tasks if user has direct access OR if user has no subtasks under them
+      // - Excludes parent tasks if user only has access to subtasks under them
       
-      console.log('🔍 Computing allTasks, total tasks:', tasks.value.length)
-      
-      const parentTaskIds = new Set(
-        tasks.value.filter(t => !t.parent_task_id).map(t => t.id)
-      )
-      
-      console.log('📋 Parent task IDs in user\'s list:', Array.from(parentTaskIds))
-      
-      const visibleTasks = tasks.value.filter(t => {
-        // Include all parent tasks
-        if (!t.parent_task_id && !t.isSubtask) {
-          console.log(`✅ Including parent task: ${t.title} (${t.id})`)
-          return true
-        }
-        
-        // Include subtasks only if their parent is NOT in the user's accessible tasks
-        // This means user has access to subtask but not parent - show as standalone
-        if (t.parent_task_id) {
-          const hasParentAccess = parentTaskIds.has(t.parent_task_id)
-          if (!hasParentAccess) {
-            console.log(`✅ Including standalone subtask: ${t.title} (${t.id}) - parent ${t.parent_task_id} not accessible`)
-          } else {
-            console.log(`⏭️  Excluding subtask: ${t.title} (${t.id}) - parent ${t.parent_task_id} is accessible`)
-          }
-          return !hasParentAccess
-        }
-        
-        return false
-      })
-      
-      console.log('📊 Visible tasks count:', visibleTasks.length)
+      console.log('🔍 Computing allTasks, total tasks from backend:', tasks.value.length)
       
       // Apply search filter
-      let filteredTasks = visibleTasks
+      let filteredTasks = tasks.value
       if (searchQuery.value.trim()) {
         const query = searchQuery.value.toLowerCase().trim()
-        filteredTasks = visibleTasks.filter(task => {
+        filteredTasks = tasks.value.filter(task => {
           return task.title?.toLowerCase().includes(query) ||
                  task.status?.toLowerCase().includes(query) ||
                  task.assignee?.toLowerCase().includes(query)
@@ -515,6 +470,7 @@ export default {
         })
       }
       
+      console.log('📊 Final filtered and sorted tasks count:', sorted.length)
       return sorted
     })
 

@@ -54,7 +54,7 @@ def test_dashboard_csv_download(headless=False, reuse_browser=False):
         email_input.send_keys("weekiat22@gmail.com")
         
         password_input = driver.find_element(By.CSS_SELECTOR, "input[type='password']")
-        password_input.send_keys("tB800797")
+        password_input.send_keys("Password123456!")
         
         submit_button = driver.find_element(By.CSS_SELECTOR, "button[type='submit']")
         submit_button.click()

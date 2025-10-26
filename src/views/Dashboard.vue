@@ -89,7 +89,17 @@
           
           <!-- Charts View -->
           <div class="charts-container">
+            <!-- Staff-specific charts -->
+            <StaffChartsView
+              v-if="userRole === 'Staff'"
+              :tasks="filteredTasks"
+              :is-loading="isLoading"
+              :subordinates="subordinates"
+              :user-role="userRole"
+            />
+            <!-- Manager/Director/HR charts -->
             <TeamChartsView
+              v-else
               :tasks="filteredTasks"
               :is-loading="isLoading"
               :subordinates="subordinates"
@@ -129,6 +139,7 @@ import TeamMetrics from '../components/manager/TeamMetrics.vue'
 import TaskFilters from '../components/manager/TaskFilters.vue'
 import TeamTasksTable from '../components/manager/TeamTasksTable.vue'
 import TeamChartsView from '../components/manager/TeamChartsView.vue'
+import StaffChartsView from '../components/staff/StaffChartsView.vue'
 import TaskDetailModal from '../components/tasks/TaskDetailModal.vue'
 
 const authStore = useAuthStore()
