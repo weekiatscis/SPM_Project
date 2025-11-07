@@ -89,49 +89,7 @@ pip install -r requirements.txt
 
 Create a `.env` file in the root directory by copying the example:
 
-```bash
-cp .env.example .env
-```
-
-Then edit `.env` with your actual credentials:
-
-```env
-# Database Configuration
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-
-# RabbitMQ Configuration (use default for Docker)
-RABBITMQ_URL=amqp://localhost
-
-# Service URLs (use these for development)
-NOTIFICATION_SERVICE_URL=http://localhost:8084
-TASK_SERVICE_URL=http://localhost:8080
-VITE_REPORT_SERVICE_URL=http://localhost:8090
-
-# Email Configuration
-# For Gmail: Generate App Password at https://myaccount.google.com/apppasswords
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_gmail_app_password
-FROM_EMAIL=your_email@gmail.com
-FROM_NAME=Smart Task Manager
-
-# Frontend URL
-FRONTEND_URL=http://localhost:5173
-```
-
-#### Getting Supabase Credentials:
-1. Create a project at [supabase.com](https://supabase.com)
-2. Go to Project Settings → API
-3. Copy your Project URL and service_role key (keep this secret!)
-
-#### Setting up Gmail App Password:
-1. Enable 2-Factor Authentication on your Google Account
-2. Go to [Google App Passwords](https://myaccount.google.com/apppasswords)
-3. Generate a new app password for "Mail"
-4. Use this 16-character password in your `.env` file
-
+Copy and paste credentials from ReadME in Submission Folder 
 ### 5. Start Backend Services with Docker
 
 **First time setup** (builds and starts all containers):
