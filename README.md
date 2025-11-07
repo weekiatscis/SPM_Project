@@ -64,8 +64,7 @@ Before you begin, ensure you have the following installed:
 - **Git**: For version control ([Download](https://git-scm.com/))
 
 ### Accounts Required
-- **Supabase Account**: For database ([Sign up](https://supabase.com/))
-- **Email Provider**: Gmail, SendGrid, or similar for SMTP
+- **Email Provider**: Any email but OUTLOOK (email will be quarantined)
 
 ## 🛠️ Installation & Setup
 
@@ -356,46 +355,20 @@ lsof -ti:8080 | xargs kill -9
 # Edit docker-compose.yml and change exposed ports
 ```
 
-## 🤝 Contributing
 
-We welcome contributions! Please follow these steps:
 
-1. **Fork the repository**
-2. **Create your feature branch**
-   ```bash
-   git checkout -b feature/AmazingFeature
-   ```
-3. **Commit your changes**
-   ```bash
-   git commit -m 'Add some AmazingFeature'
-   ```
-4. **Push to the branch**
-   ```bash
-   git push origin feature/AmazingFeature
-   ```
-5. **Open a Pull Request**
-
-### Coding Standards
-- Follow existing code style
-- Write meaningful commit messages
-- Add tests for new features
-- Update documentation as needed
-
-### Branch Naming Convention
-- `feature/` - New features
-- `bugfix/` - Bug fixes
-- `hotfix/` - Urgent production fixes
-- `chore/` - Maintenance tasks
 
 ## 👥 Team
 
 **Smart Task Manager Team**
 - Project built as part of Software Project Management course
-- Contact: [Your email or team contact]
+- Brandon (brandon.tan.2023@scis.smu.edu.sg)
+- Wee Kiat (weekiat.tan.2023@scis.smu.edu.sg)
+- Ranen (ranen.tan.2023@scis.smu.edu.sg)
+- Denise (denise.lim.2023@scis.smu.edu.sg)
+- Amanda (amandia.chia.2023@scis.smu.edu.sg)
+- Zenia (zenia.foo.2023@scis.smu.edu.sg)
 
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## 🙏 Acknowledgments
 
@@ -413,15 +386,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Docker Documentation](https://docs.docker.com/)
 - [RabbitMQ Documentation](https://www.rabbitmq.com/documentation.html)
 
-## 🔐 Security
-
-- Never commit `.env` file to version control
-- Keep Supabase service role key secret
-- Use HTTPS in production
-- Regularly update dependencies
-- Enable rate limiting in production
-- Use strong passwords and enable 2FA
-
 ## 📊 Performance
 
 - Frontend built with Vite for fast HMR
@@ -432,6 +396,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ---
 
-**Need help?** Open an issue on GitHub or contact the team.
 
-**Happy Task Managing! 🚀**
